@@ -15,7 +15,7 @@ import os
 import json
 import time
 import hashlib
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -106,7 +106,14 @@ def index_status_for_tests(cache_dir: Optional[str], index_cache: dict) -> dict:
 
 def list_files(dirpath: str):
     try:
-        return sorted([f for f in os.listdir(dirpath) if os.path.isfile(os.path.join(dirpath, f))])
+        return sorted(
+            [
+                f
+                for f in os.listdir(dirpath)
+                if not f.startswith(".")
+                and os.path.isfile(os.path.join(dirpath, f))
+            ]
+        )
     except FileNotFoundError:
         return []
 
@@ -306,8 +313,10 @@ class WebHandler(BaseHTTPRequestHandler):
             "    const HL_KEY='acl_highlight';\n"
             "    function applyTheme(){\n"
             "      const mode=localStorage.getItem(THEME_KEY)||'dark';\n"
-            "      document.body.className = (mode==='dark') ? 'theme-dark' : 'theme-light';\n"
-            "      document.getElementById('themeToggle').checked = (mode!=='dark');\n"
+            "      document.documentElement.setAttribute('data-theme', mode);\n"
+            "      document.body.classList.toggle('theme-light', mode==='light');\n"
+            "      document.body.classList.toggle('theme-dark', mode!=='light');\n"
+            "      const t=document.getElementById('themeToggle'); if(t){t.checked = (mode==='light');}\n"
             "    }\n"
             "    function escapeHtml(s){return s.replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}\n"
             "    function hlASA(line){\n"
@@ -379,7 +388,7 @@ class WebHandler(BaseHTTPRequestHandler):
             "    function attachStateHandlers(){\n"
             "      for(const sel of ['vendor','mode','config','config_ftg','inspect','old','new','findq','pkt_src','pkt_dst','include_any','fuzzy']){const el=document.getElementById(sel); if(el){el.addEventListener('change',saveState); el.addEventListener('input',saveState);}} const ps=document.querySelector('select[name=\'proto\']'); if(ps){ps.addEventListener('change',saveState);} const dp=document.querySelector('input[name=\'dport\']'); if(dp){dp.addEventListener('input',saveState);}\n"
             "    }\n"
-            "    function addToHistory(){try{const h=JSON.parse(localStorage.getItem('acl_history')||'[]'); const st=JSON.parse(localStorage.getItem('acl_state')||'{}'); h.unshift({t:Date.now(),st}); localStorage.setItem('acl_history', JSON.stringify(h.slice(0,50)));}catch(e){}}\n"
+            "    function addToHistory(){try{saveState(); const h=JSON.parse(localStorage.getItem('acl_history')||'[]'); const st=JSON.parse(localStorage.getItem('acl_state')||'{}'); h.unshift({t:Date.now(),st}); localStorage.setItem('acl_history', JSON.stringify(h.slice(0,50))); renderHistory();}catch(e){}}\n"
             "    function renderHistory(){try{const h=JSON.parse(localStorage.getItem('acl_history')||'[]'); const el=document.getElementById('history'); if(!el) return; el.style.display = h.length? 'block':'none'; el.innerHTML='<h3>History</h3>' + h.map(x=>{const s=x.st||{}; return `<div class=\'h-item\'><div>${new Date(x.t).toLocaleString()}</div><div>${s.mode||''} ${s.inspect||s.old||''}${s.new?(' -> '+s.new):''}</div></div>`}).join('');}catch(e){} }\n"
             "    document.addEventListener('DOMContentLoaded', ()=>{const f=document.querySelector('form.form'); if(f){f.addEventListener('submit', addToHistory);}});\n"
             "    async function refreshMeta(){\n"
@@ -388,10 +397,10 @@ class WebHandler(BaseHTTPRequestHandler):
             "      if(!config){return;}\n"
             "      try{const r=await fetch(`/api/meta?vendor=${vendor}&config=${encodeURIComponent(config)}`); if(r.ok){const j=await r.json(); el.textContent = `OS: ${j.os||vendor.toUpperCase()}  Version: ${j.version||'unknown'}`;}}catch(e){}\n"
             "    }\n"
-            "    document.getElementById('themeToggle').addEventListener('change', (e)=>{localStorage.setItem(THEME_KEY, e.target.checked?'light':'dark'); applyTheme();});\n"
-            "    document.getElementById('hlToggle').addEventListener('change', (e)=>{localStorage.setItem('acl_highlight', e.target.checked?'on':'off'); highlightAll(e.target.checked);});\n"
-            "    document.getElementById('histToggle').addEventListener('click', ()=>{const el=document.getElementById('history'); if(!el) return; el.style.display = (el.style.display==='none'||!el.style.display)?'block':'none';});\n"
-            "    applyTheme(); toggleVendor(); loadState(); toggleMode(); attachTypeahead(); attachStateHandlers(); refreshMeta(); highlightAll((localStorage.getItem(HL_KEY)||'on')==='on'); document.getElementById('hlToggle').checked = (localStorage.getItem(HL_KEY)||'on')==='on'; renderHistory();\n"
+            "    const themeToggle=document.getElementById('themeToggle'); if(themeToggle){themeToggle.addEventListener('change', (e)=>{const mode=e.target.checked?'light':'dark'; localStorage.setItem(THEME_KEY, mode); applyTheme();});}\n"
+            "    const hlToggle=document.getElementById('hlToggle'); if(hlToggle){hlToggle.addEventListener('change', (e)=>{const on=e.target.checked?'on':'off'; localStorage.setItem(HL_KEY, on); highlightAll(on==='on');});}\n"
+            "    const histToggle=document.getElementById('histToggle'); if(histToggle){histToggle.addEventListener('click', ()=>{const el=document.getElementById('history'); if(!el) return; el.style.display = (el.style.display==='none'||!el.style.display)?'block':'none';});}\n"
+            "    applyTheme(); loadState(); toggleVendor(); toggleMode(); attachTypeahead(); attachStateHandlers(); refreshMeta(); const hlOn=(localStorage.getItem(HL_KEY)||'on')==='on'; highlightAll(hlOn); if(hlToggle){hlToggle.checked = hlOn;} renderHistory(); saveState();\n"
             "  </script>\n"
             "</body></html>\n"
         )
@@ -456,6 +465,8 @@ class WebHandler(BaseHTTPRequestHandler):
 """
 
     def _render_find(self, target: str, results: list) -> str:
+        if not target:
+            return "<div class='results'><div class='section'><h3>Find Host</h3><p>No target provided.</p></div></div>"
         if not results:
             return f"<div class='results'><div class='section'><h3>Find Host</h3><p>No matches for {target}.</p></div></div>"
         items = []
@@ -471,6 +482,63 @@ class WebHandler(BaseHTTPRequestHandler):
                 parts.append("text match")
             items.append(f"  {r['file']} -> {('; '.join(parts) or 'match')}")
         return "<div class='results'><div class='section'><h3>Find Host Results</h3><pre>" + "\n".join(items) + "</pre></div></div>"
+
+    def _find_host(self, vendor: str, target: str) -> List[dict]:
+        vendor = (vendor or 'asa').lower()
+        query = (target or '').strip()
+        if not query:
+            return []
+        cfg_dir = self.server.config_dirs.get(vendor)
+        if not cfg_dir:
+            return []
+        candidates: List[Tuple[str, str]] = []
+        try:
+            for name in sorted(os.listdir(cfg_dir)):
+                if name.startswith('.'):
+                    continue
+                path = os.path.join(cfg_dir, name)
+                if os.path.isfile(path):
+                    candidates.append((name, path))
+        except Exception:
+            return []
+        results: List[dict] = []
+        for name, path in candidates:
+            try:
+                with open(path, 'r') as f:
+                    text = f.read()
+            except Exception:
+                continue
+            if vendor == 'asa':
+                try:
+                    cfg = asa_parser.ASAConfig(text)
+                except Exception:
+                    continue
+                objects: Set[str] = set()
+                literals: Set[str] = set()
+                if query in cfg.network_objects:
+                    objects.add(query)
+                    for net in cfg.network_objects[query]:
+                        literals.add(str(net))
+                try:
+                    nets = cfg.resolve_network(query)
+                except Exception:
+                    nets = set()
+                for net in nets:
+                    for obj in cfg.ip_to_objects.get(net, set()):
+                        objects.add(obj)
+                        literals.add(str(net))
+                text_hit = query in text
+                if objects or literals or text_hit:
+                    results.append({
+                        'file': name,
+                        'objects': sorted(objects),
+                        'literals': sorted(literals),
+                        'text_hit': text_hit,
+                    })
+            else:
+                if query and query in text:
+                    results.append({'file': name, 'objects': [], 'literals': [], 'text_hit': True})
+        return results
 
     def _render_packet(self, cfg_file: str, pkt: dict) -> str:
         status = 'ALLOWED' if pkt.get('allowed') else 'BLOCKED'
@@ -774,8 +842,8 @@ class WebHandler(BaseHTTPRequestHandler):
     def _css(self) -> str:
         return (
             ":root{--bg:#0e1116;--muted:#1a1f29;--text:#e6edf3;--sub:#9da7b3;--accent:#7aa2f7;--border:#2b3240;}\n"
-            ".theme-light{--bg:#ffffff;--muted:#f6f8fa;--text:#24292f;--sub:#57606a;--accent:#0969da;--border:#d0d7de;}\n"
-            "body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,'Helvetica Neue',sans-serif;margin:0;}\n"
+            ":root[data-theme='light']{--bg:#ffffff;--muted:#f6f8fa;--text:#24292f;--sub:#57606a;--accent:#0969da;--border:#d0d7de;}\n"
+            "body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,'Helvetica Neue',sans-serif;margin:0;transition:background 0.2s ease,color 0.2s ease;}\n"
             ".app{max-width:1200px;margin:0 auto;padding:16px;}\n"
             ".toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}\n"
             "h2{margin:0;}\n"
