@@ -16,6 +16,7 @@ help:
 	@echo "  container-logs  - show logs of the web UI container"
 	@echo "  container-stop  - stop the web UI container"
 	@echo "  container-clean - stop and remove the web UI container"
+	@echo "  index     - index a repo root into cache (set ROOT=/path CACHE=./cache)"
 	@echo "  build     - compile key Python modules"
 	@echo "  clean     - remove __pycache__/ and .pyc_cache"
 
@@ -81,3 +82,7 @@ build:
 clean:
 	rm -rf __pycache__ */__pycache__ .pyc_cache
 
+index:
+	@if [ -z "$(ROOT)" ]; then echo "Usage: make index ROOT=/path/to/repo CACHE=./cache"; exit 1; fi
+	@mkdir -p $(CACHE)
+	python3 scripts/index_repo.py --root $(ROOT) --cache-dir $(CACHE)

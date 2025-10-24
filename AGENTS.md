@@ -26,6 +26,7 @@ New features in this iteration
 ------------------------------
 - Duplicate object detection: For a given target, report other network-objects that resolve to the same IP/network
 - Robust tokenization for ACL parsing: consume service object(-group) names appearing in protocol position to prevent token bleed into src/dst parsing
+ - Web UI: predictive search (prefix) via JSON API; UI structured with CSS classes and default dark mode with a switch; duplicates shown in a dedicated box; optional disk cache for indices
 
 Quality and linting
 -------------------
@@ -46,6 +47,32 @@ Future abstractions and goals
 - Vendor abstraction: introduce a pluggable parser layer to support FortiGate (with VDOMs) and others
 - Cross-vendor diff: normalize flattened entries to a common model for comparison
 - Port-aware matching and richer rule reporting (service/ports) [in progress: basic filtering via --proto/--dport]
+ - Fuzzy predictive search (UI toggle) and a minimal repo indexer (`scripts/index_repo.py`) to prebuild indices for production repos (e.g., RANCID)
+
+Near-term roadmap (execution order)
+-----------------------------------
+- ASA NAT parsing and normalization
+  - Support object/auto NAT, manual NAT (sections 1/2/3), dynamic/static PAT, and policy NAT.
+  - Establish matching order and rule precedence; add unit tests with sample snippets.
+- Interface and ACL mapping (ASA)
+  - Bind ACLs to interfaces/direction; capture global policy placement when possible.
+- Path check prototype (ASA only to start)
+  - CLI tool and web tab to evaluate a 5‑tuple across one device, applying NAT and ACL checks stepwise.
+- Repository indexing improvements
+  - Enhance vendor detection; add a cache manifest and `/api/index/status` endpoint for visibility.
+- FortiGate next
+  - Parse policy/NAT basics and annotate FortiOS version differences.
+
+Intermediate Representation (IR)
+--------------------------------
+- Create a versioned IR module (e.g., `parsers/model.py`) with dataclasses for: `Device`, `Interface`, `Object`, `Group`, `ServiceGroup`, `ACL`, `NAT`, and `Route`.
+- Vendors parse into the IR; CLI/UI consume IR only. Keep it JSON-friendly and stable.
+- Guard IR evolution with unit tests to pin the schema shape and avoid regressions.
+
+Optional syntax highlighting (web UI)
+------------------------------------
+- If vendoring a highlighter (Prism.js or highlight.js, MIT/BSD), copy the license into a new `LICENSE.md` under a "Third‑party" section.
+- Keep highlighting off by default with a UI toggle; ship static assets to avoid runtime network fetches.
 
 Docker notes
 ------------
@@ -63,6 +90,8 @@ Docker notes
     cd Dockersetup && podman-compose -p aclinspector up --build -d
     ```
     Access the web UI at `http://localhost:8083`.
+  - Optional persistent cache volume for predictive index: see `Dockersetup/podman-compose.yaml` and set `ACLINSPECTOR_CACHE_DIR=/app/cache` (default) and `ACLINSPECTOR_SEARCH_LIMIT`.
+  - `.env` is optional. Compose will read `Dockersetup/.env` if present for variable expansion (e.g., `ACLINSPECTOR_SEARCH_LIMIT=100`); absence will not cause failures.
 
 Config directories
 ------------------

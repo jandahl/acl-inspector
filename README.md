@@ -84,6 +84,70 @@ Web UI
   - `--configs-cisco /path/to/asa/configs`
   - `--configs-fortigate /path/to/fortigate/configs`
 
+- Predictive search and metadata:
+  - The UI offers prefix-based suggestions for target inputs (objects, groups, literals) using a JSON API.
+  - Endpoints (internal):
+    - `/api/objects?vendor=asa&os=ASA&version=auto&config=<file>&q=<prefix>&limit=50`
+    - `/api/meta?vendor=asa&config=<file>`
+    - `/api/aliases?vendor=asa&config=<file>&target=<name|ip|cidr>`
+  - Default suggestion limit: 50 (override with `--search-limit` or env `ACLINSPECTOR_SEARCH_LIMIT`).
+  - Search modes: checkbox in the UI toggles fuzzy search (default on). When enabled, matching uses case-insensitive subsequence scoring so e.g. `SQL` matches `Sidzvsql05`.
+
+- Dark mode and CSS:
+  - Dark mode is default; use the switch in the toolbar to toggle.
+  - The markup uses CSS classes (e.g., `.section`, `.diff`, `.diff-raw`, `.diff-flattened`, `.diff-added`, `.diff-removed`, `.diff-aliases-*`) so layout can be refined via CSS.
+
+- Optional disk cache for predictive index:
+  - Enable with `--cache-dir /app/cache` or set env `ACLINSPECTOR_CACHE_DIR=/app/cache`.
+  - Cache is invalidated when the source config file is newer (mtime/size check).
+  - Compose uses environment variable expansion; `.env` is optional. If you create `Dockersetup/.env`, values like `ACLINSPECTOR_SEARCH_LIMIT=100` will be picked up automatically by compose. No failure occurs if `.env` is missing.
+
+Repo indexing (pre-warm cache)
+------------------------------
+- A minimal indexer is provided to scan a repository of configs and prebuild indices compatible with the web UI cache.
+- Usage:
+  - `python3 scripts/index_repo.py --root /path/to/rancid/checkout --cache-dir ./cache`
+  - Or via make: `make index ROOT=/path/to/rancid/checkout CACHE=./cache`
+- This currently detects ASA (and placeholders for FortiGate) and indexes network objects/groups/literals for predictive search. It writes a `manifest.json` alongside the cache entries.
+
+Next steps (roadmap)
+--------------------
+- ASA NAT parsing and normalization (priority)
+  - Parse object/auto NAT and manual NAT (sections 1/2/3), dynamic/static PAT, and policy NAT; codify rule order.
+  - Add unit tests covering representative NAT variants and precedence.
+- Interface and ACL context mapping (ASA)
+  - Associate ACLs to interfaces/direction; capture global policy where feasible.
+  - Extend flattened entries with interface context for path evaluation.
+- Path check prototype (ASA first)
+  - CLI `acl-path --src IP --dst IP --proto tcp --dport 443 --config file` for single‑device evaluation.
+  - Web: add a new “Path” tab; return a hop‑by‑hop explanation JSON and a concise verdict.
+- Repository indexing enhancements
+  - Improve vendor detection; expose `/api/index/status` to summarize cache coverage and staleness.
+- FortiGate follow‑up
+  - Parse policy/NAT basics and record FortiOS version metadata; document syntax differences across 7.2/7.4/7.6.
+
+Intermediate Representation (IR)
+--------------------------------
+To support multi-vendor parsing and future transforms ("LLVM style"), we will normalize configs into a stable IR that the CLI/UI consume. Initial scope (ASA):
+- Device: id, vendor, os, version
+- Interfaces: name, ipv4/ipv6, security-level
+- Objects: network objects, network object-groups (resolved and referenced), service object-groups
+- ACL entries (flattened): action, proto/service, src/dst endpoint sets, interface context (once mapped)
+- NAT rules: type (auto/object/manual), section, original/translated 5‑tuple selectors, order
+- Routes (basic): static routes with next-hop
+
+IR goals:
+- JSON-serializable; versioned schema; minimal surface required by the app
+- Reusable across vendors; FortiGate parser will target the same IR
+- Backwards-compatible evolution (additive fields) with tests guarding schema
+
+Optional syntax highlighting (planning)
+--------------------------------------
+For the web UI, we can optionally highlight ASA/FortiOS snippets under permissive licenses:
+- Option A: Vendor a small Prism.js/highlight.js build (MIT/BSD) with JunOS/CLI grammars; include license excerpts in LICENSE.md.
+- Option B: Lightweight server-side regex-based highlighter for key ASA tokens with no external deps.
+This will be behind a UI toggle and kept optional to avoid forcing any dependency.
+
 Virtual environment
 -------------------
 - Create and activate a venv:
