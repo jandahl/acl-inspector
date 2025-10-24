@@ -145,6 +145,18 @@ Optional syntax highlighting (planning)
 --------------------------------------
 For the web UI, output highlighting is optional and controlled by a toggle (state is remembered in the browser). Current implementation uses a lightweight regex-based highlighter for ASA tokens with no external deps. If we later vendor a library (Prism.js or highlight.js, MIT/BSD), we’ll include their license text in LICENSE.md and keep assets local (no network).
 
+ASA parsing coverage (current subset)
+-------------------------------------
+- Interfaces: `interface`, `nameif`, `ip address`, `security-level`
+- ACLs: `access-list ... extended`, plus `access-group <ACL> in interface <IF>` bindings
+- Objects: `object network`, `object-group network`, nested members
+- Services: basic `object-group service` with `service-object` tokens
+- NAT (initial subset):
+  - Auto/Object NAT inside `object network NAME`: `nat (SRC_IF,DST_IF) static|dynamic <target|interface>`
+  - Manual NAT (before-auto/after-auto detection): `nat (SRC_IF,DST_IF) source static|dynamic A B [destination static|dynamic C D]`, dynamic PAT to `interface`
+
+These fields enable building a normalized IR next and support early, single-device path evaluations.
+
 Virtual environment
 -------------------
 - Create and activate a venv:

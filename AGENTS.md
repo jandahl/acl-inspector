@@ -74,6 +74,14 @@ Optional syntax highlighting (web UI)
 - If vendoring a highlighter (Prism.js or highlight.js, MIT/BSD), copy the license into a new `LICENSE.md` under a "Third‑party" section.
 - Keep highlighting off by default with a UI toggle; ship static assets to avoid runtime network fetches.
 
+ASA parsing (current subset)
+----------------------------
+- Interfaces: `interface`, `nameif`, `ip address`, `security-level`
+- ACLs and bindings: `access-list ... extended`, `access-group <ACL> in interface <IF>`
+- Object network and object-group network
+- Service object-groups (basic forms)
+- NAT (subset): object (auto) NAT in `object network`, and common manual NAT `nat (IF,IF) source ... [destination ...]` and dynamic PAT to `interface`.
+
 Docker notes
 ------------
 - Containerization plan:

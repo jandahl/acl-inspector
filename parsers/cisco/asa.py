@@ -65,6 +65,10 @@ class ASAConfig:
         self.network_objects: Dict[str, Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]]] = {}
         self.network_object_groups: Dict[str, List[Union[dict, ipaddress.IPv4Address, ipaddress.IPv4Network]]] = {}
         self.acls: Dict[str, List[str]] = defaultdict(list)
+        # Interfaces, ACL bindings, and NAT rules (initial subset)
+        self.interfaces: Dict[str, dict] = {}
+        self.acl_bindings: Dict[str, str] = {}
+        self.nat_rules: List[dict] = []
         self.parse()
         self._build_reverse_indexes()
 
@@ -165,6 +169,40 @@ class ASAConfig:
         L = len(self.lines)
         while i < L:
             line = self.lines[i]
+            # Interfaces
+            if line.startswith('interface '):
+                phys = line.split(None, 1)[1].strip()
+                nameif = None
+                ipv4 = None
+                sec = None
+                i += 1
+                while i < L and self.lines[i].startswith(' '):
+                    ln = self.lines[i].strip()
+                    if ln.lower().startswith('nameif '):
+                        nameif = ln.split(None, 1)[1].strip()
+                    elif ln.lower().startswith('ip address '):
+                        parts = ln.split()
+                        if len(parts) >= 3:
+                            try:
+                                ipv4 = to_ip_network(parts[2], parts[3]) if len(parts) >= 4 else to_ip_network(parts[2])
+                            except Exception:
+                                pass
+                    elif ln.lower().startswith('security-level '):
+                        try:
+                            sec = int(ln.split()[-1])
+                        except Exception:
+                            pass
+                    i += 1
+                key = nameif or phys
+                self.interfaces[key] = {'phys': phys, 'nameif': nameif, 'ipv4': ipv4, 'security_level': sec}
+                continue
+
+            # ACL to interface binding
+            m_ag = re.match(r"^access-group\s+(?P<acl>\S+)\s+in\s+interface\s+(?P<intf>\S+)", line, re.IGNORECASE)
+            if m_ag:
+                self.acl_bindings[m_ag.group('acl')] = m_ag.group('intf')
+                i += 1
+                continue
             m = re_object.match(line)
             if m:
                 name = m.group('name')
@@ -178,6 +216,24 @@ class ASAConfig:
                         lm2 = re_object_network_subnet.match(self.lines[i])
                         if lm2:
                             nets.add(to_ip_network(lm2.group('ip'), lm2.group('mask')))
+                        else:
+                            # Auto NAT (object NAT) inside object network block
+                            mnat = re.match(r"^\s*nat\s*\((?P<src_if>[^,]+),(?P<dst_if>[^\)]+)\)\s+(?P<rest>.+)$", self.lines[i], re.IGNORECASE)
+                            if mnat:
+                                src_if = mnat.group('src_if').strip()
+                                dst_if = mnat.group('dst_if').strip()
+                                rest = mnat.group('rest').strip()
+                                mm = re.match(r"^(?P<kind>static|dynamic)\s+(?P<target>\S+)", rest, re.IGNORECASE)
+                                kind = mm.group('kind').lower() if mm else None
+                                target = mm.group('target') if mm else None
+                                self.nat_rules.append({
+                                    'type': 'auto', 'section': 2,
+                                    'src_if': src_if, 'dst_if': dst_if,
+                                    'real_object': name,
+                                    'kind': kind,
+                                    'mapped': target,
+                                    'raw': self.lines[i].strip(),
+                                })
                     i += 1
                 self.network_objects[name] = nets
                 continue
@@ -236,6 +292,42 @@ class ASAConfig:
                 self.acls[macl.group('name')].append(line)
                 i += 1
                 continue
+            # Manual NAT (common forms)
+            mnat2 = re.match(r"^nat\s*\((?P<src_if>[^,]+),(?P<dst_if>[^\)]+)\)\s*(?P<section>(?:after-auto|before-auto)\s+)?(?P<rest>.+)$", line, re.IGNORECASE)
+            if mnat2:
+                src_if = mnat2.group('src_if').strip()
+                dst_if = mnat2.group('dst_if').strip()
+                section_tag = (mnat2.group('section') or '').strip().lower()
+                section = 3 if section_tag == 'after-auto' else 1
+                rest = mnat2.group('rest').strip()
+                msrc = re.match(r"^source\s+(static|dynamic)\s+(\S+)\s+(\S+)(?:\s+destination\s+(static|dynamic)\s+(\S+)\s+(\S+))?", rest, re.IGNORECASE)
+                if msrc:
+                    s_kind = msrc.group(1).lower()
+                    s_real = msrc.group(2)
+                    s_map = msrc.group(3)
+                    d_kind = (msrc.group(4) or '').lower() if msrc.group(4) else None
+                    d_real = msrc.group(5) if msrc.group(5) else None
+                    d_map = msrc.group(6) if msrc.group(6) else None
+                    self.nat_rules.append({
+                        'type': 'manual', 'section': section,
+                        'src_if': src_if, 'dst_if': dst_if,
+                        'source': {'kind': s_kind, 'real': s_real, 'mapped': s_map},
+                        'destination': ({'kind': d_kind, 'real': d_real, 'mapped': d_map} if d_kind else None),
+                        'raw': line.strip(),
+                    })
+                    i += 1
+                    continue
+                mdyn = re.match(r"^(?:source\s+)?dynamic\s+(\S+)\s+interface", rest, re.IGNORECASE)
+                if mdyn:
+                    self.nat_rules.append({
+                        'type': 'manual', 'section': section,
+                        'src_if': src_if, 'dst_if': dst_if,
+                        'source': {'kind': 'dynamic', 'real': mdyn.group(1), 'mapped': 'interface'},
+                        'destination': None,
+                        'raw': line.strip(),
+                    })
+                    i += 1
+                    continue
             i += 1
 
     def _build_reverse_indexes(self) -> None:
@@ -479,4 +571,3 @@ def inspect_host(cfg_text: str, target: str, service_filter: Optional[dict] = No
     hits = evaluate_acl(entries, target_nets, cfg, service_filter=service_filter)
     aliases = cfg.find_alias_objects(target, target_nets)
     return {'hits': hits, 'target_nets': target_nets, 'aliases': aliases}
-
