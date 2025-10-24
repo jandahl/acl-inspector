@@ -136,6 +136,7 @@ def main() -> None:
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--old', help='Old IP, network (CIDR), or object name for comparison')
     group.add_argument('--inspect', help='IP, network (CIDR), or object name for inspection')
+    group.add_argument('--find-host', dest='find_host', help='Find an object/IP across configs (set --config to a file or a directory)')
     parser.add_argument('--new', help='New IP, network (CIDR), or object name for comparison')
     parser.add_argument('--proto', choices=['ip', 'tcp', 'udp', 'icmp'], help='Filter by protocol for matching (optional)')
     parser.add_argument('--dport', type=int, action='append', help='Filter by destination port (repeatable, optional)')
@@ -144,6 +145,7 @@ def main() -> None:
     parser.add_argument('--vdom', help='FortiGate VDOM name (when --vendor fortigate)')
     parser.add_argument('--format', choices=['text', 'json', 'xml'], default='text', help='Output format (default: text)')
     parser.add_argument('--no-color', action='store_true', help='Disable ANSI colors for text output')
+    parser.add_argument('--include-any', action='store_true', help="Include rules with 'any' endpoints (default: ignore such rules)")
 
     args = parser.parse_args()
 
@@ -158,6 +160,58 @@ def main() -> None:
 
     if not args.config:
         parser.error('--config is required')
+    # Special mode: find-host
+    if args.find_host:
+        path = args.config
+        import os
+        files = []
+        if os.path.isdir(path):
+            for fname in sorted(os.listdir(path)):
+                fpath = os.path.join(path, fname)
+                if os.path.isfile(fpath):
+                    files.append(fpath)
+        else:
+            files = [path]
+        results = []
+        for fpath in files:
+            try:
+                with open(fpath, 'r') as f:
+                    text = f.read()
+                if args.vendor == 'asa':
+                    cfg = cisco_asa.ASAConfig(text)
+                    objects = []
+                    literals = []
+                    q = args.find_host
+                    if q in cfg.network_objects:
+                        objects.append(q)
+                        literals.extend([str(n) for n in cfg.network_objects[q]])
+                    try:
+                        nets = cfg.resolve_network(q)
+                        for n in nets:
+                            for name in cfg.ip_to_objects.get(n, set()):
+                                objects.append(name)
+                                literals.append(str(n))
+                    except Exception:
+                        pass
+                    hit = bool(objects or literals or (q in text))
+                    if hit:
+                        results.append({'file': os.path.basename(fpath), 'objects': sorted(set(objects)), 'literals': sorted(set(literals))})
+                # FortiGate: placeholder for future VDOM-aware search
+            except Exception:
+                continue
+        if args.format == 'json':
+            print(json.dumps({'query': args.find_host, 'results': results}, indent=2))
+        else:
+            print(f"Find host: {args.find_host}")
+            for r in results:
+                parts = []
+                if r['objects']:
+                    parts.append('objects: ' + ', '.join(r['objects']))
+                if r['literals']:
+                    parts.append('literals: ' + ', '.join(r['literals']))
+                print(f"  {r['file']} -> {'; '.join(parts) if parts else 'match'}")
+        return
+
     if not (args.old or args.inspect):
         parser.error('either --old (with --new) or --inspect is required')
     if args.old and not args.new:
@@ -182,7 +236,7 @@ def main() -> None:
 
     if args.vendor == 'asa':
         if args.inspect:
-            report = cisco_asa.inspect_host(cfg_text, args.inspect, service_filter=svc_filter)
+            report = cisco_asa.inspect_host(cfg_text, args.inspect, service_filter=svc_filter, include_any=args.include_any)
             if args.format == 'json':
                 print(json.dumps(_serialize_report(report), indent=2))
                 return
@@ -201,7 +255,7 @@ def main() -> None:
                 for addr, names in sorted(report['aliases'].items(), key=lambda x: str(x[0])):
                     print(f"  {addr}: {', '.join(sorted(names))}")
         else:
-            diff = cisco_asa.compare_old_new(cfg_text, args.old, args.new, service_filter=svc_filter)
+            diff = cisco_asa.compare_old_new(cfg_text, args.old, args.new, service_filter=svc_filter, include_any=args.include_any)
             if args.format == 'json':
                 print(json.dumps(_serialize_diff(diff), indent=2))
                 return

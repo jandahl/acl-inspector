@@ -31,6 +31,12 @@ import socket
 from collections import defaultdict
 from typing import Dict, List, Optional, Set, Tuple, Union
 
+# IR model for cross-vendor mapping
+try:
+    from parsers import model as ir
+except Exception:
+    ir = None  # type: ignore
+
 
 # ------------------- Regex and tokenization helpers -------------------
 
@@ -71,6 +77,145 @@ class ASAConfig:
         self.nat_rules: List[dict] = []
         self.parse()
         self._build_reverse_indexes()
+
+    # ------------------- IR export -------------------
+    def to_ir(self, device_name: Optional[str] = None) -> "ir.Device":
+        """Map the parsed ASA config to the common IR.Device shape.
+
+        This preserves both raw and normalized views of ACLs, includes basic
+        interface context, network objects and groups, service groups, and NAT
+        rules parsed by this module. Routes are not parsed yet.
+        """
+        if ir is None:
+            raise RuntimeError("IR module not available")
+        # Version detection best-effort from banner lines
+        version = 'unknown'
+        for ln in self.lines:
+            m = re.search(r"ASA\s+Version\s+([^\s]+)", ln, flags=re.IGNORECASE)
+            if m:
+                version = m.group(1)
+                break
+            m2 = re.search(r"Adaptive Security Appliance Software\s+Version\s+([^\s]+)", ln, flags=re.IGNORECASE)
+            if m2:
+                version = m2.group(1)
+                break
+        # Interfaces
+        interfaces: List[ir.Interface] = []
+        for name, meta in self.interfaces.items():
+            ipv4 = meta.get('ipv4')
+            interfaces.append(ir.Interface(
+                name=name,
+                physical=meta.get('phys'),
+                ipv4=str(ipv4) if ipv4 else None,
+                security_level=meta.get('security_level'),
+            ))
+        # Objects
+        objects: List[ir.Object] = []
+        for name, nets in self.network_objects.items():
+            literals = []
+            for n in nets:
+                try:
+                    literals.append(str(n))
+                except Exception:
+                    pass
+            objects.append(ir.Object(name=name, literals=sorted(literals)))
+        # Groups (network)
+        groups: List[ir.Group] = []
+        for name, members in self.network_object_groups.items():
+            mlist: List[ir.GroupMember] = []
+            for m in members:
+                if isinstance(m, dict):
+                    if 'group-object' in m:
+                        mlist.append(ir.GroupMember(kind='group', ref=m['group-object']))
+                    elif 'object' in m:
+                        mlist.append(ir.GroupMember(kind='object', ref=m['object']))
+                else:
+                    mlist.append(ir.GroupMember(kind='literal', literal=str(m)))
+            groups.append(ir.Group(name=name, members=mlist))
+        # Service groups
+        svc_groups: List[ir.ServiceGroup] = []
+        if hasattr(self, 'service_object_groups'):
+            for name, members in getattr(self, 'service_object_groups').items():
+                out: List[dict] = []
+                for m in members:
+                    if isinstance(m, dict) and 'group-object' in m:
+                        out.append({'group': m['group-object']})
+                    elif isinstance(m, dict) and 'object' in m:
+                        out.append({'object': m['object']})
+                    elif isinstance(m, dict) and 'proto' in m:
+                        spec = {'proto': m.get('proto')}
+                        if m.get('op'):
+                            spec.update({'op': m.get('op'), 'v1': m.get('v1'), 'v2': m.get('v2')})
+                        out.append(spec)
+                svc_groups.append(ir.ServiceGroup(name=name, members=out))
+        # ACLs and entries (flattened)
+        flattened = self.flatten_acl()
+        acl_map: Dict[str, List[ir.ACLEntry]] = {}
+        for e in flattened:
+            src = sorted([str(s) for s in e.get('src', [])])
+            dst = sorted([str(d) for d in e.get('dst', [])])
+            svc = e.get('svc') or {}
+            # normalize sets to lists for IR
+            svc_norm = {
+                'proto': svc.get('proto'),
+                'service_group_at_proto': svc.get('service_group_at_proto'),
+                'dst_ports': [
+                    {'op': op, 'start': rng[0], 'end': rng[1]}
+                    for (op, rng) in svc.get('dst_ports', [])
+                ],
+                'dst_service_groups': sorted(list(svc.get('dst_service_groups') or [])),
+                'dst_service_objects': sorted(list(svc.get('dst_service_objects') or [])),
+            }
+            acl_name = e.get('acl')
+            bound_to = self.acl_bindings.get(acl_name) if acl_name else None
+            entry = ir.ACLEntry(
+                action=e.get('action'),
+                proto=e.get('proto'),
+                src=src,
+                dst=dst,
+                svc=svc_norm,
+                raw=e.get('raw'),
+                acl=acl_name,
+                bound_to=bound_to,
+            )
+            acl_map.setdefault(acl_name or 'UNNAMED', []).append(entry)
+        ir_acls: List[ir.ACL] = []
+        for name, entries in acl_map.items():
+            ir_acls.append(ir.ACL(name=name, bound_to=self.acl_bindings.get(name), entries=entries))
+        # NAT rules
+        ir_nats: List[ir.NAT] = []
+        for r in self.nat_rules:
+            kind = r.get('type') or 'manual'
+            detail: Dict[str, Union[str, int, dict, None]] = {}
+            if r.get('type') == 'auto':
+                detail = {
+                    'real_object': r.get('real_object'),
+                    'kind': r.get('kind'),
+                    'mapped': r.get('mapped'),
+                }
+            else:
+                detail = {
+                    'source': r.get('source'),
+                    'destination': r.get('destination'),
+                }
+            ir_nats.append(ir.NAT(
+                kind=kind,
+                src_if=r.get('src_if'),
+                dst_if=r.get('dst_if'),
+                section=r.get('section'),
+                detail=detail, raw=r.get('raw')
+            ))
+        dev = ir.Device(
+            vendor='asa', os='ASA', version=version, name=device_name or None,
+            interfaces=interfaces,
+            objects=objects,
+            groups=groups,
+            service_groups=svc_groups,
+            acls=ir_acls,
+            nats=ir_nats,
+            routes=[],
+        )
+        return dev
 
     def _consume_endpoint(self, tokens: List[str]) -> Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]]:
         nets: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]] = set()
@@ -534,9 +679,26 @@ def _service_matches(cfg: ASAConfig, entry: dict, svc_filter: Optional[dict]) ->
     return False
 
 
-def evaluate_acl(entries: List[dict], target_nets: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network, str]], cfg: Optional[ASAConfig] = None, service_filter: Optional[dict] = None) -> List[dict]:
+def _has_any_endpoint(e: dict) -> bool:
+    any4 = ipaddress.ip_network('0.0.0.0/0')
+    try:
+        any6 = ipaddress.ip_network('::/0')
+    except Exception:
+        any6 = None
+    for side in ('src', 'dst'):
+        for n in e.get(side, set()):
+            if isinstance(n, ipaddress.IPv4Network) and n == any4:
+                return True
+            if any6 is not None and isinstance(n, type(any6)) and n == any6:  # type: ignore
+                return True
+    return False
+
+
+def evaluate_acl(entries: List[dict], target_nets: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network, str]], cfg: Optional[ASAConfig] = None, service_filter: Optional[dict] = None, ignore_any: bool = True) -> List[dict]:
     affected: List[dict] = []
     for e in entries:
+        if ignore_any and _has_any_endpoint(e):
+            continue
         if nets_overlap(e['src'], target_nets) or nets_overlap(e['dst'], target_nets):
             if service_filter:
                 if cfg is None:
@@ -547,13 +709,13 @@ def evaluate_acl(entries: List[dict], target_nets: Set[Union[ipaddress.IPv4Addre
     return affected
 
 
-def compare_old_new(cfg_text: str, old_target: str, new_target: str, service_filter: Optional[dict] = None) -> dict:
+def compare_old_new(cfg_text: str, old_target: str, new_target: str, service_filter: Optional[dict] = None, include_any: bool = False) -> dict:
     cfg = ASAConfig(cfg_text)
     old_nets = cfg.resolve_network(old_target)
     new_nets = cfg.resolve_network(new_target)
     entries = cfg.flatten_acl()
-    old_hits = evaluate_acl(entries, old_nets, cfg, service_filter=service_filter)
-    new_hits = evaluate_acl(entries, new_nets, cfg, service_filter=service_filter)
+    old_hits = evaluate_acl(entries, old_nets, cfg, service_filter=service_filter, ignore_any=(not include_any))
+    new_hits = evaluate_acl(entries, new_nets, cfg, service_filter=service_filter, ignore_any=(not include_any))
     rule_id = lambda e: e['raw']
     old_ids = {rule_id(e) for e in old_hits}
     new_ids = {rule_id(e) for e in new_hits}
@@ -564,10 +726,10 @@ def compare_old_new(cfg_text: str, old_target: str, new_target: str, service_fil
     return {'old_hits': old_hits, 'new_hits': new_hits, 'added_to_new': added_to_new, 'removed_from_old': removed_from_old}
 
 
-def inspect_host(cfg_text: str, target: str, service_filter: Optional[dict] = None) -> dict:
+def inspect_host(cfg_text: str, target: str, service_filter: Optional[dict] = None, include_any: bool = False) -> dict:
     cfg = ASAConfig(cfg_text)
     target_nets = cfg.resolve_network(target)
     entries = cfg.flatten_acl()
-    hits = evaluate_acl(entries, target_nets, cfg, service_filter=service_filter)
+    hits = evaluate_acl(entries, target_nets, cfg, service_filter=service_filter, ignore_any=(not include_any))
     aliases = cfg.find_alias_objects(target, target_nets)
     return {'hits': hits, 'target_nets': target_nets, 'aliases': aliases}

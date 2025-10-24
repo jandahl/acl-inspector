@@ -75,6 +75,34 @@ def highlight_asa_for_tests(line: str) -> str:
     s = re.sub(r"\b(\d{2,5})\b", r"<span class='num'>\1</span>", s)
     return s
 
+def index_status_for_tests(cache_dir: Optional[str], index_cache: dict) -> dict:
+    """Return index status information for tests and API.
+
+    Structure:
+    - in_memory: entries count and up to 20 keys
+    - disk: enabled flag, path, files count, optional manifest content
+    """
+    # In-memory
+    mem_keys = sorted(list(index_cache.keys()))[:20]
+    mem = {'entries': len(index_cache), 'keys': mem_keys}
+    # Disk
+    disk = {'enabled': bool(cache_dir), 'path': cache_dir or '', 'files': 0, 'manifest': None}
+    if cache_dir:
+        try:
+            files = [f for f in os.listdir(cache_dir) if os.path.isfile(os.path.join(cache_dir, f)) and f.endswith('.json')]
+            disk['files'] = len(files)
+        except Exception:
+            disk['files'] = 0
+        # Optional manifest
+        try:
+            mf_path = os.path.join(cache_dir, 'manifest.json')
+            if os.path.isfile(mf_path):
+                with open(mf_path, 'r') as mf:
+                    disk['manifest'] = json.load(mf)
+        except Exception:
+            disk['manifest'] = None
+    return {'in_memory': mem, 'disk': disk}
+
 
 def list_files(dirpath: str):
     try:
@@ -93,6 +121,8 @@ class WebHandler(BaseHTTPRequestHandler):
             return self._api_meta(parsed.query)
         if parsed.path == '/api/aliases':
             return self._api_aliases(parsed.query)
+        if parsed.path == '/api/index/status':
+            return self._api_index_status(parsed.query)
         # UI
         self._html(self._form())
 
@@ -107,6 +137,7 @@ class WebHandler(BaseHTTPRequestHandler):
         mode = fields.get('mode', ['inspect'])[0]
         cfg_file = fields.get('config', [''])[0]
         proto = fields.get('proto', [''])[0]
+        include_any = bool(fields.get('include_any', []))
         dports = fields.get('dport', [])
         dports_clean = set()
         for dp in dports:
@@ -137,18 +168,52 @@ class WebHandler(BaseHTTPRequestHandler):
             try:
                 if mode == 'inspect':
                     target = fields.get('inspect', [''])[0]
-                    report = asa_parser.inspect_host(cfg_text, target, service_filter=svc_filter)
-                    body = self._render_report(target, report)
-                else:
+                    report = asa_parser.inspect_host(cfg_text, target, service_filter=svc_filter, include_any=include_any)
+                    # Enrich aliases to include the target object as well
+                    try:
+                        cfg = asa_parser.ASAConfig(cfg_text)
+                        nets = cfg.resolve_network(target)
+                        inclusive = {}
+                        for n in nets:
+                            names = cfg.ip_to_objects.get(n, set()) if hasattr(cfg, 'ip_to_objects') else set()
+                            if names:
+                                inclusive[n] = names
+                        report['aliases'] = inclusive
+                    except Exception:
+                        pass
+                    body = self._render_report(target, report, cfg_file)
+                elif mode == 'compare':
                     old = fields.get('old', [''])[0]
                     new = fields.get('new', [''])[0]
-                    diff = asa_parser.compare_old_new(cfg_text, old, new, service_filter=svc_filter)
-                    # Build alias boxes for old/new
+                    diff = asa_parser.compare_old_new(cfg_text, old, new, service_filter=svc_filter, include_any=include_any)
+                    # Build alias boxes for old/new (inclusive of target names)
                     cfg = asa_parser.ASAConfig(cfg_text)
-                    old_aliases = cfg.find_alias_objects(old, cfg.resolve_network(old)) if old else {}
-                    new_aliases = cfg.find_alias_objects(new, cfg.resolve_network(new)) if new else {}
-                    body = self._render_diff(old, new, diff, old_aliases=old_aliases, new_aliases=new_aliases)
-                self._html(body + self._form())
+                    def _incl(name):
+                        out = {}
+                        nets = cfg.resolve_network(name)
+                        for n in nets:
+                            names = cfg.ip_to_objects.get(n, set()) if hasattr(cfg, 'ip_to_objects') else set()
+                            if names:
+                                out[n] = names
+                        return out
+                    old_aliases = _incl(old) if old else {}
+                    new_aliases = _incl(new) if new else {}
+                    body = self._render_diff(old, new, diff, cfg_file, old_aliases=old_aliases, new_aliases=new_aliases)
+                elif mode == 'find':
+                    target = fields.get('findq', [''])[0]
+                    results = self._find_host(vendor, target)
+                    body = self._render_find(target, results)
+                elif mode == 'packet':
+                    src = fields.get('pkt_src', [''])[0]
+                    dst = fields.get('pkt_dst', [''])[0]
+                    dps = set()
+                    for dp in dports_clean:
+                        dps.add(dp)
+                    pkt = self._packet_check_asa(cfg_text, src, dst, proto or None, dps)
+                    body = self._render_packet(cfg_file, pkt)
+                else:
+                    body = "<p style='color:red'>Unsupported mode.</p>"
+                self._html(self._form() + body)
             except Exception as e:
                 self._html(f"<p style='color:red'>Error: {e}</p>" + self._form())
         else:
@@ -164,7 +229,7 @@ class WebHandler(BaseHTTPRequestHandler):
             "<html><head><meta charset='utf-8'><title>ACL Inspector</title><style>" + css + "</style></head>\n"
             "<body class='theme-dark'>\n"
             "  <div class='app'>\n"
-            "  <div class='toolbar'><h2>ACL Inspector</h2><div class='toolbar-controls'><label class='theme-switch'><input type='checkbox' id='themeToggle'/> Light mode</label> <label class='hl-switch'><input type='checkbox' id='hlToggle'/> Highlight output</label></div></div>\n"
+            "  <div class='toolbar'><h2>ACL Inspector</h2><div class='toolbar-controls'><label class='theme-switch'><input type='checkbox' id='themeToggle'/> Light mode</label> <label class='hl-switch'><input type='checkbox' id='hlToggle'/> Highlight output</label> <button type='button' id='histToggle'>History</button></div></div>\n"
             "  <form class='form' method='POST' action='/run'>\n"
             "    <fieldset class='section section-config'><legend>Config</legend>\n"
             "    <label>Vendor:</label>\n"
@@ -191,6 +256,8 @@ class WebHandler(BaseHTTPRequestHandler):
             "    <select name='mode' id='mode' onchange='toggleMode()'>\n"
             "      <option value='inspect' selected>Inspect</option>\n"
             "      <option value='compare'>Compare</option>\n"
+            "      <option value='find'>Find host</option>\n"
+            "      <option value='packet'>Packet check</option>\n"
             "    </select>\n"
             "    </fieldset>\n"
             "    <fieldset class='section section-targets'><legend>Targets</legend>\n"
@@ -205,6 +272,16 @@ class WebHandler(BaseHTTPRequestHandler):
             "      <input type='text' name='new' id='new' list='targets' autocomplete='off' placeholder='name|ip|cidr'/>\n"
             "    </div>\n"
             "    <datalist id='targets'></datalist>\n"
+            "    <div id='find_fields' style='display:none'>\n"
+            "      <label>Find host (object or IP):</label>\n"
+            "      <input type='text' name='findq' id='findq' autocomplete='off' placeholder='name|ip|cidr'/>\n"
+            "    </div>\n"
+            "    <div id='packet_fields' style='display:none'>\n"
+            "      <label>Source:</label>\n"
+            "      <input type='text' name='pkt_src' id='pkt_src' autocomplete='off' placeholder='name|ip|cidr'/>\n"
+            "      <label>Destination:</label>\n"
+            "      <input type='text' name='pkt_dst' id='pkt_dst' autocomplete='off' placeholder='name|ip|cidr'/>\n"
+            "    </div>\n"
             "    <div class='search-options'><label><input type='checkbox' id='fuzzy' checked/> Fuzzy search</label></div>\n"
             "    </fieldset>\n"
             "    <fieldset class='section section-service'><legend>Service Filter</legend>\n"
@@ -218,9 +295,11 @@ class WebHandler(BaseHTTPRequestHandler):
             "    </select>\n"
             "    <label>Destination ports (comma separated):</label>\n"
             "    <input type='text' name='dport' placeholder='443,1433'/>\n"
+            "    <label><input type='checkbox' name='include_any' id='include_any'/> Include rules with 'any' <span class='tip' title='By default, rules with any src/dst are skipped to reduce noise. Check to include them.'>?</span></label>\n"
             "    </fieldset>\n"
             "    <div class='actions'><button type='submit'>Run</button></div>\n"
             "  </form>\n"
+            "  <aside id='history' class='history' style='display:none'></aside>\n"
             "  </div>\n"
             "  <script>\n"
             "    const THEME_KEY='acl_theme';\n"
@@ -258,6 +337,8 @@ class WebHandler(BaseHTTPRequestHandler):
             "      var m = document.getElementById('mode').value;\n"
             "      document.getElementById('inspect_fields').style.display = (m==='inspect') ? 'block':'none';\n"
             "      document.getElementById('compare_fields').style.display = (m==='compare') ? 'block':'none';\n"
+            "      var ff=document.getElementById('find_fields'); if(ff) ff.style.display = (m==='find') ? 'block':'none';\n"
+            "      var pf=document.getElementById('packet_fields'); if(pf) pf.style.display = (m==='packet') ? 'block':'none';\n"
             "    }\n"
             "    function debounce(fn,ms){let t;return (...a)=>{clearTimeout(t);t=setTimeout(()=>fn.apply(this,a),ms)};}\n"
             "    function currentConfig(){\n"
@@ -286,8 +367,21 @@ class WebHandler(BaseHTTPRequestHandler):
             "      }catch(e){}\n"
             "    },150);\n"
             "    function attachTypeahead(){\n"
-            "      for(const id of ['inspect','old','new']){const el=document.getElementById(id); if(el){el.addEventListener('input',fetchSuggest);}}\n"
+            "      for(const id of ['inspect','old','new','pkt_src','pkt_dst']){const el=document.getElementById(id); if(el){el.addEventListener('input',fetchSuggest);}}\n"
             "    }\n"
+            "    function saveState(){\n"
+            "      const st={vendor:document.getElementById('vendor').value,mode:document.getElementById('mode').value,config:document.getElementById('config')?document.getElementById('config').value:'',config_ftg:document.getElementById('config_ftg')?document.getElementById('config_ftg').value:'',inspect:document.getElementById('inspect')?document.getElementById('inspect').value:'',old:document.getElementById('old')?document.getElementById('old').value:'',new:document.getElementById('new')?document.getElementById('new').value:'',findq:document.getElementById('findq')?document.getElementById('findq').value:'',pkt_src:document.getElementById('pkt_src')?document.getElementById('pkt_src').value:'',pkt_dst:document.getElementById('pkt_dst')?document.getElementById('pkt_dst').value:'',proto:document.querySelector('select[name=\'proto\']').value,dport:document.querySelector('input[name=\'dport\']').value,include_any:document.getElementById('include_any')?document.getElementById('include_any').checked:false,fuzzy:document.getElementById('fuzzy').checked};\n"
+            "      localStorage.setItem('acl_state', JSON.stringify(st));\n"
+            "    }\n"
+            "    function loadState(){\n"
+            "      try{const st=JSON.parse(localStorage.getItem('acl_state')||'{}'); if(!st||typeof st!=='object') return; if(st.vendor){document.getElementById('vendor').value=st.vendor;} toggleVendor(); if(st.config&&document.getElementById('config')){document.getElementById('config').value=st.config;} if(st.config_ftg&&document.getElementById('config_ftg')){document.getElementById('config_ftg').value=st.config_ftg;} if(st.mode){document.getElementById('mode').value=st.mode;} toggleMode(); if(st.inspect&&document.getElementById('inspect')){document.getElementById('inspect').value=st.inspect;} if(st.old&&document.getElementById('old')){document.getElementById('old').value=st.old;} if(st.new&&document.getElementById('new')){document.getElementById('new').value=st.new;} if(st.findq&&document.getElementById('findq')){document.getElementById('findq').value=st.findq;} if(st.pkt_src&&document.getElementById('pkt_src')){document.getElementById('pkt_src').value=st.pkt_src;} if(st.pkt_dst&&document.getElementById('pkt_dst')){document.getElementById('pkt_dst').value=st.pkt_dst;} if(st.proto){document.querySelector('select[name=\'proto\']').value=st.proto;} if(typeof st.include_any==='boolean' && document.getElementById('include_any')){document.getElementById('include_any').checked=st.include_any;} if(typeof st.fuzzy==='boolean'){document.getElementById('fuzzy').checked=st.fuzzy;} if(st.dport){document.querySelector('input[name=\'dport\']').value=st.dport;}}catch(e){}\n"
+            "    }\n"
+            "    function attachStateHandlers(){\n"
+            "      for(const sel of ['vendor','mode','config','config_ftg','inspect','old','new','findq','pkt_src','pkt_dst','include_any','fuzzy']){const el=document.getElementById(sel); if(el){el.addEventListener('change',saveState); el.addEventListener('input',saveState);}} const ps=document.querySelector('select[name=\'proto\']'); if(ps){ps.addEventListener('change',saveState);} const dp=document.querySelector('input[name=\'dport\']'); if(dp){dp.addEventListener('input',saveState);}\n"
+            "    }\n"
+            "    function addToHistory(){try{const h=JSON.parse(localStorage.getItem('acl_history')||'[]'); const st=JSON.parse(localStorage.getItem('acl_state')||'{}'); h.unshift({t:Date.now(),st}); localStorage.setItem('acl_history', JSON.stringify(h.slice(0,50)));}catch(e){}}\n"
+            "    function renderHistory(){try{const h=JSON.parse(localStorage.getItem('acl_history')||'[]'); const el=document.getElementById('history'); if(!el) return; el.style.display = h.length? 'block':'none'; el.innerHTML='<h3>History</h3>' + h.map(x=>{const s=x.st||{}; return `<div class=\'h-item\'><div>${new Date(x.t).toLocaleString()}</div><div>${s.mode||''} ${s.inspect||s.old||''}${s.new?(' -> '+s.new):''}</div></div>`}).join('');}catch(e){} }\n"
+            "    document.addEventListener('DOMContentLoaded', ()=>{const f=document.querySelector('form.form'); if(f){f.addEventListener('submit', addToHistory);}});\n"
             "    async function refreshMeta(){\n"
             "      const {vendor,config}=currentConfig();\n"
             "      const el=document.getElementById('meta'); el.textContent='';\n"
@@ -296,12 +390,13 @@ class WebHandler(BaseHTTPRequestHandler):
             "    }\n"
             "    document.getElementById('themeToggle').addEventListener('change', (e)=>{localStorage.setItem(THEME_KEY, e.target.checked?'light':'dark'); applyTheme();});\n"
             "    document.getElementById('hlToggle').addEventListener('change', (e)=>{localStorage.setItem('acl_highlight', e.target.checked?'on':'off'); highlightAll(e.target.checked);});\n"
-            "    applyTheme(); toggleVendor(); toggleMode(); attachTypeahead(); refreshMeta(); highlightAll((localStorage.getItem(HL_KEY)||'on')==='on'); document.getElementById('hlToggle').checked = (localStorage.getItem(HL_KEY)||'on')==='on';\n"
+            "    document.getElementById('histToggle').addEventListener('click', ()=>{const el=document.getElementById('history'); if(!el) return; el.style.display = (el.style.display==='none'||!el.style.display)?'block':'none';});\n"
+            "    applyTheme(); toggleVendor(); loadState(); toggleMode(); attachTypeahead(); attachStateHandlers(); refreshMeta(); highlightAll((localStorage.getItem(HL_KEY)||'on')==='on'); document.getElementById('hlToggle').checked = (localStorage.getItem(HL_KEY)||'on')==='on'; renderHistory();\n"
             "  </script>\n"
             "</body></html>\n"
         )
 
-    def _render_report(self, target, report):
+    def _render_report(self, target, report, cfg_file):
         lines_raw = "\n".join(f"  {e['raw']}" for e in report['hits'])
         lines_flat = "\n".join(f"  {self._fmt(e)}" for e in report['hits'])
         alias_html = ""
@@ -316,7 +411,7 @@ class WebHandler(BaseHTTPRequestHandler):
             alias_html = "<div class='rr'><a href='https://youtu.be/dQw4w9WgXcQ' target='_blank' rel='noopener'>No duplicates found</a></div>"
         return f"""
 <div class='results'>
-  <div class='section'><h3>Inspection Report for {target}</h3>
+  <div class='section'><h2>{cfg_file}</h2><h3>Inspection Report for {target}</h3>
   <p>Resolved to: {', '.join(str(n) for n in report['target_nets'])}</p>
   <p>Found {len(report['hits'])} matching ACL entries.</p></div>
   {alias_html}
@@ -327,7 +422,7 @@ class WebHandler(BaseHTTPRequestHandler):
 </div>
 """
 
-    def _render_diff(self, old, new, diff, old_aliases=None, new_aliases=None):
+    def _render_diff(self, old, new, diff, cfg_file, old_aliases=None, new_aliases=None):
         added = "\n".join(f" + {e['raw']}\n   -> {self._fmt(e)}" for e in diff['added_to_new'][:200])
         removed = "\n".join(f" - {e['raw']}\n   -> {self._fmt(e)}" for e in diff['removed_from_old'][:200])
         # Aliases boxes (hide if empty; include subtle rickroll links when both empty)
@@ -347,7 +442,7 @@ class WebHandler(BaseHTTPRequestHandler):
             alias_section = "<div class='rr'><a href='https://youtu.be/dQw4w9WgXcQ' target='_blank' rel='noopener'>No duplicates</a></div>"
         return f"""
 <div class='results'>
-  <div class='section'><h3>Comparison</h3>
+  <div class='section'><h2>{cfg_file}</h2><h3>Comparison</h3>
   <p>Old target: {old}</p>
   <p>New target: {new}</p>
   <p>Old hits: {len(diff['old_hits'])} &nbsp; New hits: {len(diff['new_hits'])}</p>
@@ -359,6 +454,38 @@ class WebHandler(BaseHTTPRequestHandler):
   <pre data-lang='asa'>{removed}</pre></div>
 </div>
 """
+
+    def _render_find(self, target: str, results: list) -> str:
+        if not results:
+            return f"<div class='results'><div class='section'><h3>Find Host</h3><p>No matches for {target}.</p></div></div>"
+        items = []
+        for r in results[:200]:
+            objs = ', '.join(sorted(r.get('objects') or []))
+            lits = ', '.join(sorted(r.get('literals') or []))
+            parts = []
+            if objs:
+                parts.append(f"objects: {objs}")
+            if lits:
+                parts.append(f"literals: {lits}")
+            if r.get('text_hit'):
+                parts.append("text match")
+            items.append(f"  {r['file']} -> {('; '.join(parts) or 'match')}")
+        return "<div class='results'><div class='section'><h3>Find Host Results</h3><pre>" + "\n".join(items) + "</pre></div></div>"
+
+    def _render_packet(self, cfg_file: str, pkt: dict) -> str:
+        status = 'ALLOWED' if pkt.get('allowed') else 'BLOCKED'
+        lines = []
+        for e in pkt.get('matches', [])[:200]:
+            lines.append(f"  {e['raw']}\n   -> {self._fmt(e)}")
+        content = "\n".join(lines)
+        return (
+            "<div class='results'>\n"
+            f"  <div class='section'><h2>{cfg_file}</h2><h3>Packet Check</h3>\n"
+            f"  <p>Result: {status}</p></div>\n"
+            "  <div class='diff diff-raw'><h3>Matching Rules</h3>\n"
+            f"  <pre data-lang='asa'>{content}</pre></div>\n"
+            "</div>\n"
+        )
 
     def _fmt(self, rule: dict) -> str:
         src_str = ', '.join(sorted([str(s) for s in rule['src']]))
@@ -473,6 +600,11 @@ class WebHandler(BaseHTTPRequestHandler):
             out = {str(k): sorted(list(v)) for (k, v) in aliases.items()}
             return self._json({'aliases': out})
         return self._json({'aliases': {}})
+
+    def _api_index_status(self, query: str):
+        # No query params required; returns summary of in-memory + disk cache state
+        payload = index_status_for_tests(getattr(self.server, 'cache_dir', None), getattr(self.server, 'index_cache', {}))
+        return self._json(payload)
 
     # -------------------- Cache and index --------------------
     def _extract_meta(self, vendor: str, text: str) -> dict:
@@ -647,7 +779,7 @@ class WebHandler(BaseHTTPRequestHandler):
             ".app{max-width:1200px;margin:0 auto;padding:16px;}\n"
             ".toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}\n"
             "h2{margin:0;}\n"
-            ".form{background:var(--muted);padding:12px;border:1px solid var(--border);border-radius:8px;margin-bottom:16px;}\n"
+            ".form{background:var(--muted);padding:12px;border:1px solid var(--border);border-radius:8px;margin-bottom:16px;position:sticky;top:0;z-index:10;}\n"
             ".section{margin-bottom:10px;} fieldset.section{border:1px solid var(--border);border-radius:8px;} legend{color:var(--sub);}\n"
             "label{margin-right:6px;} select,input[type=text]{margin-right:8px;margin-bottom:6px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:transparent;color:var(--text);}\n"
             ".actions{margin-top:8px;} button{background:var(--accent);color:#fff;border:none;border-radius:6px;padding:6px 10px;cursor:pointer;} button:hover{opacity:0.9;}\n"
@@ -656,6 +788,8 @@ class WebHandler(BaseHTTPRequestHandler):
             ".meta{margin-left:10px;color:var(--sub);} .theme-switch{font-size:0.9em;color:var(--sub);} .hl-switch{font-size:0.9em;color:var(--sub);} .rr{display:none;}\n"
             ".toolbar-controls{display:flex;gap:12px;align-items:center;}\n"
             ".kw{color:#c792ea;} .proto{color:#82aaff;} .act{color:#c3e88d;} .addr{color:#f78c6c;} .num{color:#ffcb6b;}\n"
+            ".tip{display:inline-block;width:16px;height:16px;line-height:16px;text-align:center;border-radius:50%;border:1px solid var(--sub);color:var(--sub);font-size:12px;cursor:help;}\n"
+            ".history{position:fixed;right:8px;top:64px;width:260px;max-height:70vh;overflow:auto;background:var(--muted);border:1px solid var(--border);border-radius:8px;padding:8px;} .h-item{border-bottom:1px solid var(--border);padding:4px 0;} .h-item:last-child{border-bottom:none;}\n"
         )
 
 
@@ -664,8 +798,11 @@ def main() -> None:
     ap = argparse.ArgumentParser(description='Web UI for access-list inspection/comparison')
     ap.add_argument('--addr', default='127.0.0.1', help='Bind address (default 127.0.0.1)')
     ap.add_argument('--port', type=int, default=8080, help='TCP port (default 8080)')
-    ap.add_argument('--configs-cisco', default='configs/cisco', help='Directory with ASA configs')
-    ap.add_argument('--configs-fortigate', default='configs/fortigate', help='Directory with FortiGate configs')
+    # Allow env overrides for config directories; falling back to defaults
+    env_configs_cisco = os.environ.get('ACLINSPECTOR_CONFIGS_CISCO', 'configs/cisco')
+    env_configs_fortigate = os.environ.get('ACLINSPECTOR_CONFIGS_FORTIGATE', 'configs/fortigate')
+    ap.add_argument('--configs-cisco', default=env_configs_cisco, help='Directory with ASA configs (env ACLINSPECTOR_CONFIGS_CISCO)')
+    ap.add_argument('--configs-fortigate', default=env_configs_fortigate, help='Directory with FortiGate configs (env ACLINSPECTOR_CONFIGS_FORTIGATE)')
     # Robust env parsing for optional overrides
     env_cache_dir = os.environ.get('ACLINSPECTOR_CACHE_DIR', '')
     try:

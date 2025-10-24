@@ -15,6 +15,9 @@ services:
     environment:
       - ACLINSPECTOR_CACHE_DIR=/app/cache
       - ACLINSPECTOR_SEARCH_LIMIT=${ACLINSPECTOR_SEARCH_LIMIT}
+      # Optional per-vendor config roots (can be the same path)
+      - ACLINSPECTOR_CONFIGS_CISCO=${ACLINSPECTOR_CONFIGS_CISCO:-/app/configs/cisco}
+      - ACLINSPECTOR_CONFIGS_FORTIGATE=${ACLINSPECTOR_CONFIGS_FORTIGATE:-/app/configs/fortigate}
 
 volumes:
   aclinspector_cache:

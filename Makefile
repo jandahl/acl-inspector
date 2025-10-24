@@ -10,6 +10,7 @@ help:
 	@echo "  test      - run self-test via CLI"
 	@echo "  examples  - print CLI examples"
 	@echo "  web       - run the web UI (localhost:8080)"
+	@echo "             (override config dirs: make web CONFIGS_CISCO=/path/to/asa CONFIGS_FORTIGATE=/path/to/ftg)"
 	@echo "  container-build - build the web UI container image"
 	@echo "  container-run   - run the web UI container (localhost:8083)"
 	@echo "  container-status- show the status of the web UI container"
@@ -37,6 +38,8 @@ examples:
 	./access-list-inspector.py --examples
 
 web:
+	$(if $(CONFIGS_CISCO),ACLINSPECTOR_CONFIGS_CISCO=$(CONFIGS_CISCO) ,)\
+	$(if $(CONFIGS_FORTIGATE),ACLINSPECTOR_CONFIGS_FORTIGATE=$(CONFIGS_FORTIGATE) ,)\
 	./access-list-web.py --port 8080
 
 # Container targets
@@ -51,12 +54,17 @@ else
 CONTAINER_COMPOSE := docker-compose
 endif
 
+
 container-build:
 	@echo "Using $(CONTAINER_COMPOSE) to build the container image..."
+	$(if $(CONFIGS_CISCO),ACLINSPECTOR_CONFIGS_CISCO=$(CONFIGS_CISCO) ,)\
+	$(if $(CONFIGS_FORTIGATE),ACLINSPECTOR_CONFIGS_FORTIGATE=$(CONFIGS_FORTIGATE) ,)\
 	$(CONTAINER_COMPOSE) -f Dockersetup/podman-compose.yaml -p aclinspector up --build -d --no-start
 
 container-run:
 	@echo "Using $(CONTAINER_COMPOSE) to run the container..."
+	$(if $(CONFIGS_CISCO),ACLINSPECTOR_CONFIGS_CISCO=$(CONFIGS_CISCO) ,)\
+	$(if $(CONFIGS_FORTIGATE),ACLINSPECTOR_CONFIGS_FORTIGATE=$(CONFIGS_FORTIGATE) ,)\
 	$(CONTAINER_COMPOSE) -f Dockersetup/podman-compose.yaml -p aclinspector up -d
 	@echo "\nWeb UI is now running. Connect to http://localhost:8083"
 

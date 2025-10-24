@@ -33,6 +33,10 @@ Quick start (CLI)
 - Compare two targets:
   `./access-list-inspector.py --vendor asa --config <asa.conf> --old <ip|cidr|object> --new <ip|cidr|object>`
 
+- Find host across configs:
+  - Directory: `./access-list-inspector.py --vendor asa --config /path/to/configs/cisco --find-host <ip|cidr|object>`
+  - Single file: `./access-list-inspector.py --vendor asa --config /path/to/asa.conf --find-host <ip|cidr|object>`
+
 - FortiGate with VDOM:
   - Inspect: `./access-list-inspector.py --vendor fortigate --config <ftg.conf> --vdom root --inspect <ip|object>`
   - Compare: `./access-list-inspector.py --vendor fortigate --config <ftg.conf> --vdom root --old <A> --new <B>`
@@ -83,6 +87,12 @@ Web UI
 - Override directories:
   - `--configs-cisco /path/to/asa/configs`
   - `--configs-fortigate /path/to/fortigate/configs`
+  - Or via make: `make web CONFIGS_CISCO=/path/to/asa CONFIGS_FORTIGATE=/path/to/ftg`
+
+- Environment variables (useful for containers/compose):
+  - `ACLINSPECTOR_CONFIGS_CISCO=/data/asa` (defaults to `configs/cisco`)
+  - `ACLINSPECTOR_CONFIGS_FORTIGATE=/data/fortigate` (defaults to `configs/fortigate`)
+  - Both can point to the same directory if production layouts are unified. Vendor detection heuristics can be added later; for now select the vendor in the UI to parse appropriately.
 
 - Predictive search and metadata:
   - The UI offers prefix-based suggestions for target inputs (objects, groups, literals) using a JSON API.
@@ -101,6 +111,7 @@ Web UI
   - Enable with `--cache-dir /app/cache` or set env `ACLINSPECTOR_CACHE_DIR=/app/cache`.
   - Cache is invalidated when the source config file is newer (mtime/size check).
   - Compose uses environment variable expansion; `.env` is optional. If you create `Dockersetup/.env`, values like `ACLINSPECTOR_SEARCH_LIMIT=100` will be picked up automatically by compose. No failure occurs if `.env` is missing.
+  - Index status endpoint: `GET /api/index/status` returns a small JSON summary of in-memory and disk cache state.
 
 Repo indexing (pre-warm cache)
 ------------------------------
@@ -199,6 +210,7 @@ Future goals
 - Support FortiGate configs (including VDOMs) and cross-vendor compare
 - Port-aware matching and reporting
 - Pluggable parser architecture to support additional vendors
+- Site-to-site VPN parsing/evaluation (tunnels, crypto maps/policies)
 - Dockerization: containerize CLI and web UI; simple Nginx front-end to serve the web UI and reverse proxy to a WSGI app (or keep stdlib HTTPServer for simplicity). Provide read-only mount for `configs/` and export reports.
 
 Architecture (Pluggable Parsers)
@@ -216,3 +228,7 @@ Future goals
 - Support FortiGate configs (including VDOMs) and cross-vendor compare
 - Port-aware matching and reporting
 - Pluggable parser architecture to support additional vendors
+- Match scope:
+  - By default, rules with `any` endpoints are ignored to reduce noise.
+  - CLI: pass `--include-any` to include such rules.
+  - Web UI: check “Include rules with 'any'” in the form.
