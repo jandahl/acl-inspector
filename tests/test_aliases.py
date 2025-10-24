@@ -1,7 +1,7 @@
 import unittest
 import ipaddress
 
-from ASA_ACL_inspector import ASAConfig, inspect_host
+from parsers.asa import ASAConfig, inspect_host
 
 
 class TestAliases(unittest.TestCase):
@@ -33,4 +33,3 @@ access-list TEST extended permit ip object HOST_A any
 
 if __name__ == '__main__':
     unittest.main()
-

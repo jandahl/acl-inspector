@@ -3,15 +3,15 @@ Agent Guidelines
 
 Scope
 -----
-This repository contains a Python tool to inspect and compare Cisco ASA ACLs. The scope includes parsing ASA configs, resolving objects, and reporting ACL impacts. Future scope will broaden to other vendors and a web UI.
+This repository contains a Python tool to inspect and compare ACLs. Current vendor support focuses on Cisco ASA. The tool parses configs, resolves objects, reports ACL impacts, and is structured to accommodate other vendors and a separate web UI.
 
 Coding conventions
 ------------------
 - Python 3.9+ only; standard library preferred
 - Keep changes minimal and focused to the task
-- Avoid large refactors unless explicitly requested
 - Match the project’s direct, concise coding style
 - Add tests for new behavior under `tests/`
+- Prefer verbose docstrings for parser internals to aid future refactors
 
 Parsing rules
 -------------
@@ -29,7 +29,7 @@ New features in this iteration
 
 Quality and linting
 -------------------
-- Always run a quick syntax check: `python3 -m py_compile ASA_ACL_inspector.py`
+- Always run a quick syntax check: `python3 -m py_compile access-list-inspector.py parsers/asa.py`
 - If Python linters (ruff/flake8) are available locally, run them; otherwise rely on unit tests and compilation
 - For shell scripts (if any), run `shellcheck` as appropriate
 
@@ -41,14 +41,14 @@ Tests
 
 Future abstractions and goals
 -----------------------------
-- Web wrapper page with a simple UI for inspect/compare flows
+- Web wrapper page with a simple UI for inspect/compare flows (separate script)
 - Vendor abstraction: introduce a pluggable parser layer to support FortiGate (with VDOMs) and others
 - Cross-vendor diff: normalize flattened entries to a common model for comparison
 - Port-aware matching and richer rule reporting (service/ports) [in progress: basic filtering via --proto/--dport]
 
 Config directories
 ------------------
-- Default directories scanned by the web UI and (eventually) parsers:
+- Default directories scanned by the web UI:
   - ASA: `configs/cisco`
   - FortiGate: `configs/fortigate`
-- These can be overridden via CLI: `--configs-cisco`, `--configs-fortigate`.
+- These can be overridden via CLI flags in `access-list-web.py`: `--configs-cisco`, `--configs-fortigate`.

@@ -1,9 +1,9 @@
-ASA ACL Inspector
-==================
+Access-List Inspector
+=====================
 
 Overview
 --------
-ASA_ACL_inspector.py parses Cisco ASA configurations to:
+The tool parses firewall configurations (currently Cisco ASA) to:
 - Resolve network objects and object-groups to concrete addresses/networks
 - Flatten ACL entries (source/destination) for impact analysis
 - Inspect a single IP/object to list all ACL entries affecting it
@@ -22,27 +22,27 @@ Requirements
 - Python 3.9+
 - No external packages are required
 
-Quick start
------------
+Quick start (CLI)
+-----------------
 - Inspect a host/object:
-  `./ASA_ACL_inspector.py --config <asa.conf> --inspect <ip|cidr|object>`
+  `./access-list-inspector.py --vendor asa --config <asa.conf> --inspect <ip|cidr|object>`
 
   - With protocol/port filtering:
-    `./ASA_ACL_inspector.py --config <asa.conf> --inspect <target> --proto tcp --dport 443 --dport 1433`
+    `./access-list-inspector.py --vendor asa --config <asa.conf> --inspect <target> --proto tcp --dport 443 --dport 1433`
 
 - Compare two targets:
-  `./ASA_ACL_inspector.py --config <asa.conf> --old <ip|cidr|object> --new <ip|cidr|object>`
+  `./access-list-inspector.py --vendor asa --config <asa.conf> --old <ip|cidr|object> --new <ip|cidr|object>`
 
 Examples
 --------
 - Print examples and exit:
-  `./ASA_ACL_inspector.py --examples`
+  `./access-list-inspector.py --examples`
 
 - Inspect with protocol/port filter:
-  `./ASA_ACL_inspector.py --config <asa.conf> --inspect <target> --proto tcp --dport 443 --dport 1433`
+  `./access-list-inspector.py --vendor asa --config <asa.conf> --inspect <target> --proto tcp --dport 443 --dport 1433`
 
 - Compare with a port filter:
-  `./ASA_ACL_inspector.py --config <asa.conf> --old <A> --new <B> --proto udp --dport 53`
+  `./access-list-inspector.py --vendor asa --config <asa.conf> --old <A> --new <B> --proto udp --dport 53`
 
 Outputs
 -------
@@ -62,7 +62,7 @@ Notes on parsing
 Web UI
 ------
 - Start a simple local UI:
-  `./ASA_ACL_inspector.py --web --port 8080`
+  `./access-list-web.py --port 8080`
 
 - The UI lists config files from the following directories by default:
   - ASA: `configs/cisco`
@@ -74,8 +74,8 @@ Web UI
 
 Vendor scaffolding
 ------------------
-- Parsers for vendors will live under `parsers/`.
-- ASA remains inline for now but the code is structured so it can be moved under `parsers/asa.py` and loaded via the vendor option.
+- Parsers for vendors live under `parsers/`.
+- ASA parser resides in `parsers/asa.py`. The CLI selects a vendor and delegates.
 
 Duplicate object detection
 --------------------------
@@ -99,7 +99,7 @@ Development
 -----------
 - Keep changes minimal and focused
 - Add or update tests alongside code changes
-- Validate with `python3 -m py_compile ASA_ACL_inspector.py`
+- Validate with `python3 -m py_compile access-list-inspector.py` and `python3 -m py_compile parsers/asa.py`
 
 Architecture (Pluggable Parsers)
 --------------------------------

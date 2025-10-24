@@ -1,5 +1,5 @@
 import unittest
-from ASA_ACL_inspector import ASAConfig, evaluate_acl
+from parsers.asa import ASAConfig, evaluate_acl
 
 
 class TestServices(unittest.TestCase):
@@ -33,4 +33,3 @@ access-list T extended permit object-group SQLCL host 1.1.1.1 host 2.2.2.2
 
 if __name__ == '__main__':
     unittest.main()
-
