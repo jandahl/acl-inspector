@@ -1,94 +1,67 @@
-config system global
-    set vdom-mode multi-vdom
-end
+# FortiGate example aligned with ASA sample rules
 
-# Define the root VDOM
 config vdom
     edit root
-    set workspace-mode enable
+        # Addresses
+        config firewall address
+            edit "HOST_A"
+                set subnet 10.1.1.1 255.255.255.255
+            next
+            edit "HOST_B"
+                set subnet 10.1.1.2 255.255.255.255
+            next
+            edit "DB"
+                set subnet 10.2.2.10 255.255.255.255
+            next
+            edit "WEB"
+                set subnet 10.2.2.20 255.255.255.255
+            next
+        end
+
+        # Services
+        config firewall service custom
+            edit "SQLCL-TCP"
+                set tcp-portrange 1433-1433
+            next
+            edit "SQLCL-UDP"
+                set udp-portrange 1434-1434
+            next
+            edit "HTTPS"
+                set tcp-portrange 443-443
+            next
+        end
+
+        # Policies
+        config firewall policy
+            edit 1
+                set name "HOST_A_to_DB_1433"
+                set action accept
+                set srcaddr "HOST_A"
+                set dstaddr "DB"
+                set service "SQLCL-TCP"
+            next
+            edit 2
+                set name "HOST_B_to_DB_1433"
+                set action accept
+                set srcaddr "HOST_B"
+                set dstaddr "DB"
+                set service "SQLCL-TCP"
+            next
+            edit 3
+                set name "HOST_A_to_WEB_443"
+                set action accept
+                set srcaddr "HOST_A"
+                set dstaddr "WEB"
+                set service "HTTPS"
+            next
+            edit 4
+                set name "Deny_to_WEB"
+                set action deny
+                set srcaddr "all"
+                set dstaddr "WEB"
+                set service "ALL"
+            next
+        end
     next
 end
 
-# Create additional VDOMs
-config vdom
-    edit VDOM1
-    next
-    edit VDOM2
-    next
-end
-
-# Configure interfaces for VDOM1
-config system interface
-    edit "port1"
-        set vdom "VDOM1"
-        set ip 192.168.1.1 255.255.255.0
-        set allowaccess ping https http
-    next
-    edit "port2"
-        set vdom "VDOM1"
-        set ip 203.0.113.1 255.255.255.0
-        set allowaccess ping
-    next
-end
-
-# Configure interfaces for VDOM2
-config system interface
-    edit "port1"
-        set vdom "VDOM2"
-        set ip 10.0.0.1 255.255.255.0
-        set allowaccess ping https http
-    next
-    edit "port2"
-        set vdom "VDOM2"
-        set ip 198.51.100.1 255.255.255.0
-        set allowaccess ping
-    next
-end
-
-# Configure address objects for VDOM1
-config firewall address
-    edit "Internal_Network"
-        set subnet 192.168.1.0 255.255.255.0
-    next
-    edit "Public_Web_Server"
-        set subnet 203.0.113.10 255.255.255.255
-    next
-end
-
-# Configure address objects for VDOM2
-config firewall address
-    edit "Internal_Network_V2"
-        set subnet 10.0.0.0 255.255.255.0
-    next
-    edit "Public_Web_Server_V2"
-        set subnet 198.51.100.10 255.255.255.255
-    next
-end
-
-# Configure firewall policy for VDOM1
-config firewall policy
-    edit 1
-        set name "Allow_HTTP_VDOM1"
-        set srcintf "port1"
-        set dstintf "port2"
-        set srcaddr "Internal_Network"
-        set dstaddr "Public_Web_Server"
-        set action accept
-        set schedule "always"
-        set service "HTTP"
-    next
-end
-
-# Configure firewall policy for VDOM2
-config firewall policy
-    edit 2
-        set name "Allow_HTTP_VDOM2"
-        set srcintf "port1"
-        set dstintf "port2"
-        set srcaddr "Internal_Network_V2"
-        set dstaddr "Public_Web_Server_V2"
-        set action accept
-        set schedule "always"
-        set service "HTTP"
-    next
-end

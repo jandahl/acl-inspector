@@ -1,23 +1,21 @@
-! Basic ASA Configuration
-hostname ASA1
-interface Vlan1
- nameif inside
- security-level 100
- ip address 192.168.1.1 255.255.255.0
+! ASA example aligned with FortiGate sample rules
 !
-interface Vlan2
- nameif outside
- security-level 0
- ip address dhcp setroute
+object network HOST_A
+ host 10.1.1.1
+object network HOST_B
+ host 10.1.1.2
+object network DB
+ host 10.2.2.10
+object network WEB
+ host 10.2.2.20
 !
-interface Vlan3
- nameif DMZ
- security-level 50
- ip address 192.168.2.1 255.255.255.0
+object-group service SQLCL
+ service-object tcp eq 1433
+ service-object udp eq 1434
+object-group service HTTPS
+ service-object tcp eq 443
 !
-object network obj_websrv
- host 192.168.2.10
- nat (DMZ,outside) static 203.0.113.10
-!
-access-list outside_access_in extended permit tcp any object obj_websrv eq 80
-access-group outside_access_in in interface outside
+access-list OUT extended permit tcp object HOST_A object DB eq 1433
+access-list OUT extended permit tcp object HOST_B object DB eq 1433
+access-list OUT extended permit tcp object HOST_A object WEB eq 443
+access-list OUT extended deny ip any object WEB

@@ -47,8 +47,17 @@ class FTGConfig:
     - policies: List[dict] with keys: action, srcaddr (names), dstaddr (names), services (names)
     """
 
-    def __init__(self, text: str) -> None:
-        self.lines = [l.rstrip() for l in text.splitlines()]
+    def __init__(self, text: str, vdom: Optional[str] = None) -> None:
+        """Initialize with raw config text and optional VDOM name.
+
+        If the config contains 'config vdom' blocks and no vdom is provided,
+        the first VDOM encountered is parsed. If no 'config vdom' is present,
+        the whole file is parsed as a single context.
+        """
+        self._raw_lines = [l.rstrip() for l in text.splitlines()]
+        self.vdom = vdom
+        # Extract VDOM-specific view if applicable
+        self.lines = self._select_vdom_lines(self._raw_lines, vdom)
         self.addresses: Dict[str, Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]]] = {}
         self.addrgrps: Dict[str, List[Union[dict, ipaddress.IPv4Address, ipaddress.IPv4Network]]] = {}
         self.services: Dict[str, dict] = {}
@@ -79,6 +88,60 @@ class FTGConfig:
                 i = self._parse_policy(i + 1)
                 continue
             i += 1
+
+    def _select_vdom_lines(self, lines: List[str], want_vdom: Optional[str]) -> List[str]:
+        """Return lines belonging to the specified VDOM sub-block if present.
+
+        If 'config vdom' is found, choose the 'edit <name>' block matching
+        want_vdom; if want_vdom is None, pick the first. Returns just the inner
+        lines of that VDOM context. If no 'config vdom' found, returns lines.
+        """
+        sel: List[str] = []
+        i = 0
+        L = len(lines)
+        while i < L:
+            s = lines[i].strip()
+            if s.startswith('config vdom'):
+                # Parse vdom list until 'end'
+                i += 1
+                chosen: Optional[str] = None
+                buf: List[str] = []
+                while i < L:
+                    s2 = lines[i].strip()
+                    if s2.startswith('edit '):
+                        name = s2.split('edit', 1)[1].strip().strip('"')
+                        # Collect sub-block until 'next'
+                        i += 1
+                        sub: List[str] = []
+                        nest = 0
+                        while i < L:
+                            s3 = lines[i].strip()
+                            if s3 == 'next' and nest == 0:
+                                break
+                            # Track nested 'config ... end' blocks
+                            if s3.startswith('config '):
+                                nest += 1
+                            if s3 == 'end' and nest > 0:
+                                nest -= 1
+                            sub.append(lines[i])
+                            i += 1
+                        # Decide whether to take this VDOM
+                        if chosen is None and ((want_vdom is None) or (name == want_vdom)):
+                            chosen = name
+                            buf = sub[:]
+                        # advance past 'next'
+                        i += 1
+                    elif s2 == 'end':
+                        break
+                    else:
+                        i += 1
+                # If a VDOM was chosen, return it
+                if chosen is not None:
+                    return buf
+                # No matching vdom; return empty to avoid mis-parse
+                return []
+            i += 1
+        return lines
 
     def _parse_block(self, i: int, end_token: str = 'end') -> Tuple[int, List[str]]:
         acc: List[str] = []
@@ -349,8 +412,8 @@ def evaluate(entries: List[dict], target_nets: Set[Union[ipaddress.IPv4Address, 
     return out
 
 
-def compare_old_new(cfg_text: str, old_target: str, new_target: str, service_filter: Optional[dict] = None) -> dict:
-    cfg = FTGConfig(cfg_text)
+def compare_old_new(cfg_text: str, old_target: str, new_target: str, service_filter: Optional[dict] = None, vdom: Optional[str] = None) -> dict:
+    cfg = FTGConfig(cfg_text, vdom=vdom)
     old_nets = cfg.resolve_addr_token(old_target)
     new_nets = cfg.resolve_addr_token(new_target)
     entries = cfg.flatten_policies()
@@ -366,8 +429,8 @@ def compare_old_new(cfg_text: str, old_target: str, new_target: str, service_fil
     return {'old_hits': old_hits, 'new_hits': new_hits, 'added_to_new': added_to_new, 'removed_from_old': removed_from_old}
 
 
-def inspect_host(cfg_text: str, target: str, service_filter: Optional[dict] = None) -> dict:
-    cfg = FTGConfig(cfg_text)
+def inspect_host(cfg_text: str, target: str, service_filter: Optional[dict] = None, vdom: Optional[str] = None) -> dict:
+    cfg = FTGConfig(cfg_text, vdom=vdom)
     target_nets = cfg.resolve_addr_token(target)
     entries = cfg.flatten_policies()
     hits = evaluate(entries, target_nets, service_filter)
@@ -379,4 +442,3 @@ def inspect_host(cfg_text: str, target: str, service_filter: Optional[dict] = No
         if names:
             aliases[n] = names
     return {'hits': hits, 'target_nets': target_nets, 'aliases': aliases}
-

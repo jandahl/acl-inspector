@@ -80,6 +80,7 @@ def main() -> None:
     parser.add_argument('--dport', type=int, action='append', help='Filter by destination port (repeatable, optional)')
     parser.add_argument('--examples', action='store_true', help='Print example usage and exit')
     parser.add_argument('--self-test', action='store_true', help='Run the built-in unit tests and exit')
+    parser.add_argument('--vdom', help='FortiGate VDOM name (when --vendor fortigate)')
 
     args = parser.parse_args()
 
@@ -130,7 +131,7 @@ def main() -> None:
             diff = cisco_asa.compare_old_new(cfg_text, args.old, args.new, service_filter=svc_filter)
     elif args.vendor == 'fortigate':
         if args.inspect:
-            report = fortigate_parser.inspect_host(cfg_text, args.inspect, service_filter=svc_filter)
+            report = fortigate_parser.inspect_host(cfg_text, args.inspect, service_filter=svc_filter, vdom=args.vdom)
             print(f"--- Inspection Report for Target: {args.inspect} ---")
             print(f"Resolved to: {', '.join(str(n) for n in report['target_nets'])}")
             print(f"Found {len(report['hits'])} matching ACL entries.")
@@ -145,7 +146,7 @@ def main() -> None:
                 for addr, names in sorted(report['aliases'].items(), key=lambda x: str(x[0])):
                     print(f"  {addr}: {', '.join(sorted(names))}")
         else:
-            diff = fortigate_parser.compare_old_new(cfg_text, args.old, args.new, service_filter=svc_filter)
+            diff = fortigate_parser.compare_old_new(cfg_text, args.old, args.new, service_filter=svc_filter, vdom=args.vdom)
             print(f"ACL entries affecting old target ({args.old}): {len(diff['old_hits'])}")
             print(f"ACL entries affecting new target ({args.new}): {len(diff['new_hits'])}")
             print(f"Added to new target: {len(diff['added_to_new'])}")

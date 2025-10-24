@@ -33,6 +33,10 @@ Quick start (CLI)
 - Compare two targets:
   `./access-list-inspector.py --vendor asa --config <asa.conf> --old <ip|cidr|object> --new <ip|cidr|object>`
 
+- FortiGate with VDOM:
+  - Inspect: `./access-list-inspector.py --vendor fortigate --config <ftg.conf> --vdom root --inspect <ip|object>`
+  - Compare: `./access-list-inspector.py --vendor fortigate --config <ftg.conf> --vdom root --old <A> --new <B>`
+
 Examples
 --------
 - Print examples and exit:
