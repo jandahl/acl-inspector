@@ -13,6 +13,7 @@ help:
 	@echo "  container-build - build the web UI container image"
 	@echo "  container-run   - run the web UI container (localhost:8083)"
 	@echo "  container-status- show the status of the web UI container"
+	@echo "  container-logs  - show logs of the web UI container"
 	@echo "  container-stop  - stop the web UI container"
 	@echo "  container-clean - stop and remove the web UI container"
 	@echo "  build     - compile key Python modules"
@@ -51,24 +52,28 @@ endif
 
 container-build:
 	@echo "Using $(CONTAINER_COMPOSE) to build the container image..."
-	cd Dockersetup && $(CONTAINER_COMPOSE) -p aclinspector up --build -d --no-start
+	$(CONTAINER_COMPOSE) -f Dockersetup/podman-compose.yaml -p aclinspector up --build -d --no-start
 
 container-run:
 	@echo "Using $(CONTAINER_COMPOSE) to run the container..."
-	cd Dockersetup && $(CONTAINER_COMPOSE) -p aclinspector up -d
-	@echo "Web UI should be available at http://localhost:8083"
+	$(CONTAINER_COMPOSE) -f Dockersetup/podman-compose.yaml -p aclinspector up -d
+	@echo "\nWeb UI is now running. Connect to http://localhost:8083"
 
 container-status:
 	@echo "Using $(CONTAINER_COMPOSE) to show container status..."
-	cd Dockersetup && $(CONTAINER_COMPOSE) -p aclinspector ps
+	$(CONTAINER_COMPOSE) -f Dockersetup/podman-compose.yaml -p aclinspector ps
+
+container-logs:
+	@echo "Using $(CONTAINER_COMPOSE) to show container logs (tail -f)..."
+	$(CONTAINER_COMPOSE) -f Dockersetup/podman-compose.yaml -p aclinspector logs -f acl-inspector-web
 
 container-stop:
 	@echo "Using $(CONTAINER_COMPOSE) to stop the container..."
-	cd Dockersetup && $(CONTAINER_COMPOSE) -p aclinspector stop
+	$(CONTAINER_COMPOSE) -f Dockersetup/podman-compose.yaml -p aclinspector stop
 
 container-clean:
 	@echo "Using $(CONTAINER_COMPOSE) to stop and remove the container..."
-	cd Dockersetup && $(CONTAINER_COMPOSE) -p aclinspector down --rmi all --volumes
+	$(CONTAINER_COMPOSE) -f Dockersetup/podman-compose.yaml -p aclinspector down --rmi all --volumes
 
 build:
 	PYTHONPYCACHEPREFIX=.pyc_cache python3 -m py_compile access-list-inspector.py parsers/cisco/asa.py parsers/fortigate/fortigate.py access-list-web.py
