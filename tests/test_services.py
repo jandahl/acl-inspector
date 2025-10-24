@@ -1,5 +1,5 @@
 import unittest
-from parsers.asa import ASAConfig, evaluate_acl
+from parsers.cisco.asa import ASAConfig, evaluate_acl
 
 
 class TestServices(unittest.TestCase):

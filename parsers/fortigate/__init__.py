@@ -1,0 +1,2 @@
+"""FortiGate vendor parser namespace."""
+

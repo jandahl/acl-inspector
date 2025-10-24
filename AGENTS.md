@@ -29,7 +29,7 @@ New features in this iteration
 
 Quality and linting
 -------------------
-- Always run a quick syntax check: `python3 -m py_compile access-list-inspector.py parsers/asa.py`
+- Always run a quick syntax check: `python3 -m py_compile access-list-inspector.py parsers/cisco/asa.py parsers/fortigate/fortigate.py`
 - If Python linters (ruff/flake8) are available locally, run them; otherwise rely on unit tests and compilation
 - For shell scripts (if any), run `shellcheck` as appropriate
 
@@ -45,6 +45,14 @@ Future abstractions and goals
 - Vendor abstraction: introduce a pluggable parser layer to support FortiGate (with VDOMs) and others
 - Cross-vendor diff: normalize flattened entries to a common model for comparison
 - Port-aware matching and richer rule reporting (service/ports) [in progress: basic filtering via --proto/--dport]
+
+Docker notes
+------------
+- Containerization plan:
+  - Base image with Python 3.11+; copy repo; optional install of linters
+  - Entrypoints: CLI (`access-list-inspector.py`) and web UI (`access-list-web.py`)
+  - Expose a port for web UI; mount `configs/` from host for UAT files
+  - Optionally place Nginx in front of the web UI for TLS/headers, or run UI directly
 
 Config directories
 ------------------

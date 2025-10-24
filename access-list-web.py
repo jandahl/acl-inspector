@@ -10,7 +10,7 @@ import os
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs
 
-from parsers import asa as asa_parser
+from parsers.cisco import asa as asa_parser
 
 
 def list_files(dirpath: str):

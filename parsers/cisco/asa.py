@@ -1,3 +1,5 @@
+## COPY of ASA parser moved under Cisco vendor namespace
+## Source: parsers/asa.py
 """Cisco ASA parser and evaluation helpers.
 
 This module encapsulates parsing of Cisco ASA configuration constructs relevant
@@ -50,14 +52,6 @@ re_tokenized = re.compile(r"\S+")
 
 
 def to_ip_network(ip: str, mask: Optional[str] = None) -> Union[ipaddress.IPv4Address, ipaddress.IPv4Network]:
-    """Convert ASA-style IP/mask or host representations to ipaddress objects.
-
-    Behavior:
-    - If mask is provided (dotted or prefix), returns IPv4Network with strict=False.
-    - If IP contains '/', returns IPv4Network with strict=False.
-    - Otherwise returns IPv4Address.
-    Raises ValueError for invalid inputs.
-    """
     if mask is not None:
         return ipaddress.ip_network(f"{ip}/{mask}", strict=False)
     if "/" in ip:
@@ -66,16 +60,6 @@ def to_ip_network(ip: str, mask: Optional[str] = None) -> Union[ipaddress.IPv4Ad
 
 
 class ASAConfig:
-    """Holds parsed objects, groups, and ACLs for a single ASA config text.
-
-    Public attributes:
-    - network_objects: Dict[str, Set[IPv4Address|IPv4Network]]
-    - network_object_groups: Dict[str, List[Union[IPv4*, {object/group-object}]]]
-    - service_object_groups: Dict[str, List[spec or group-ref]] (if present)
-    - acls: Dict[str, List[str]] raw ACL lines by ACL name
-    - ip_to_objects: Reverse index of exact primitives to object names
-    """
-
     def __init__(self, text: str) -> None:
         self.lines = [l.rstrip() for l in text.splitlines()]
         self.network_objects: Dict[str, Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]]] = {}
@@ -85,17 +69,6 @@ class ASAConfig:
         self._build_reverse_indexes()
 
     def _consume_endpoint(self, tokens: List[str]) -> Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]]:
-        """Consume tokens to parse a single ASA endpoint (src or dst).
-
-        Supported forms:
-        - host <ip>
-        - object <name>
-        - object-group <name>
-        - any, any4, any6
-        - <ip> <mask>  (or <ip>[/prefix])
-
-        Returns set of IPv4Address/IPv4Network primitives.
-        """
         nets: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]] = set()
         if not tokens:
             return nets
@@ -117,7 +90,6 @@ class ASAConfig:
             nets.update(self.resolve_network('any6'))
             return nets
 
-        # Otherwise treat as IP[/mask] possibly followed by dotted mask
         mask = None
         if tokens and '.' in tokens[0]:
             mask = tokens.pop(0)
@@ -125,14 +97,6 @@ class ASAConfig:
         return nets
 
     def _port_from_token(self, tok: str, proto_hint: Optional[str] = None) -> Optional[int]:
-        """Convert a port token (number or name) to an integer if possible.
-
-        Resolution order:
-        - Fast-path numeric
-        - socket.getservbyname(token, proto_hint)
-        - socket.getservbyname(token, 'tcp' then 'udp')
-        Returns None if resolution fails.
-        """
         if tok.isdigit():
             try:
                 return int(tok)
@@ -151,20 +115,6 @@ class ASAConfig:
         return None
 
     def _consume_service_tail(self, tokens: List[str], proto_hint: Optional[str]) -> dict:
-        """Parse the trailing service/port segment after destination endpoint.
-
-        Supported patterns:
-        - eq/lt/gt/neq <port>
-        - range <start> <end>
-        - object-group <name>
-        - object <name>  (service object)
-
-        Returns a dict understood by evaluation/formatting with keys:
-        - dst_ports: list[(op, (start,end))]
-        - dst_ops: set[str]
-        - dst_service_groups: set[str]
-        - dst_service_objects: set[str]
-        """
         dst_ports: List[Tuple[str, Tuple[Optional[int], Optional[int]]]] = []
         dst_ops: Set[str] = set()
         dst_service_groups: Set[str] = set()
@@ -211,7 +161,6 @@ class ASAConfig:
         }
 
     def parse(self) -> None:
-        """Parse the ASA configuration lines into objects, groups, and ACL lists."""
         i = 0
         L = len(self.lines)
         while i < L:
@@ -255,7 +204,6 @@ class ASAConfig:
                         elif m_group:
                             members.append({'group-object': m_group.group('name')})
                     elif typ == 'service':
-                        # Parse service object-groups with basic ops and nested groups
                         m_group = re_group_network_groupobj.match(ln)
                         if m_group:
                             members.append({'group-object': m_group.group('name')})
@@ -291,10 +239,6 @@ class ASAConfig:
             i += 1
 
     def _build_reverse_indexes(self) -> None:
-        """Build reverse indexes for exact primitive -> object names.
-
-        Used to surface duplicate network-objects mapping to the same address/network.
-        """
         ip_to_objects: Dict[Union[ipaddress.IPv4Address, ipaddress.IPv4Network], Set[str]] = defaultdict(set)
         for name, nets in self.network_objects.items():
             for n in nets:
@@ -303,11 +247,6 @@ class ASAConfig:
         self.ip_to_objects = dict(ip_to_objects)
 
     def resolve_service_group(self, name: str, visited: Optional[Set[str]] = None) -> List[dict]:
-        """Resolve a service object-group name into a list of specs.
-
-        Spec: {'proto': str, 'op': str|None, 'v1': str|None, 'v2': str|None} or
-        {'object': name} for unresolved service objects.
-        """
         if not hasattr(self, 'service_object_groups'):
             return []
         if visited is None:
@@ -326,15 +265,6 @@ class ASAConfig:
         return out
 
     def resolve_network(self, token: Union[str, ipaddress.IPv4Address, ipaddress.IPv4Network], visited: Optional[Set[str]] = None) -> Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network, str]]:
-        """Resolve a token to a set of IPv4 primitives.
-
-        Accepts:
-        - IPv4Address/IPv4Network: returns singleton set
-        - 'any'/'any4' => 0.0.0.0/0, 'any6' => ::/0 (ignored in IPv4 flows)
-        - Object/group names: resolves with recursion protection
-        - IP strings: parsed into primitives
-        - Unknown strings: returned as-is to avoid crashes
-        """
         visited = set() if visited is None else visited
         results: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network, str]] = set()
         if isinstance(token, (ipaddress.IPv4Address, ipaddress.IPv4Network)):
@@ -368,11 +298,6 @@ class ASAConfig:
             return {token}
 
     def find_alias_objects(self, target: Union[str, ipaddress.IPv4Address, ipaddress.IPv4Network], target_nets: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]]) -> Dict[Union[ipaddress.IPv4Address, ipaddress.IPv4Network], Set[str]]:
-        """Return mapping of address/network -> other object names that map to it.
-
-        Only considers exact primitives (no containment). Excludes the target's
-        own object name if the target was an object.
-        """
         exclude: Set[str] = set([target]) if isinstance(target, str) and target in self.network_objects else set()
         aliases = {}
         for n in target_nets:
@@ -384,13 +309,6 @@ class ASAConfig:
         return aliases
 
     def flatten_acl(self) -> List[dict]:
-        """Produce a list of flattened ACL entries with src/dst/service details.
-
-        Each entry is a dict containing:
-        - acl, action, proto (raw token), src, dst, svc (service details), raw
-        The 'svc' sub-dict includes parsed protocol/service-group info and
-        tail-based port constraints.
-        """
         entries: List[dict] = []
         for acl_name, lines in self.acls.items():
             for ln in lines:
@@ -417,13 +335,7 @@ class ASAConfig:
         return entries
 
 
-# ------------------- Evaluation helpers -------------------
-
 def nets_overlap(set_a: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network, str]], set_b: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network, str]]) -> bool:
-    """Return True if any network/address in set_a overlaps with any in set_b.
-
-    Unknown string tokens are ignored.
-    """
     for net_a in set_a:
         if not isinstance(net_a, (ipaddress.IPv4Address, ipaddress.IPv4Network)):
             continue
@@ -503,13 +415,6 @@ def _dst_ports_from_entry(cfg: ASAConfig, entry: dict) -> List[Tuple[str, str, T
 
 
 def _service_matches(cfg: ASAConfig, entry: dict, svc_filter: Optional[dict]) -> bool:
-    """Return True if entry matches an optional service filter.
-
-    svc_filter: {'proto': Optional[str], 'dports': Set[int]}
-    - If None: always True
-    - If filter has 'proto': entry must allow that proto (or be 'ip')
-    - If filter has 'dports': entry must allow at least one of those ports
-    """
     if not svc_filter:
         return True
     want_proto = svc_filter.get('proto')
@@ -538,11 +443,6 @@ def _service_matches(cfg: ASAConfig, entry: dict, svc_filter: Optional[dict]) ->
 
 
 def evaluate_acl(entries: List[dict], target_nets: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network, str]], cfg: Optional[ASAConfig] = None, service_filter: Optional[dict] = None) -> List[dict]:
-    """Return all ACL entries that affect the target networks.
-
-    - Matches by IP overlap. If service_filter is provided, also filter by
-      protocol and destination ports. cfg is required when service_filter is used.
-    """
     affected: List[dict] = []
     for e in entries:
         if nets_overlap(e['src'], target_nets) or nets_overlap(e['dst'], target_nets):
@@ -555,16 +455,7 @@ def evaluate_acl(entries: List[dict], target_nets: Set[Union[ipaddress.IPv4Addre
     return affected
 
 
-# ------------------- Inspect / Compare helpers -------------------
-
 def compare_old_new(cfg_text: str, old_target: str, new_target: str, service_filter: Optional[dict] = None) -> dict:
-    """Compare ACL impact between two targets (old -> new).
-
-    Returns a dict with keys:
-    - old_hits, new_hits: lists of matching entries for each target
-    - added_to_new: rules present in new_hits but not in old_hits (by raw identity)
-    - removed_from_old: rules present in old_hits but not in new_hits
-    """
     cfg = ASAConfig(cfg_text)
     old_nets = cfg.resolve_network(old_target)
     new_nets = cfg.resolve_network(new_target)
@@ -582,13 +473,6 @@ def compare_old_new(cfg_text: str, old_target: str, new_target: str, service_fil
 
 
 def inspect_host(cfg_text: str, target: str, service_filter: Optional[dict] = None) -> dict:
-    """Inspect all ACL entries affecting a single target.
-
-    Returns a dict with keys:
-    - hits: list of flattened entries matching the target
-    - target_nets: set of resolved address/network primitives
-    - aliases: mapping from primitive to object names that also resolve to it
-    """
     cfg = ASAConfig(cfg_text)
     target_nets = cfg.resolve_network(target)
     entries = cfg.flatten_acl()

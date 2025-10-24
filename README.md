@@ -3,7 +3,7 @@ Access-List Inspector
 
 Overview
 --------
-The tool parses firewall configurations (currently Cisco ASA) to:
+The tool parses firewall configurations (currently Cisco ASA; rudimentary FortiGate) to:
 - Resolve network objects and object-groups to concrete addresses/networks
 - Flatten ACL entries (source/destination) for impact analysis
 - Inspect a single IP/object to list all ACL entries affecting it
@@ -72,6 +72,12 @@ Web UI
   - `--configs-cisco /path/to/asa/configs`
   - `--configs-fortigate /path/to/fortigate/configs`
 
+Virtual environment
+-------------------
+- Create and activate a venv:
+  - scripts/setup_venv.sh
+  - source .venv/bin/activate
+
 Vendor scaffolding
 ------------------
 - Parsers for vendors live under `parsers/`.
@@ -99,7 +105,16 @@ Development
 -----------
 - Keep changes minimal and focused
 - Add or update tests alongside code changes
-- Validate with `python3 -m py_compile access-list-inspector.py` and `python3 -m py_compile parsers/asa.py`
+- Validate with `python3 -m py_compile access-list-inspector.py parsers/cisco/asa.py parsers/fortigate/fortigate.py`
+- Self-test: `./access-list-inspector.py --self-test`
+
+Future goals
+------------
+- Web wrapper UI for inspection/compare
+- Support FortiGate configs (including VDOMs) and cross-vendor compare
+- Port-aware matching and reporting
+- Pluggable parser architecture to support additional vendors
+- Dockerization: containerize CLI and web UI; simple Nginx front-end to serve the web UI and reverse proxy to a WSGI app (or keep stdlib HTTPServer for simplicity). Provide read-only mount for `configs/` and export reports.
 
 Architecture (Pluggable Parsers)
 --------------------------------

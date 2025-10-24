@@ -1,7 +1,7 @@
 import unittest
 import ipaddress
 
-from parsers.asa import ASAConfig, inspect_host
+from parsers.cisco.asa import ASAConfig, inspect_host
 
 
 class TestAliases(unittest.TestCase):

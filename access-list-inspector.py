@@ -15,7 +15,8 @@ considers full rule identity (including protocol/ports). Optional --proto and
 import argparse
 import sys
 
-from parsers import asa as asa_parser
+from parsers.cisco import asa as cisco_asa
+from parsers.fortigate import fortigate as fortigate_parser
 
 
 def format_flat_rule(rule: dict) -> str:
@@ -69,7 +70,7 @@ def main() -> None:
         description='Vendor-agnostic access-list inspector (ASA supported).',
         epilog='Use --examples to see example commands.'
     )
-    parser.add_argument('--vendor', choices=['asa'], default='asa', help='Firewall vendor (default: asa)')
+    parser.add_argument('--vendor', choices=['asa', 'fortigate'], default='asa', help='Firewall vendor (default: asa)')
     parser.add_argument('--config', help='Config file for the chosen vendor')
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--old', help='Old IP, network (CIDR), or object name for comparison')
@@ -78,12 +79,18 @@ def main() -> None:
     parser.add_argument('--proto', choices=['ip', 'tcp', 'udp', 'icmp'], help='Filter by protocol for matching (optional)')
     parser.add_argument('--dport', type=int, action='append', help='Filter by destination port (repeatable, optional)')
     parser.add_argument('--examples', action='store_true', help='Print example usage and exit')
+    parser.add_argument('--self-test', action='store_true', help='Run the built-in unit tests and exit')
 
     args = parser.parse_args()
 
     if args.examples:
         print_examples()
         return
+    if args.self_test:
+        import unittest
+        suite = unittest.defaultTestLoader.discover('tests')
+        result = unittest.TextTestRunner(verbosity=2).run(suite)
+        sys.exit(0 if result.wasSuccessful() else 1)
 
     if not args.config:
         parser.error('--config is required')
@@ -105,7 +112,7 @@ def main() -> None:
 
     if args.vendor == 'asa':
         if args.inspect:
-            report = asa_parser.inspect_host(cfg_text, args.inspect, service_filter=svc_filter)
+            report = cisco_asa.inspect_host(cfg_text, args.inspect, service_filter=svc_filter)
             print(f"--- Inspection Report for Target: {args.inspect} ---")
             print(f"Resolved to: {', '.join(str(n) for n in report['target_nets'])}")
             print(f"Found {len(report['hits'])} matching ACL entries.")
@@ -120,7 +127,25 @@ def main() -> None:
                 for addr, names in sorted(report['aliases'].items(), key=lambda x: str(x[0])):
                     print(f"  {addr}: {', '.join(sorted(names))}")
         else:
-            diff = asa_parser.compare_old_new(cfg_text, args.old, args.new, service_filter=svc_filter)
+            diff = cisco_asa.compare_old_new(cfg_text, args.old, args.new, service_filter=svc_filter)
+    elif args.vendor == 'fortigate':
+        if args.inspect:
+            report = fortigate_parser.inspect_host(cfg_text, args.inspect, service_filter=svc_filter)
+            print(f"--- Inspection Report for Target: {args.inspect} ---")
+            print(f"Resolved to: {', '.join(str(n) for n in report['target_nets'])}")
+            print(f"Found {len(report['hits'])} matching ACL entries.")
+            print("\n--- Matched Rules (Raw) ---")
+            for e in report['hits']:
+                print(f"  {e['raw']}")
+            print("\n--- Matched Rules (Flattened) ---")
+            for e in report['hits']:
+                print(f"  {format_flat_rule(e)}")
+            if report.get('aliases'):
+                print("\n--- Other objects mapping to the same address/network ---")
+                for addr, names in sorted(report['aliases'].items(), key=lambda x: str(x[0])):
+                    print(f"  {addr}: {', '.join(sorted(names))}")
+        else:
+            diff = fortigate_parser.compare_old_new(cfg_text, args.old, args.new, service_filter=svc_filter)
             print(f"ACL entries affecting old target ({args.old}): {len(diff['old_hits'])}")
             print(f"ACL entries affecting new target ({args.new}): {len(diff['new_hits'])}")
             print(f"Added to new target: {len(diff['added_to_new'])}")
@@ -139,4 +164,3 @@ def main() -> None:
 
 if __name__ == '__main__':
     main()
-
