@@ -17,9 +17,10 @@ Parsing rules
 -------------
 - Parse ASA `object network` and `object-group network`
 - Record network-objects as exact IPv4Address or IPv4Network
-- For ACL lines, extract protocol/service token and parse exactly two endpoints (src, dst). Ignore remaining tokens (ports) for now
+- For ACL lines, extract protocol/service token and parse exactly two endpoints (src, dst), then parse trailing service/port tokens
 - Recognize ASA tokens `any`, `any4`, `any6`
-- Do not attempt port/time-range matching yet (future work)
+- Parse basic service-groups: `service-object tcp|udp` with `eq/lt/gt/neq/range`, and nested `group-object`
+- Time-range and service-objects referenced by name are not resolved yet
 
 New features in this iteration
 ------------------------------
@@ -43,5 +44,11 @@ Future abstractions and goals
 - Web wrapper page with a simple UI for inspect/compare flows
 - Vendor abstraction: introduce a pluggable parser layer to support FortiGate (with VDOMs) and others
 - Cross-vendor diff: normalize flattened entries to a common model for comparison
-- Port-aware matching and richer rule reporting (service/ports)
+- Port-aware matching and richer rule reporting (service/ports) [in progress: basic filtering via --proto/--dport]
 
+Config directories
+------------------
+- Default directories scanned by the web UI and (eventually) parsers:
+  - ASA: `configs/cisco`
+  - FortiGate: `configs/fortigate`
+- These can be overridden via CLI: `--configs-cisco`, `--configs-fortigate`.

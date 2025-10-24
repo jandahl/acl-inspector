@@ -27,22 +27,55 @@ Quick start
 - Inspect a host/object:
   `./ASA_ACL_inspector.py --config <asa.conf> --inspect <ip|cidr|object>`
 
+  - With protocol/port filtering:
+    `./ASA_ACL_inspector.py --config <asa.conf> --inspect <target> --proto tcp --dport 443 --dport 1433`
+
 - Compare two targets:
   `./ASA_ACL_inspector.py --config <asa.conf> --old <ip|cidr|object> --new <ip|cidr|object>`
+
+Examples
+--------
+- Print examples and exit:
+  `./ASA_ACL_inspector.py --examples`
+
+- Inspect with protocol/port filter:
+  `./ASA_ACL_inspector.py --config <asa.conf> --inspect <target> --proto tcp --dport 443 --dport 1433`
+
+- Compare with a port filter:
+  `./ASA_ACL_inspector.py --config <asa.conf> --old <A> --new <B> --proto udp --dport 53`
 
 Outputs
 -------
 - Inspection prints:
   - Resolved target addresses
   - Matched ACL lines (raw)
-  - Matched ACL entries (flattened src/dst)
+  - Matched ACL entries (flattened src/dst + proto/ports or service-group)
   - Other objects mapping to the same address/network (duplicates)
 
 Notes on parsing
 ----------------
-- The tool focuses on IP impact; port/service tokens are currently ignored for matching
+- Default comparison includes protocol/port information as part of the rule identity (raw ACL line), so differences reflect service changes, too. Optional `--proto/--dport` can further constrain matches.
 - ASA tokens `any`, `any4` and `any6` are supported
 - Service object(-group) names at the protocol position are consumed to prevent token spillover
+ - Optional port-aware filtering is supported via `--proto` and `--dport`
+
+Web UI
+------
+- Start a simple local UI:
+  `./ASA_ACL_inspector.py --web --port 8080`
+
+- The UI lists config files from the following directories by default:
+  - ASA: `configs/cisco`
+  - FortiGate: `configs/fortigate`
+
+- Override directories:
+  - `--configs-cisco /path/to/asa/configs`
+  - `--configs-fortigate /path/to/fortigate/configs`
+
+Vendor scaffolding
+------------------
+- Parsers for vendors will live under `parsers/`.
+- ASA remains inline for now but the code is structured so it can be moved under `parsers/asa.py` and loaded via the vendor option.
 
 Duplicate object detection
 --------------------------
@@ -68,10 +101,18 @@ Development
 - Add or update tests alongside code changes
 - Validate with `python3 -m py_compile ASA_ACL_inspector.py`
 
+Architecture (Pluggable Parsers)
+--------------------------------
+- Goal: support multiple firewall vendors by parsing into a shared, normalized model.
+- Approach:
+  - Each vendor implements a parser class that outputs flattened rules (src/dst/service).
+  - Normalized dataclasses defined under `parsers/base.py` (`FlatRule`, `Endpoint`, `ServiceSpec`).
+  - CLI selects the parser (auto-detect or `--vendor asa|fortigate`), then all downstream logic (inspect/compare/evaluate) runs on the normalized model.
+  - This enables cross-vendor comparisons (e.g., ASA vs FortiGate) and a web UI that doesn’t care about source syntax.
+
 Future goals
 ------------
 - Web wrapper UI for inspection/compare
 - Support FortiGate configs (including VDOMs) and cross-vendor compare
 - Port-aware matching and reporting
 - Pluggable parser architecture to support additional vendors
-

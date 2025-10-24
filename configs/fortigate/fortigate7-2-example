@@ -1,0 +1,94 @@
+config system global
+    set vdom-mode multi-vdom
+end
+
+# Define the root VDOM
+config vdom
+    edit root
+    set workspace-mode enable
+    next
+end
+
+# Create additional VDOMs
+config vdom
+    edit VDOM1
+    next
+    edit VDOM2
+    next
+end
+
+# Configure interfaces for VDOM1
+config system interface
+    edit "port1"
+        set vdom "VDOM1"
+        set ip 192.168.1.1 255.255.255.0
+        set allowaccess ping https http
+    next
+    edit "port2"
+        set vdom "VDOM1"
+        set ip 203.0.113.1 255.255.255.0
+        set allowaccess ping
+    next
+end
+
+# Configure interfaces for VDOM2
+config system interface
+    edit "port1"
+        set vdom "VDOM2"
+        set ip 10.0.0.1 255.255.255.0
+        set allowaccess ping https http
+    next
+    edit "port2"
+        set vdom "VDOM2"
+        set ip 198.51.100.1 255.255.255.0
+        set allowaccess ping
+    next
+end
+
+# Configure address objects for VDOM1
+config firewall address
+    edit "Internal_Network"
+        set subnet 192.168.1.0 255.255.255.0
+    next
+    edit "Public_Web_Server"
+        set subnet 203.0.113.10 255.255.255.255
+    next
+end
+
+# Configure address objects for VDOM2
+config firewall address
+    edit "Internal_Network_V2"
+        set subnet 10.0.0.0 255.255.255.0
+    next
+    edit "Public_Web_Server_V2"
+        set subnet 198.51.100.10 255.255.255.255
+    next
+end
+
+# Configure firewall policy for VDOM1
+config firewall policy
+    edit 1
+        set name "Allow_HTTP_VDOM1"
+        set srcintf "port1"
+        set dstintf "port2"
+        set srcaddr "Internal_Network"
+        set dstaddr "Public_Web_Server"
+        set action accept
+        set schedule "always"
+        set service "HTTP"
+    next
+end
+
+# Configure firewall policy for VDOM2
+config firewall policy
+    edit 2
+        set name "Allow_HTTP_VDOM2"
+        set srcintf "port1"
+        set dstintf "port2"
+        set srcaddr "Internal_Network_V2"
+        set dstaddr "Public_Web_Server_V2"
+        set action accept
+        set schedule "always"
+        set service "HTTP"
+    next
+end
