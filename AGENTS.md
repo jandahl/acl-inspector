@@ -55,6 +55,14 @@ Docker notes
   - Expose a port for web UI; mount `configs/` from host for UAT files
   - Optionally place Nginx in front of the web UI for TLS/headers, or run UI directly
   - Local testing will be using `podman`, production will be using `docker`
+- Current setup for web UI:
+  - `Dockerfile` and `podman-compose.yaml` are located in `Dockersetup/`.
+  - The web UI listens on port `8083`.
+  - To build and run the container using `podman-compose` (from the project root):
+    ```bash
+    cd Dockersetup && podman-compose -p aclinspector up --build -d
+    ```
+    Access the web UI at `http://localhost:8083`.
 
 Config directories
 ------------------

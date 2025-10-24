@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  acl-inspector-web:
+    build:
+      context: ..
+      dockerfile: ./Dockersetup/Dockerfile
+    ports:
+      - "8083:8083"
+    volumes:
+      - ../configs:/app/configs
+    # Command to override the Dockerfile CMD if needed, but for now, it's good.
+    # command: ["python", "access-list-web.py", "--port", "8083", "--host", "0.0.0.0"]
