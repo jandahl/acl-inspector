@@ -61,6 +61,7 @@ class ASAConfig:
         self.network_object_groups = {}
         self.acls = defaultdict(list)
         self.parse()
+        self._build_reverse_indexes()
 
     def _consume_endpoint(self, tokens):
         """Consume tokens to parse a single ASA endpoint (src or dst).
@@ -158,6 +159,38 @@ class ASAConfig:
                 continue
             i += 1
 
+    def _build_reverse_indexes(self):
+        """Build reverse indexes for quick lookups (e.g., address -> object names)."""
+        ip_to_objects = defaultdict(set)
+        for name, nets in self.network_objects.items():
+            for n in nets:
+                if isinstance(n, (ipaddress.IPv4Address, ipaddress.IPv4Network)):
+                    ip_to_objects[n].add(name)
+        self.ip_to_objects = dict(ip_to_objects)
+
+    def find_alias_objects(self, target, target_nets):
+        """Return mapping of address/network -> other object names that map to it.
+
+        Only considers network objects (not object-groups). If target is the
+        name of a network object, it is excluded from the reported alias sets.
+        """
+        exclude = set()
+        if isinstance(target, str) and target in self.network_objects:
+            exclude.add(target)
+
+        aliases = {}
+        for n in target_nets:
+            if not isinstance(n, (ipaddress.IPv4Address, ipaddress.IPv4Network)):
+                continue
+            names = set()
+            # Exact match of the same primitive stored in objects
+            if n in self.ip_to_objects:
+                names.update(self.ip_to_objects[n])
+            # Focus is on exact IP/Network duplicates; do not consider containment.
+            names -= exclude
+            if names:
+                aliases[n] = names
+        return aliases
     def resolve_network(self, token, visited=None):
         visited = set() if visited is None else visited
         results = set()
@@ -296,7 +329,8 @@ def inspect_host(cfg_text, target):
     target_nets = cfg.resolve_network(target)
     entries = cfg.flatten_acl()
     hits = evaluate_acl(entries, target_nets)
-    return {'hits': hits, 'target_nets': target_nets}
+    aliases = cfg.find_alias_objects(target, target_nets)
+    return {'hits': hits, 'target_nets': target_nets, 'aliases': aliases}
 
 def format_flat_rule(rule):
     src_str = ', '.join(sorted([str(s) for s in rule['src']]))
@@ -341,6 +375,11 @@ def main():
         print("\n--- Matched Rules (Flattened) ---")
         for e in report['hits']:
             print(f"  {format_flat_rule(e)}")
+
+        if report.get('aliases'):
+            print("\n--- Other objects mapping to the same address/network ---")
+            for addr, names in sorted(report['aliases'].items(), key=lambda x: str(x[0])):
+                print(f"  {addr}: {', '.join(sorted(names))}")
 
     else: # Comparison mode
         diff = compare_old_new(cfg_text, args.old, args.new)
