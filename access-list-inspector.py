@@ -14,6 +14,8 @@ considers full rule identity (including protocol/ports). Optional --proto and
 
 import argparse
 import sys
+import json
+from xml.etree.ElementTree import Element, SubElement, tostring
 
 from parsers.cisco import asa as cisco_asa
 from parsers.fortigate import fortigate as fortigate_parser
@@ -50,6 +52,65 @@ def format_flat_rule(rule: dict) -> str:
     return f"{rule['action']}{(' ' + rule['proto']) if rule.get('proto') else ''}{svc_str} src=[{src_str}] dst=[{dst_str}]"
 
 
+def _to_str_set(values):
+    return sorted([str(v) for v in values])
+
+
+def _serialize_entry(e: dict) -> dict:
+    return {
+        'acl': e.get('acl'),
+        'action': e.get('action'),
+        'proto': e.get('proto'),
+        'src': _to_str_set(e.get('src', [])),
+        'dst': _to_str_set(e.get('dst', [])),
+        'svc': e.get('svc'),
+        'raw': e.get('raw'),
+    }
+
+
+def _serialize_report(report: dict) -> dict:
+    return {
+        'target_nets': _to_str_set(report.get('target_nets', [])),
+        'hits': [_serialize_entry(e) for e in report.get('hits', [])],
+        'aliases': {str(k): sorted(list(v)) for k, v in (report.get('aliases') or {}).items()},
+    }
+
+
+def _serialize_diff(diff: dict) -> dict:
+    return {
+        'old_hits': [_serialize_entry(e) for e in diff.get('old_hits', [])],
+        'new_hits': [_serialize_entry(e) for e in diff.get('new_hits', [])],
+        'added_to_new': [_serialize_entry(e) for e in diff.get('added_to_new', [])],
+        'removed_from_old': [_serialize_entry(e) for e in diff.get('removed_from_old', [])],
+    }
+
+
+def _xml_from_dict(name: str, data) -> Element:
+    root = Element(name)
+    def build(parent, obj, key_name='item'):
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                child = SubElement(parent, str(k))
+                build(child, v, key_name='item')
+        elif isinstance(obj, list):
+            for v in obj:
+                child = SubElement(parent, key_name)
+                build(child, v, key_name='item')
+        else:
+            parent.text = str(obj)
+    build(root, data)
+    return root
+
+
+def _use_color(args):
+    # Enable ANSI colors for TTY text output unless disabled or using structured formats
+    return (args.format == 'text') and (not args.no_color) and sys.stdout.isatty()
+
+
+def _c(s, code, enabled):
+    return f"\x1b[{code}m{s}\x1b[0m" if enabled else s
+
+
 def print_examples() -> None:
     """Emit example commands for quick reference and exit."""
     examples = [
@@ -81,6 +142,8 @@ def main() -> None:
     parser.add_argument('--examples', action='store_true', help='Print example usage and exit')
     parser.add_argument('--self-test', action='store_true', help='Run the built-in unit tests and exit')
     parser.add_argument('--vdom', help='FortiGate VDOM name (when --vendor fortigate)')
+    parser.add_argument('--format', choices=['text', 'json', 'xml'], default='text', help='Output format (default: text)')
+    parser.add_argument('--no-color', action='store_true', help='Disable ANSI colors for text output')
 
     args = parser.parse_args()
 
@@ -111,55 +174,97 @@ def main() -> None:
     if args.proto or args.dport:
         svc_filter = {'proto': args.proto, 'dports': set(args.dport or [])}
 
+    use_color = _use_color(args)
+    green = lambda s: _c(s, '32;1', use_color)
+    red = lambda s: _c(s, '31;1', use_color)
+    blue = lambda s: _c(s, '34;1', use_color)
+    bold = lambda s: _c(s, '1', use_color)
+
     if args.vendor == 'asa':
         if args.inspect:
             report = cisco_asa.inspect_host(cfg_text, args.inspect, service_filter=svc_filter)
-            print(f"--- Inspection Report for Target: {args.inspect} ---")
+            if args.format == 'json':
+                print(json.dumps(_serialize_report(report), indent=2))
+                return
+            if args.format == 'xml':
+                xml = _xml_from_dict('inspection', _serialize_report(report))
+                print(tostring(xml, encoding='unicode'))
+                return
+            print(bold(f"Inspection: {args.inspect}"))
             print(f"Resolved to: {', '.join(str(n) for n in report['target_nets'])}")
-            print(f"Found {len(report['hits'])} matching ACL entries.")
-            print("\n--- Matched Rules (Raw) ---")
-            for e in report['hits']:
-                print(f"  {e['raw']}")
-            print("\n--- Matched Rules (Flattened) ---")
+            print(blue(f"Matching ACL entries: {len(report['hits'])}"))
+            print("\nDetails (flattened):")
             for e in report['hits']:
                 print(f"  {format_flat_rule(e)}")
             if report.get('aliases'):
-                print("\n--- Other objects mapping to the same address/network ---")
+                print("\nOther objects mapping to same address/network:")
                 for addr, names in sorted(report['aliases'].items(), key=lambda x: str(x[0])):
                     print(f"  {addr}: {', '.join(sorted(names))}")
         else:
             diff = cisco_asa.compare_old_new(cfg_text, args.old, args.new, service_filter=svc_filter)
+            if args.format == 'json':
+                print(json.dumps(_serialize_diff(diff), indent=2))
+                return
+            if args.format == 'xml':
+                xml = _xml_from_dict('diff', _serialize_diff(diff))
+                print(tostring(xml, encoding='unicode'))
+                return
+            print(bold(f"Compare: OLD={args.old} vs NEW={args.new}"))
+            print(f"Old matches: {len(diff['old_hits'])}  |  New matches: {len(diff['new_hits'])}")
+            print(green(f"New-only rules (apply to NEW, not OLD): {len(diff['added_to_new'])}"))
+            print(red(f"Old-only rules (apply to OLD, not NEW): {len(diff['removed_from_old'])}"))
+            if diff['added_to_new']:
+                print(green('\nNew-only rules:'))
+                for e in diff['added_to_new'][:50]:
+                    print(green(f" + {e['raw']}"))
+                    print(f"   -> {format_flat_rule(e)}")
+            if diff['removed_from_old']:
+                print(red('\nOld-only rules:'))
+                for e in diff['removed_from_old'][:50]:
+                    print(red(f" - {e['raw']}"))
+                    print(f"   -> {format_flat_rule(e)}")
     elif args.vendor == 'fortigate':
         if args.inspect:
             report = fortigate_parser.inspect_host(cfg_text, args.inspect, service_filter=svc_filter, vdom=args.vdom)
-            print(f"--- Inspection Report for Target: {args.inspect} ---")
+            if args.format == 'json':
+                print(json.dumps(_serialize_report(report), indent=2))
+                return
+            if args.format == 'xml':
+                xml = _xml_from_dict('inspection', _serialize_report(report))
+                print(tostring(xml, encoding='unicode'))
+                return
+            print(bold(f"Inspection: {args.inspect} (VDOM={args.vdom or 'default'})"))
             print(f"Resolved to: {', '.join(str(n) for n in report['target_nets'])}")
-            print(f"Found {len(report['hits'])} matching ACL entries.")
-            print("\n--- Matched Rules (Raw) ---")
-            for e in report['hits']:
-                print(f"  {e['raw']}")
-            print("\n--- Matched Rules (Flattened) ---")
+            print(blue(f"Matching policy entries: {len(report['hits'])}"))
+            print("\nDetails (flattened):")
             for e in report['hits']:
                 print(f"  {format_flat_rule(e)}")
             if report.get('aliases'):
-                print("\n--- Other objects mapping to the same address/network ---")
+                print("\nOther objects mapping to same address/network:")
                 for addr, names in sorted(report['aliases'].items(), key=lambda x: str(x[0])):
                     print(f"  {addr}: {', '.join(sorted(names))}")
         else:
             diff = fortigate_parser.compare_old_new(cfg_text, args.old, args.new, service_filter=svc_filter, vdom=args.vdom)
-            print(f"ACL entries affecting old target ({args.old}): {len(diff['old_hits'])}")
-            print(f"ACL entries affecting new target ({args.new}): {len(diff['new_hits'])}")
-            print(f"Added to new target: {len(diff['added_to_new'])}")
-            print(f"Removed from old target: {len(diff['removed_from_old'])}")
+            if args.format == 'json':
+                print(json.dumps(_serialize_diff(diff), indent=2))
+                return
+            if args.format == 'xml':
+                xml = _xml_from_dict('diff', _serialize_diff(diff))
+                print(tostring(xml, encoding='unicode'))
+                return
+            print(bold(f"Compare: OLD={args.old} vs NEW={args.new} (VDOM={args.vdom or 'default'})"))
+            print(f"Old matches: {len(diff['old_hits'])}  |  New matches: {len(diff['new_hits'])}")
+            print(green(f"New-only rules (apply to NEW, not OLD): {len(diff['added_to_new'])}"))
+            print(red(f"Old-only rules (apply to OLD, not NEW): {len(diff['removed_from_old'])}"))
             if diff['added_to_new']:
-                print('\n--- Rules Added to New Target ---')
+                print(green('\nNew-only rules:'))
                 for e in diff['added_to_new'][:50]:
-                    print(f" + {e['raw']}")
+                    print(green(f" + {e['raw']}"))
                     print(f"   -> {format_flat_rule(e)}")
             if diff['removed_from_old']:
-                print('\n--- Rules Removed from Old Target ---')
+                print(red('\nOld-only rules:'))
                 for e in diff['removed_from_old'][:50]:
-                    print(f" - {e['raw']}")
+                    print(red(f" - {e['raw']}"))
                     print(f"   -> {format_flat_rule(e)}")
 
 

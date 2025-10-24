@@ -37,6 +37,14 @@ Quick start (CLI)
   - Inspect: `./access-list-inspector.py --vendor fortigate --config <ftg.conf> --vdom root --inspect <ip|object>`
   - Compare: `./access-list-inspector.py --vendor fortigate --config <ftg.conf> --vdom root --old <A> --new <B>`
 
+Output formats
+--------------
+- Human-friendly text (default), with clearer section names and optional ANSI colors (auto-enabled on TTY).
+- Structured output for automation:
+  - JSON: `--format json`
+  - XML: `--format xml`
+- Disable colors: `--no-color`
+
 Examples
 --------
 - Print examples and exit:

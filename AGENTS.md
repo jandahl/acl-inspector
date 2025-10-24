@@ -60,3 +60,12 @@ Config directories
   - ASA: `configs/cisco`
   - FortiGate: `configs/fortigate`
 - These can be overridden via CLI flags in `access-list-web.py`: `--configs-cisco`, `--configs-fortigate`.
+CLI output & structured formats
+------------------------------
+- Text output aims to be explicit and readable:
+  - Compare headings: "New-only rules (apply to NEW, not OLD)" and "Old-only rules (apply to OLD, not NEW)"
+  - Show flattened entries under each raw rule
+- ANSI colors are enabled on TTY by default and can be disabled with `--no-color`
+- Structured outputs for automation:
+  - `--format json` (preferred for machine use)
+  - `--format xml` (available; YAML can be added when a YAML dependency is acceptable)
