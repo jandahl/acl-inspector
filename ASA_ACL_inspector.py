@@ -1,4 +1,3 @@
-# Temporary comment to force re-read
 #!/usr/bin/env python3
 """
 ASA ACL diff by IP/object
@@ -87,8 +86,11 @@ class ASAConfig:
             if tokens:
                 nets.update(self.resolve_network(tokens.pop(0)))
             return nets
-        if low == 'any':
-            nets.update(self.resolve_network('any'))
+        if low in ('any', 'any4', 'any-ipv4'):
+            nets.update(self.resolve_network('any4'))
+            return nets
+        if low in ('any6', 'any-ipv6'):
+            nets.update(self.resolve_network('any6'))
             return nets
 
         # Otherwise treat as IP[/mask] possibly followed by dotted mask
@@ -163,9 +165,15 @@ class ASAConfig:
         if isinstance(token, (ipaddress.IPv4Address, ipaddress.IPv4Network)):
             return {token}
 
-        token_lower = token.lower()
-        if token_lower == 'any':
+        token_lower = token.lower() if isinstance(token, str) else token
+        if token_lower in ('any', 'any4', 'any-ipv4'):
             return {ipaddress.ip_network('0.0.0.0/0')}
+        if token_lower in ('any6', 'any-ipv6'):
+            try:
+                return {ipaddress.ip_network('::/0')}
+            except Exception:
+                # If IPv6 not desired, return empty to avoid crashes in IPv4-only logic
+                return set()
 
         if token in self.network_objects:
             return self.network_objects[token]
@@ -208,7 +216,13 @@ class ASAConfig:
                 if not tokens:
                     continue
 
-                proto = tokens.pop(0)
+                # Consume protocol/service portion first
+                proto_tok = tokens.pop(0).lower()
+                proto = proto_tok
+                if proto_tok in ('object-group', 'object', 'service-object') and tokens:
+                    # Service object(-group) at protocol position; consume its name
+                    svc_name = tokens.pop(0)
+                    proto = f"service:{proto_tok}:{svc_name}"
                 # Parse exactly two endpoints: src then dst; ignore remaining (ports, etc.)
                 srcs = self._consume_endpoint(tokens)
                 dsts = self._consume_endpoint(tokens)
