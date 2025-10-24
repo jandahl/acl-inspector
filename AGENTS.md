@@ -42,6 +42,7 @@ Tests
 Future abstractions and goals
 -----------------------------
 - Web wrapper page with a simple UI for inspect/compare flows (separate script)
+- Nicer CSS
 - Vendor abstraction: introduce a pluggable parser layer to support FortiGate (with VDOMs) and others
 - Cross-vendor diff: normalize flattened entries to a common model for comparison
 - Port-aware matching and richer rule reporting (service/ports) [in progress: basic filtering via --proto/--dport]
@@ -53,6 +54,7 @@ Docker notes
   - Entrypoints: CLI (`access-list-inspector.py`) and web UI (`access-list-web.py`)
   - Expose a port for web UI; mount `configs/` from host for UAT files
   - Optionally place Nginx in front of the web UI for TLS/headers, or run UI directly
+  - Local testing will be using `podman`, production will be using `docker`
 
 Config directories
 ------------------
