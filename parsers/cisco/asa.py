@@ -167,7 +167,8 @@ class ASAConfig:
                 'dst_service_objects': sorted(list(svc.get('dst_service_objects') or [])),
             }
             acl_name = e.get('acl')
-            bound_to = self.acl_bindings.get(acl_name) if acl_name else None
+            binding = self.acl_bindings.get(acl_name) if acl_name else None
+            bound_to = self._binding_target_value(binding)
             entry = ir.ACLEntry(
                 action=e.get('action'),
                 proto=e.get('proto'),
@@ -177,11 +178,14 @@ class ASAConfig:
                 raw=e.get('raw'),
                 acl=acl_name,
                 bound_to=bound_to,
+                binding=binding,
             )
             acl_map.setdefault(acl_name or 'UNNAMED', []).append(entry)
         ir_acls: List[ir.ACL] = []
         for name, entries in acl_map.items():
-            ir_acls.append(ir.ACL(name=name, bound_to=self.acl_bindings.get(name), entries=entries))
+            binding = self.acl_bindings.get(name)
+            bound_to = self._binding_target_value(binding)
+            ir_acls.append(ir.ACL(name=name, bound_to=bound_to, entries=entries, binding=binding))
         # NAT rules
         ir_nats: List[ir.NAT] = []
         for idx, r in enumerate(self.nat_rules):
@@ -353,9 +357,11 @@ class ASAConfig:
                 continue
 
             # ACL to interface binding
-            m_ag = re.match(r"^access-group\s+(?P<acl>\S+)\s+in\s+interface\s+(?P<intf>\S+)", line, re.IGNORECASE)
+            m_ag = re.match(r"^access-group\s+(?P<acl>\S+)\s+(?P<body>.+)$", line, re.IGNORECASE)
             if m_ag:
-                self.acl_bindings[m_ag.group('acl')] = m_ag.group('intf')
+                acl_name = m_ag.group('acl')
+                body = m_ag.group('body')
+                self.acl_bindings[acl_name] = self._parse_access_group_binding(body, line)
                 i += 1
                 continue
             m = re_object.match(line)
@@ -530,6 +536,59 @@ class ASAConfig:
                 if isinstance(n, (ipaddress.IPv4Address, ipaddress.IPv4Network)):
                     ip_to_objects[n].add(name)
         self.ip_to_objects = dict(ip_to_objects)
+
+    def _parse_access_group_binding(self, body: str, line: str) -> Dict[str, Optional[str]]:
+        binding: Dict[str, Optional[str]] = {
+            'scope': 'interface',
+            'direction': None,
+            'interface': None,
+            'raw': line.strip(),
+        }
+        tokens = body.strip().split()
+        if not tokens:
+            return binding
+        first = tokens[0].lower()
+        if first == 'global':
+            binding['scope'] = 'global'
+            binding['direction'] = 'global'
+            return binding
+        if first == 'control-plane':
+            binding['scope'] = 'control-plane'
+            if len(tokens) >= 4 and tokens[1].lower() in ('in', 'out') and tokens[2].lower() == 'interface':
+                binding['direction'] = tokens[1].lower()
+                binding['interface'] = tokens[3]
+            return binding
+        if first in ('in', 'out'):
+            binding['direction'] = first
+            if len(tokens) >= 3 and tokens[1].lower() == 'interface':
+                binding['interface'] = tokens[2]
+            elif len(tokens) >= 2:
+                binding['interface'] = tokens[1]
+            return binding
+        if first == 'interface' and len(tokens) >= 2:
+            binding['interface'] = tokens[1]
+            return binding
+        # Fallback: preserve first token as scope and best-effort interface capture
+        binding['scope'] = first
+        if len(tokens) >= 3 and tokens[1].lower() == 'interface':
+            binding['direction'] = tokens[0].lower()
+            binding['interface'] = tokens[2]
+        elif len(tokens) >= 2:
+            binding['interface'] = tokens[1]
+        return binding
+
+    def _binding_target_value(self, binding: Optional[Dict[str, Optional[str]]]) -> Optional[str]:
+        if not binding:
+            return None
+        scope = (binding.get('scope') or '').lower()
+        interface = binding.get('interface')
+        if scope == 'interface' and interface:
+            return interface
+        if scope == 'global':
+            return 'global'
+        if interface:
+            return interface
+        return binding.get('scope')
 
     def _parse_nat_service_clause(self, clause: str) -> Tuple[Optional[dict], str]:
         text = clause.strip()
@@ -754,7 +813,17 @@ class ASAConfig:
                 srcs = self._consume_endpoint(tokens)
                 dsts = self._consume_endpoint(tokens)
                 svc_tail = self._consume_service_tail(tokens, entry_svc["proto"]) if tokens else {"dst_ports": [], "dst_ops": set(), "dst_service_groups": set(), "dst_service_objects": set()}
-                entries.append({'acl': acl_name, 'action': action, 'proto': proto, 'src': srcs, 'dst': dsts, 'svc': {**entry_svc, **svc_tail}, 'raw': ln.strip()})
+                binding = self.acl_bindings.get(acl_name)
+                entries.append({
+                    'acl': acl_name,
+                    'action': action,
+                    'proto': proto,
+                    'src': srcs,
+                    'dst': dsts,
+                    'svc': {**entry_svc, **svc_tail},
+                    'binding': binding,
+                    'raw': ln.strip(),
+                })
         return entries
 
 

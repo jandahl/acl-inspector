@@ -61,12 +61,14 @@ class TestIRSchema(unittest.TestCase):
         acls = {a['name']: a for a in d.get('acls', [])}
         self.assertIn('OUT', acls)
         self.assertEqual(acls['OUT']['bound_to'], 'outside')
+        self.assertEqual(acls['OUT']['binding']['direction'], 'in')
         entries = acls['OUT']['entries']
         self.assertGreaterEqual(len(entries), 1)
         e0 = entries[0]
         self.assertEqual(e0['action'], 'permit')
         self.assertEqual(e0['proto'], 'tcp')
         self.assertEqual(e0['bound_to'], 'outside')
+        self.assertEqual(e0['binding']['direction'], 'in')
         # Service ports normalized
         svc = e0['svc']
         self.assertIn('dst_ports', svc)
@@ -77,4 +79,3 @@ class TestIRSchema(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-

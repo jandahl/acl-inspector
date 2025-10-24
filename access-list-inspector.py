@@ -21,6 +21,25 @@ from parsers.cisco import asa as cisco_asa
 from parsers.fortigate import fortigate as fortigate_parser
 
 
+def _format_binding(binding: dict) -> str:
+    if not binding:
+        return ''
+    scope = (binding.get('scope') or '').lower()
+    direction = binding.get('direction')
+    interface = binding.get('interface')
+    if scope == 'global':
+        return 'global'
+    if scope == 'control-plane':
+        if interface and direction:
+            return f"{interface}({direction},control-plane)"
+        return 'control-plane'
+    if interface:
+        if direction:
+            return f"{interface}({direction})"
+        return interface
+    return scope or ''
+
+
 def format_flat_rule(rule: dict) -> str:
     """Return a concise string form of a flattened rule including service details."""
     src_str = ', '.join(sorted([str(s) for s in rule['src']]))
@@ -49,7 +68,9 @@ def format_flat_rule(rule: dict) -> str:
         head = ' '.join(parts) if parts else ''
         tail = (' ports=' + ','.join(port_parts)) if port_parts else ''
         svc_str = f" {head}{tail}".rstrip()
-    return f"{rule['action']}{(' ' + rule['proto']) if rule.get('proto') else ''}{svc_str} src=[{src_str}] dst=[{dst_str}]"
+    binding_str = _format_binding(rule.get('binding'))
+    binding_suffix = f" bind={binding_str}" if binding_str else ''
+    return f"{rule['action']}{(' ' + rule['proto']) if rule.get('proto') else ''}{svc_str} src=[{src_str}] dst=[{dst_str}]{binding_suffix}"
 
 
 def _to_str_set(values):
@@ -64,6 +85,7 @@ def _serialize_entry(e: dict) -> dict:
         'src': _to_str_set(e.get('src', [])),
         'dst': _to_str_set(e.get('dst', [])),
         'svc': e.get('svc'),
+        'binding': e.get('binding'),
         'raw': e.get('raw'),
     }
 

@@ -86,6 +86,7 @@ class ACLEntry:
     raw: str
     acl: Optional[str] = None
     bound_to: Optional[str] = None  # interface name if bound
+    binding: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -93,6 +94,7 @@ class ACL:
     name: str
     bound_to: Optional[str]
     entries: List[ACLEntry] = field(default_factory=list)
+    binding: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -129,4 +131,3 @@ class Device:
 
     def to_dict(self) -> Dict[str, Any]:
         return _jsonable(self)
-

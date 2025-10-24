@@ -118,6 +118,22 @@ def list_files(dirpath: str):
         return []
 
 
+def format_binding(binding: Optional[dict]) -> str:
+    if not binding:
+        return ''
+    scope = (binding.get('scope') or '').lower()
+    direction = binding.get('direction')
+    interface = binding.get('interface')
+    if scope == 'global':
+        return 'global'
+    if scope == 'control-plane':
+        if interface and direction:
+            return f"{interface}({direction},control-plane)"
+        return 'control-plane'
+    if interface:
+        return f"{interface}({direction})" if direction else interface
+    return scope or ''
+
 class WebHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         # API routing
@@ -582,7 +598,9 @@ class WebHandler(BaseHTTPRequestHandler):
             head = ' '.join(parts) if parts else ''
             tail = (' ports=' + ','.join(port_parts)) if port_parts else ''
             svc_str = f" {head}{tail}".rstrip()
-        return f"{rule['action']}{(' ' + rule['proto']) if rule.get('proto') else ''}{svc_str} src=[{src_str}] dst=[{dst_str}]"
+        binding_str = format_binding(rule.get('binding'))
+        bind_suffix = f" bind={binding_str}" if binding_str else ''
+        return f"{rule['action']}{(' ' + rule['proto']) if rule.get('proto') else ''}{svc_str} src=[{src_str}] dst=[{dst_str}]{bind_suffix}"
 
     def _html(self, body: str, status: int = 200):
         content = body.encode('utf-8')

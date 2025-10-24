@@ -39,7 +39,13 @@ class TestNatParse(unittest.TestCase):
         self.assertEqual(cfg.interfaces['outside']['security_level'], 0)
         self.assertEqual(cfg.interfaces['inside']['security_level'], 100)
         # ACL binding
-        self.assertEqual(cfg.acl_bindings.get('OUT'), 'outside')
+        binding = cfg.acl_bindings.get('OUT')
+        self.assertIsNotNone(binding)
+        self.assertEqual(binding.get('interface'), 'outside')
+        self.assertEqual(binding.get('direction'), 'in')
+        entry = cfg.flatten_acl()[0]
+        self.assertEqual(entry['binding'].get('interface'), 'outside')
+        self.assertEqual(entry['binding'].get('direction'), 'in')
         # NAT rules: auto and manual present
         kinds = sorted([r['type'] for r in cfg.nat_rules])
         self.assertEqual(kinds, ['auto', 'manual'])
@@ -57,4 +63,3 @@ class TestNatParse(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-
