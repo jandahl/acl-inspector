@@ -65,6 +65,17 @@ def match_candidates_for_tests(index: dict, query: str, limit: int = 50, mode: s
     return WebHandler._match_fuzzy(dummy, index, q, limit)
 
 
+def highlight_asa_for_tests(line: str) -> str:
+    import html, re
+    s = html.escape(line)
+    s = re.sub(r"\b(permit|deny)\b", r"<span class='act'>\1</span>", s, flags=re.IGNORECASE)
+    s = re.sub(r"\b(tcp|udp|icmp|ip)\b", r"<span class='proto'>\1</span>", s, flags=re.IGNORECASE)
+    s = re.sub(r"\b(access-list|extended|object-group|object|host|subnet|eq|lt|gt|neq|range|any|any4|any6)\b", r"<span class='kw'>\1</span>", s, flags=re.IGNORECASE)
+    s = re.sub(r"\b(\d{1,3}(?:\.\d{1,3}){3})(?:/(\d{1,2}))?\b", lambda m: f"<span class='addr'>{m.group(1)}{('/'+m.group(2)) if m.group(2) else ''}</span>", s)
+    s = re.sub(r"\b(\d{2,5})\b", r"<span class='num'>\1</span>", s)
+    return s
+
+
 def list_files(dirpath: str):
     try:
         return sorted([f for f in os.listdir(dirpath) if os.path.isfile(os.path.join(dirpath, f))])
@@ -153,7 +164,7 @@ class WebHandler(BaseHTTPRequestHandler):
             "<html><head><meta charset='utf-8'><title>ACL Inspector</title><style>" + css + "</style></head>\n"
             "<body class='theme-dark'>\n"
             "  <div class='app'>\n"
-            "  <div class='toolbar'><h2>ACL Inspector</h2><div class='theme-switch'><label><input type='checkbox' id='themeToggle'/> Light mode</label></div></div>\n"
+            "  <div class='toolbar'><h2>ACL Inspector</h2><div class='toolbar-controls'><label class='theme-switch'><input type='checkbox' id='themeToggle'/> Light mode</label> <label class='hl-switch'><input type='checkbox' id='hlToggle'/> Highlight output</label></div></div>\n"
             "  <form class='form' method='POST' action='/run'>\n"
             "    <fieldset class='section section-config'><legend>Config</legend>\n"
             "    <label>Vendor:</label>\n"
@@ -213,10 +224,30 @@ class WebHandler(BaseHTTPRequestHandler):
             "  </div>\n"
             "  <script>\n"
             "    const THEME_KEY='acl_theme';\n"
+            "    const HL_KEY='acl_highlight';\n"
             "    function applyTheme(){\n"
             "      const mode=localStorage.getItem(THEME_KEY)||'dark';\n"
             "      document.body.className = (mode==='dark') ? 'theme-dark' : 'theme-light';\n"
             "      document.getElementById('themeToggle').checked = (mode!=='dark');\n"
+            "    }\n"
+            "    function escapeHtml(s){return s.replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}\n"
+            "    function hlASA(line){\n"
+            "      let s=escapeHtml(line);\n"
+            "      s=s.replace(/\\b(permit|deny)\\b/gi,'<span class=\\'act\\'>$1</span>');\n"
+            "      s=s.replace(/\\b(tcp|udp|icmp|ip)\\b/gi,'<span class=\\'proto\\'>$1</span>');\n"
+            "      s=s.replace(/\\b(access-list|extended|object-group|object|host|subnet|eq|lt|gt|neq|range|any|any4|any6)\\b/gi,'<span class=\\'kw\\'>$1</span>');\n"
+            "      s=s.replace(/\\b(\\d{1,3}(?:\\.\\d{1,3}){3})(?:\\/(\\d{1,2}))?\\b/g,(m,ip,cidr)=>`<span class='addr'>${ip}${cidr?`/${cidr}`:''}</span>`);\n"
+            "      s=s.replace(/\\b(\\d{2,5})\\b/g,'<span class=\\'num\\'>$1</span>');\n"
+            "      return s;\n"
+            "    }\n"
+            "    function highlightAll(on){\n"
+            "      const pres=document.querySelectorAll('pre[data-lang=\\'asa\\']');\n"
+            "      for(const pre of pres){\n"
+            "        const raw=pre.textContent;\n"
+            "        if(!on){ pre.innerHTML = escapeHtml(raw); continue;}\n"
+            "        const lines=raw.split(/\\n/).map(hlASA);\n"
+            "        pre.innerHTML = lines.join('\\n');\n"
+            "      }\n"
             "    }\n"
             "    function toggleVendor(){\n"
             "      var v = document.getElementById('vendor').value;\n"
@@ -264,7 +295,8 @@ class WebHandler(BaseHTTPRequestHandler):
             "      try{const r=await fetch(`/api/meta?vendor=${vendor}&config=${encodeURIComponent(config)}`); if(r.ok){const j=await r.json(); el.textContent = `OS: ${j.os||vendor.toUpperCase()}  Version: ${j.version||'unknown'}`;}}catch(e){}\n"
             "    }\n"
             "    document.getElementById('themeToggle').addEventListener('change', (e)=>{localStorage.setItem(THEME_KEY, e.target.checked?'light':'dark'); applyTheme();});\n"
-            "    applyTheme(); toggleVendor(); toggleMode(); attachTypeahead(); refreshMeta();\n"
+            "    document.getElementById('hlToggle').addEventListener('change', (e)=>{localStorage.setItem('acl_highlight', e.target.checked?'on':'off'); highlightAll(e.target.checked);});\n"
+            "    applyTheme(); toggleVendor(); toggleMode(); attachTypeahead(); refreshMeta(); highlightAll((localStorage.getItem(HL_KEY)||'on')==='on'); document.getElementById('hlToggle').checked = (localStorage.getItem(HL_KEY)||'on')==='on';\n"
             "  </script>\n"
             "</body></html>\n"
         )
@@ -289,9 +321,9 @@ class WebHandler(BaseHTTPRequestHandler):
   <p>Found {len(report['hits'])} matching ACL entries.</p></div>
   {alias_html}
   <div class='diff diff-raw'><h3>Matched Rules (Raw)</h3>
-  <pre>{lines_raw}</pre></div>
+  <pre data-lang='asa'>{lines_raw}</pre></div>
   <div class='diff diff-flattened'><h3>Matched Rules (Flattened)</h3>
-  <pre>{lines_flat}</pre></div>
+  <pre data-lang='asa'>{lines_flat}</pre></div>
 </div>
 """
 
@@ -322,9 +354,9 @@ class WebHandler(BaseHTTPRequestHandler):
   <p>Added to new: {len(diff['added_to_new'])} &nbsp; Removed from old: {len(diff['removed_from_old'])}</p></div>
   {alias_section}
   <div class='diff diff-added'><h3>Rules Added to New</h3>
-  <pre>{added}</pre></div>
+  <pre data-lang='asa'>{added}</pre></div>
   <div class='diff diff-removed'><h3>Rules Removed from Old</h3>
-  <pre>{removed}</pre></div>
+  <pre data-lang='asa'>{removed}</pre></div>
 </div>
 """
 
@@ -621,7 +653,9 @@ class WebHandler(BaseHTTPRequestHandler):
             ".actions{margin-top:8px;} button{background:var(--accent);color:#fff;border:none;border-radius:6px;padding:6px 10px;cursor:pointer;} button:hover{opacity:0.9;}\n"
             ".results .diff{background:var(--muted);border:1px solid var(--border);border-radius:8px;margin:10px 0;padding:8px;}\n"
             "pre{white-space:pre-wrap;background:#00000022;padding:8px;border-radius:6px;overflow:auto;}\n"
-            ".meta{margin-left:10px;color:var(--sub);} .theme-switch{font-size:0.9em;color:var(--sub);} .rr{display:none;}\n"
+            ".meta{margin-left:10px;color:var(--sub);} .theme-switch{font-size:0.9em;color:var(--sub);} .hl-switch{font-size:0.9em;color:var(--sub);} .rr{display:none;}\n"
+            ".toolbar-controls{display:flex;gap:12px;align-items:center;}\n"
+            ".kw{color:#c792ea;} .proto{color:#82aaff;} .act{color:#c3e88d;} .addr{color:#f78c6c;} .num{color:#ffcb6b;}\n"
         )
 
 

@@ -143,10 +143,7 @@ IR goals:
 
 Optional syntax highlighting (planning)
 --------------------------------------
-For the web UI, we can optionally highlight ASA/FortiOS snippets under permissive licenses:
-- Option A: Vendor a small Prism.js/highlight.js build (MIT/BSD) with JunOS/CLI grammars; include license excerpts in LICENSE.md.
-- Option B: Lightweight server-side regex-based highlighter for key ASA tokens with no external deps.
-This will be behind a UI toggle and kept optional to avoid forcing any dependency.
+For the web UI, output highlighting is optional and controlled by a toggle (state is remembered in the browser). Current implementation uses a lightweight regex-based highlighter for ASA tokens with no external deps. If we later vendor a library (Prism.js or highlight.js, MIT/BSD), we’ll include their license text in LICENSE.md and keep assets local (no network).
 
 Virtual environment
 -------------------
