@@ -107,6 +107,10 @@ def _serialize_diff(diff: dict) -> dict:
     }
 
 
+def _serialize_path(result: dict) -> dict:
+    return result
+
+
 def _xml_from_dict(name: str, data) -> Element:
     root = Element(name)
     def build(parent, obj, key_name='item'):
@@ -159,6 +163,7 @@ def main() -> None:
     group.add_argument('--old', help='Old IP, network (CIDR), or object name for comparison')
     group.add_argument('--inspect', help='IP, network (CIDR), or object name for inspection')
     group.add_argument('--find-host', dest='find_host', help='Find an object/IP across configs (set --config to a file or a directory)')
+    group.add_argument('--packet', action='store_true', help='Evaluate a single packet path (requires --packet-src/--packet-dst)')
     parser.add_argument('--new', help='New IP, network (CIDR), or object name for comparison')
     parser.add_argument('--proto', choices=['ip', 'tcp', 'udp', 'icmp'], help='Filter by protocol for matching (optional)')
     parser.add_argument('--dport', type=int, action='append', help='Filter by destination port (repeatable, optional)')
@@ -168,6 +173,8 @@ def main() -> None:
     parser.add_argument('--format', choices=['text', 'json', 'xml'], default='text', help='Output format (default: text)')
     parser.add_argument('--no-color', action='store_true', help='Disable ANSI colors for text output')
     parser.add_argument('--include-any', action='store_true', help="Include rules with 'any' endpoints (default: ignore such rules)")
+    parser.add_argument('--packet-src', dest='packet_src', help='Source IP/object for --packet evaluation')
+    parser.add_argument('--packet-dst', dest='packet_dst', help='Destination IP/object for --packet evaluation')
 
     args = parser.parse_args()
 
@@ -234,10 +241,12 @@ def main() -> None:
                 print(f"  {r['file']} -> {'; '.join(parts) if parts else 'match'}")
         return
 
-    if not (args.old or args.inspect):
-        parser.error('either --old (with --new) or --inspect is required')
+    if not (args.old or args.inspect or args.packet):
+        parser.error('either --old (with --new), --inspect, or --packet is required')
     if args.old and not args.new:
         parser.error('--new is required when --old is provided')
+    if args.packet and (not args.packet_src or not args.packet_dst):
+        parser.error('--packet-src and --packet-dst are required with --packet')
 
     try:
         with open(args.config, 'r') as f:
@@ -257,7 +266,63 @@ def main() -> None:
     bold = lambda s: _c(s, '1', use_color)
 
     if args.vendor == 'asa':
-        if args.inspect:
+        if args.packet:
+            dports = set(args.dport or [])
+            result = cisco_asa.path_check(cfg_text, args.packet_src, args.packet_dst, proto=args.proto, dports=dports, include_any=args.include_any)
+            if args.format == 'json':
+                print(json.dumps(_serialize_path(result), indent=2))
+                return
+            if args.format == 'xml':
+                xml = _xml_from_dict('path', _serialize_path(result))
+                print(tostring(xml, encoding='unicode'))
+                return
+            status = 'ALLOWED' if result.get('allowed') else 'BLOCKED'
+            print(bold(f"Packet Path Check ({status})"))
+            print(f"Input src={result['input']['src']} dst={result['input']['dst']} proto={result['input']['proto'] or 'any'} dports={result['input']['dports'] or 'any'}")
+            print(f"Resolved src={result['resolved']['src']} dst={result['resolved']['dst']}")
+            nat = result.get('nat', {})
+            direction = nat.get('direction') or 'n/a'
+            print("\nNAT evaluation:")
+            if nat.get('applied'):
+                rule = nat.get('rule') or {}
+                translations = nat.get('translations', {})
+                src_tr = translations.get('src', {})
+                dst_tr = translations.get('dst', {})
+                print(f"  Matched rule: {rule.get('raw', 'unknown')} (direction={direction})")
+                print(f"  Source: {src_tr.get('before')} -> {src_tr.get('after')}")
+                if src_tr.get('note'):
+                    print(f"    note: {src_tr['note']}")
+                if dst_tr.get('after') and dst_tr.get('after') != dst_tr.get('before'):
+                    print(f"  Destination: {dst_tr.get('before')} -> {dst_tr.get('after')}")
+                    if dst_tr.get('note'):
+                        print(f"    note: {dst_tr['note']}")
+            else:
+                print(f"  No NAT rule matched. (direction={direction})")
+            acl = result.get('acl', {})
+            print("\nACL evaluation:")
+            print(f"  Decision: {acl.get('decision', 'unknown').upper()}")
+            context = result.get('context') or {}
+            candidates = context.get('acl_candidates') or []
+            if candidates:
+                print("  Candidate bindings:")
+                for cand in candidates:
+                    iface = cand.get('interface') or 'global'
+                    direction = cand.get('direction') or '*'
+                    print(f"    {iface} ({direction})")
+            matches = acl.get('matches', [])
+            if matches:
+                limit = 5
+                for item in matches[:limit]:
+                    print(f"  {item['raw']}")
+                    print(f"    -> {item['summary']}")
+                if len(matches) > limit:
+                    print(f"  ... ({len(matches) - limit} more matches)")
+            else:
+                print("  No ACL entry matched this flow.")
+            if acl.get('inspected') is not None:
+                print(f"  Entries inspected: {acl['inspected']}")
+            return
+        elif args.inspect:
             report = cisco_asa.inspect_host(cfg_text, args.inspect, service_filter=svc_filter, include_any=args.include_any)
             if args.format == 'json':
                 print(json.dumps(_serialize_report(report), indent=2))

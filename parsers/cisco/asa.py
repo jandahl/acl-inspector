@@ -537,6 +537,25 @@ class ASAConfig:
                     ip_to_objects[n].add(name)
         self.ip_to_objects = dict(ip_to_objects)
 
+    def interface_for_ip(self, ip: ipaddress.IPv4Address) -> Optional[str]:
+        best_name: Optional[str] = None
+        best_prefix = -1
+        for name, meta in self.interfaces.items():
+            net = meta.get('ipv4')
+            if isinstance(net, ipaddress.IPv4Network) and ip in net:
+                if net.prefixlen > best_prefix:
+                    best_prefix = net.prefixlen
+                    best_name = name
+        return best_name
+
+    def security_level_for_interface(self, interface: Optional[str]) -> Optional[int]:
+        if not interface:
+            return None
+        meta = self.interfaces.get(interface)
+        if not meta:
+            return None
+        return meta.get('security_level')
+
     def _parse_access_group_binding(self, body: str, line: str) -> Dict[str, Optional[str]]:
         binding: Dict[str, Optional[str]] = {
             'scope': 'interface',
@@ -988,3 +1007,406 @@ def inspect_host(cfg_text: str, target: str, service_filter: Optional[dict] = No
     hits = evaluate_acl(entries, target_nets, cfg, service_filter=service_filter, ignore_any=(not include_any))
     aliases = cfg.find_alias_objects(target, target_nets)
     return {'hits': hits, 'target_nets': target_nets, 'aliases': aliases}
+
+
+def _pick_preferred_address(nets: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network, str]]) -> Optional[ipaddress.IPv4Address]:
+    addresses = sorted([n for n in nets if isinstance(n, ipaddress.IPv4Address)])
+    if addresses:
+        return addresses[0]
+    networks = sorted([n for n in nets if isinstance(n, ipaddress.IPv4Network)], key=lambda n: (-n.prefixlen, str(n)))
+    if networks:
+        return networks[0].network_address
+    return None
+
+
+def _value_matches_ip(value: str, ip: ipaddress.IPv4Address) -> bool:
+    lower = (value or '').lower()
+    if lower in {'any', 'any4', 'any-ipv4'}:
+        return True
+    try:
+        addr = ipaddress.ip_address(value)
+        return addr == ip
+    except Exception:
+        pass
+    try:
+        net = ipaddress.ip_network(value, strict=False)
+        if isinstance(net, ipaddress.IPv4Network):
+            return ip in net
+    except Exception:
+        pass
+    return False
+
+
+def _map_value_to_ip(value: str, default: ipaddress.IPv4Address, interface_hint: Optional[str] = None) -> Tuple[ipaddress.IPv4Address, str, Optional[str]]:
+    val = (value or '').strip()
+    if not val:
+        return default, str(default), None
+    lower = val.lower()
+    if lower == 'interface':
+        note = f"PAT to interface {interface_hint}" if interface_hint else "PAT to interface"
+        return default, f"{default} ({note})", note
+    try:
+        addr = ipaddress.ip_address(val)
+        return addr, str(addr), None
+    except Exception:
+        pass
+    try:
+        net = ipaddress.ip_network(val, strict=False)
+        if isinstance(net, ipaddress.IPv4Network):
+            display = str(net)
+            return net.network_address, display, None
+    except Exception:
+        pass
+    note = f"mapped to {val}"
+    return default, f"{default} ({note})", note
+
+
+def _entry_summary(entry: dict) -> str:
+    src_str = ', '.join(sorted(str(s) for s in entry.get('src', [])))
+    dst_str = ', '.join(sorted(str(s) for s in entry.get('dst', [])))
+    svc = entry.get('svc') or {}
+    parts = []
+    proto = svc.get('proto') or entry.get('proto')
+    if proto:
+        parts.append(str(proto))
+    sg = svc.get('service_group_at_proto')
+    if sg and sg.get('name'):
+        parts.append(f"{sg.get('kind')}:{sg.get('name')}")
+    port_parts = []
+    for op, (p1, p2) in svc.get('dst_ports', []):
+        if op == 'range':
+            port_parts.append(f"{p1}-{p2}")
+        else:
+            port_parts.append(f"{op} {p1}")
+    for g in sorted(list(svc.get('dst_service_groups', []))):
+        port_parts.append(f"group:{g}")
+    for o in sorted(list(svc.get('dst_service_objects', []))):
+        port_parts.append(f"object:{o}")
+    svc_str = ''
+    if parts or port_parts:
+        head = ' '.join(parts) if parts else ''
+        tail = (' ports=' + ','.join(port_parts)) if port_parts else ''
+        svc_str = f" {head}{tail}".rstrip()
+    binding = entry.get('binding') or {}
+    bind_str = ''
+    if binding:
+        scope = (binding.get('scope') or '').lower()
+        direction = binding.get('direction')
+        interface = binding.get('interface')
+        if scope == 'global':
+            bind_str = ' bind=global'
+        elif interface:
+            bind_str = f" bind={interface}{f'({direction})' if direction else ''}"
+        elif scope:
+            bind_str = f" bind={scope}"
+    return f"{entry['action']}{(' ' + entry['proto']) if entry.get('proto') else ''}{svc_str} src=[{src_str}] dst=[{dst_str}]{bind_str}"
+
+
+def _nat_result_template(src_ip: ipaddress.IPv4Address, dst_ip: ipaddress.IPv4Address) -> dict:
+    return {
+        'matched': False,
+        'src_eval': src_ip,
+        'dst_eval': dst_ip,
+        'src_display': str(src_ip),
+        'dst_display': str(dst_ip),
+        'src_note': None,
+        'dst_note': None,
+    }
+
+
+def _apply_nat_rule_outbound(rule: dict, src_ip: ipaddress.IPv4Address, dst_ip: ipaddress.IPv4Address, src_iface: Optional[str], dst_iface: Optional[str]) -> dict:
+    result = _nat_result_template(src_ip, dst_ip)
+    rule_src_if = (rule.get('src_if') or '').lower() or None
+    rule_dst_if = (rule.get('dst_if') or '').lower() or None
+    if rule_src_if and src_iface and rule_src_if != src_iface:
+        return result
+    if rule.get('type') == 'auto':
+        real_vals = rule.get('real_values') or []
+        if not any(_value_matches_ip(val, src_ip) for val in real_vals):
+            return result
+        mapped_vals = rule.get('mapped_values') or []
+        if mapped_vals:
+            mapped_ip, display, note = _map_value_to_ip(mapped_vals[0], src_ip, rule.get('dst_if'))
+            result.update({
+                'matched': True,
+                'src_eval': mapped_ip if isinstance(mapped_ip, ipaddress.IPv4Address) else src_ip,
+                'src_display': display,
+                'src_note': note,
+            })
+        else:
+            result['matched'] = True
+        return result
+
+    real_vals = rule.get('src_real_values') or []
+    if not real_vals or not any(_value_matches_ip(val, src_ip) for val in real_vals):
+        return result
+    if rule.get('policy'):
+        dst_vals = rule.get('dst_real_values') or []
+        if dst_vals and not any(_value_matches_ip(val, dst_ip) for val in dst_vals):
+            return result
+    src_after = src_ip
+    dst_after = dst_ip
+    mapped_vals = rule.get('src_mapped_values') or []
+    if mapped_vals:
+        mapped_ip, display, note = _map_value_to_ip(mapped_vals[0], src_ip, rule.get('dst_if'))
+        if isinstance(mapped_ip, ipaddress.IPv4Address):
+            src_after = mapped_ip
+        result['src_display'] = display
+        result['src_note'] = note
+    mapped_dst_vals = rule.get('dst_mapped_values') or []
+    if mapped_dst_vals:
+        mapped_ip, display, note = _map_value_to_ip(mapped_dst_vals[0], dst_ip, rule.get('dst_if'))
+        if isinstance(mapped_ip, ipaddress.IPv4Address):
+            dst_after = mapped_ip
+        result['dst_display'] = display
+        result['dst_note'] = note
+    result.update({
+        'matched': True,
+        'src_eval': src_after,
+        'dst_eval': dst_after,
+    })
+    return result
+
+
+def _apply_nat_rule_inbound(rule: dict, src_ip: ipaddress.IPv4Address, dst_ip: ipaddress.IPv4Address, src_iface: Optional[str], dst_iface: Optional[str]) -> dict:
+    result = _nat_result_template(src_ip, dst_ip)
+    rule_src_if = (rule.get('src_if') or '').lower() or None
+    rule_dst_if = (rule.get('dst_if') or '').lower() or None
+    # Inbound traffic enters the mapped interface (rule dst_if) and exits via real interface (rule src_if)
+    if rule_dst_if and src_iface and rule_dst_if != src_iface:
+        return result
+    if rule_src_if and dst_iface and rule_src_if != dst_iface:
+        return result
+    if rule.get('type') == 'auto':
+        mapped_vals = rule.get('mapped_values') or []
+        if not any(_value_matches_ip(val, dst_ip) for val in mapped_vals):
+            return result
+        real_vals = rule.get('real_values') or []
+        if real_vals:
+            real_ip, display, note = _map_value_to_ip(real_vals[0], dst_ip, rule.get('src_if'))
+            if isinstance(real_ip, ipaddress.IPv4Address):
+                result['dst_eval'] = real_ip
+            result['dst_display'] = display
+            result['dst_note'] = note
+        result['matched'] = True
+        return result
+
+    # Policy NAT destination translation
+    dst_mapped_vals = rule.get('dst_mapped_values') or []
+    if dst_mapped_vals and any(_value_matches_ip(val, dst_ip) for val in dst_mapped_vals):
+        real_vals = rule.get('dst_real_values') or []
+        if real_vals:
+            real_ip, display, note = _map_value_to_ip(real_vals[0], dst_ip, rule.get('src_if'))
+            if isinstance(real_ip, ipaddress.IPv4Address):
+                result['dst_eval'] = real_ip
+            result['dst_display'] = display
+            result['dst_note'] = note
+        result['matched'] = True
+        return result
+
+    # Static source NAT reversal (destination uses mapped address)
+    src_mapped_vals = rule.get('src_mapped_values') or []
+    if src_mapped_vals and any(_value_matches_ip(val, dst_ip) for val in src_mapped_vals):
+        real_vals = rule.get('src_real_values') or []
+        if real_vals:
+            real_ip, display, note = _map_value_to_ip(real_vals[0], dst_ip, rule.get('src_if'))
+            if isinstance(real_ip, ipaddress.IPv4Address):
+                result['dst_eval'] = real_ip
+            result['dst_display'] = display
+            result['dst_note'] = note
+        result['matched'] = True
+        return result
+    return result
+
+
+def _evaluate_nat(cfg: ASAConfig, src_ip: ipaddress.IPv4Address, dst_ip: ipaddress.IPv4Address, src_iface_name: Optional[str], dst_iface_name: Optional[str], preferred_direction: Optional[str] = None) -> Tuple[dict, ipaddress.IPv4Address, ipaddress.IPv4Address]:
+    rules = cfg.normalized_nat_rules()
+    logs = []
+    src_iface = src_iface_name.lower() if src_iface_name else None
+    dst_iface = dst_iface_name.lower() if dst_iface_name else None
+    for rule in rules:
+        attempts = ['outbound', 'inbound']
+        if preferred_direction == 'inbound':
+            attempts = ['inbound', 'outbound']
+        for direction in attempts:
+            if direction == 'outbound':
+                applied = _apply_nat_rule_outbound(rule, src_ip, dst_ip, src_iface, dst_iface)
+            else:
+                applied = _apply_nat_rule_inbound(rule, src_ip, dst_ip, src_iface, dst_iface)
+            logs.append({'raw': rule.get('raw'), 'direction': direction, 'matched': applied['matched']})
+            if applied['matched']:
+                src_eval = applied['src_eval'] if isinstance(applied['src_eval'], ipaddress.IPv4Address) else src_ip
+                dst_eval = applied['dst_eval'] if isinstance(applied['dst_eval'], ipaddress.IPv4Address) else dst_ip
+                info = {
+                    'applied': True,
+                    'direction': direction,
+                    'rule': {k: rule.get(k) for k in ('raw', 'type', 'section', 'sequence', 'src_if', 'dst_if')},
+                    'translations': {
+                        'src': {
+                            'before': str(src_ip),
+                            'after': applied['src_display'],
+                            'note': applied.get('src_note'),
+                        },
+                        'dst': {
+                            'before': str(dst_ip),
+                            'after': applied.get('dst_display', str(dst_ip)),
+                            'note': applied.get('dst_note'),
+                        },
+                    },
+                    'logs': logs,
+                }
+                return info, src_eval, dst_eval
+    info = {
+        'applied': False,
+        'direction': None,
+        'rule': None,
+        'translations': {
+            'src': {'before': str(src_ip), 'after': str(src_ip), 'note': None},
+            'dst': {'before': str(dst_ip), 'after': str(dst_ip), 'note': None},
+        },
+        'logs': logs,
+    }
+    return info, src_ip, dst_ip
+
+
+def _binding_applicable(binding: Optional[dict], context: Optional[dict]) -> bool:
+    if not context:
+        return True
+    if not binding:
+        return True
+    scope = (binding.get('scope') or '').lower()
+    if scope in ('global', 'control-plane'):
+        return True
+    candidates = context.get('candidates') or []
+    if not candidates:
+        return True
+    interface = (binding.get('interface') or '').lower() or None
+    direction = (binding.get('direction') or '').lower() or None
+    for cand in candidates:
+        cand_iface = cand.get('interface')
+        cand_dir = cand.get('direction')
+        if interface is not None:
+            if cand_iface is None or cand_iface != interface:
+                continue
+        else:
+            if cand_iface is not None:
+                continue
+        if direction is not None:
+            if cand_dir is None or cand_dir != direction:
+                continue
+        return True
+    return False
+
+
+def _evaluate_acl_flow(cfg: ASAConfig, src_ip: ipaddress.IPv4Address, dst_ip: ipaddress.IPv4Address, svc_filter: Optional[dict], include_any: bool, iface_context: Optional[dict] = None) -> dict:
+    entries = cfg.flatten_acl()
+    src_set = {src_ip}
+    dst_set = {dst_ip}
+    matches: List[dict] = []
+    inspected = 0
+    for entry in entries:
+        inspected += 1
+        if not include_any and _has_any_endpoint(entry):
+            continue
+        if iface_context and not _binding_applicable(entry.get('binding'), iface_context):
+            continue
+        if not nets_overlap(entry['src'], src_set):
+            continue
+        if not nets_overlap(entry['dst'], dst_set):
+            continue
+        if svc_filter and not _service_matches(cfg, entry, svc_filter):
+            continue
+        matches.append({
+            'raw': entry['raw'],
+            'summary': _entry_summary(entry),
+            'acl': entry.get('acl'),
+            'action': entry.get('action'),
+            'binding': entry.get('binding'),
+        })
+        if len(matches) >= 10:
+            break
+    if matches:
+        decision = matches[0]['action']
+    else:
+        decision = 'no-match'
+    return {'decision': decision, 'matches': matches, 'inspected': inspected}
+
+
+def path_check(cfg_text: str, src: str, dst: str, proto: Optional[str] = None, dports: Optional[Set[int]] = None, include_any: bool = False) -> dict:
+    cfg = ASAConfig(cfg_text)
+    if not src or not dst:
+        raise ValueError("source and destination are required for path evaluation")
+    src_nets = cfg.resolve_network(src)
+    dst_nets = cfg.resolve_network(dst)
+    src_ip = _pick_preferred_address(src_nets)
+    dst_ip = _pick_preferred_address(dst_nets)
+    if src_ip is None or dst_ip is None:
+        raise ValueError("unable to resolve source/destination to concrete IPv4 addresses")
+    dports = dports or set()
+    svc_filter = {'proto': proto, 'dports': dports} if (proto or dports) else None
+    src_iface = cfg.interface_for_ip(src_ip)
+    dst_iface = cfg.interface_for_ip(dst_ip)
+    preferred_direction: Optional[str] = None
+    src_sec = cfg.security_level_for_interface(src_iface)
+    dst_sec = cfg.security_level_for_interface(dst_iface)
+    if src_sec is not None and dst_sec is not None:
+        preferred_direction = 'outbound' if src_sec >= dst_sec else 'inbound'
+    elif src_sec is not None and dst_sec is None:
+        preferred_direction = 'outbound'
+    nat_info, src_after, dst_after = _evaluate_nat(cfg, src_ip, dst_ip, src_iface, dst_iface, preferred_direction)
+    candidates: List[dict] = []
+    seen: Set[Tuple[Optional[str], Optional[str]]] = set()
+
+    def _add_candidate(interface: Optional[str], direction: Optional[str]) -> None:
+        if not interface:
+            return
+        key = (interface.lower(), direction.lower() if direction else None)
+        if key in seen:
+            return
+        seen.add(key)
+        candidates.append({'interface': interface.lower(), 'direction': direction.lower() if direction else None, 'display_interface': interface, 'display_direction': direction})
+
+    if nat_info.get('applied'):
+        rule = nat_info.get('rule') or {}
+        nat_direction = nat_info.get('direction')
+        rule_dst_if = rule.get('dst_if')
+        rule_src_if = rule.get('src_if')
+        if rule_dst_if:
+            _add_candidate(rule_dst_if, 'in')
+        if rule_src_if:
+            _add_candidate(rule_src_if, 'out')
+        if nat_direction == 'inbound' and rule_src_if and rule_dst_if is None:
+            _add_candidate(rule_src_if, 'in')
+    else:
+        if dst_iface:
+            _add_candidate(dst_iface, 'in')
+        if src_iface:
+            _add_candidate(src_iface, 'out')
+
+    acl_context = {'candidates': [{'interface': c['interface'], 'direction': c['direction']} for c in candidates]} if candidates else None
+    acl_info = _evaluate_acl_flow(cfg, src_after, dst_after, svc_filter, True, acl_context)
+    allowed = acl_info.get('decision') == 'permit'
+    context = {
+        'src_interface': src_iface,
+        'dst_interface': dst_iface,
+        'nat_direction': nat_info.get('direction'),
+        'acl_candidates': [{'interface': c['display_interface'], 'direction': c['display_direction']} for c in candidates],
+    }
+    return {
+        'input': {
+            'src': src,
+            'dst': dst,
+            'proto': proto,
+            'dports': sorted(list(dports)),
+        },
+        'resolved': {
+            'src': str(src_ip),
+            'dst': str(dst_ip),
+            'post_nat_src': str(src_after),
+            'post_nat_dst': str(dst_after),
+        },
+        'nat': nat_info,
+        'acl': acl_info,
+        'allowed': allowed,
+        'context': context,
+    }

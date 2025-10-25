@@ -380,19 +380,19 @@ class WebHandler(BaseHTTPRequestHandler):
             "        dl.appendChild(opt);\n"
             "      }\n"
             "    }\n"
-            "    const fetchSuggest = debounce(async function(ev){\n"
-            "      const q=ev.target.value; if(!q||q.length<1){fillDatalist([]);return;}\n"
-            "      const {vendor,config}=currentConfig();\n"
-            "      const mode=document.getElementById('fuzzy').checked ? 'fuzzy' : 'prefix';\n"
-            "      try{\n"
+"    const fetchSuggest = debounce(async function(ev){\n"
+"      const q=ev.target.value; if(!q||q.length<1){fillDatalist([]);return;}\n"
+"      const {vendor,config}=currentConfig();\n"
+"      const mode=document.getElementById('fuzzy').checked ? 'fuzzy' : 'prefix';\n"
+"      try{\n"
             "        const resp=await fetch(`/api/objects?vendor=${vendor}&os=${vendor.toUpperCase()}&version=auto&config=${encodeURIComponent(config)}&q=${encodeURIComponent(q)}&mode=${mode}&limit=50`);\n"
             "        if(!resp.ok){return;}\n"
             "        const data=await resp.json();\n"
             "        fillDatalist(data.items||[]);\n"
             "      }catch(e){}\n"
             "    },150);\n"
-            "    function attachTypeahead(){\n"
-            "      for(const id of ['inspect','old','new','pkt_src','pkt_dst']){const el=document.getElementById(id); if(el){el.addEventListener('input',fetchSuggest);}}\n"
+"    function attachTypeahead(){\n"
+"      for(const id of ['inspect','old','new','pkt_src','pkt_dst','findq']){const el=document.getElementById(id); if(el){el.addEventListener('input',fetchSuggest);}}\n"
             "    }\n"
             "    function saveState(){\n"
             "      const st={vendor:document.getElementById('vendor').value,mode:document.getElementById('mode').value,config:document.getElementById('config')?document.getElementById('config').value:'',config_ftg:document.getElementById('config_ftg')?document.getElementById('config_ftg').value:'',inspect:document.getElementById('inspect')?document.getElementById('inspect').value:'',old:document.getElementById('old')?document.getElementById('old').value:'',new:document.getElementById('new')?document.getElementById('new').value:'',findq:document.getElementById('findq')?document.getElementById('findq').value:'',pkt_src:document.getElementById('pkt_src')?document.getElementById('pkt_src').value:'',pkt_dst:document.getElementById('pkt_dst')?document.getElementById('pkt_dst').value:'',proto:document.querySelector('select[name=\'proto\']').value,dport:document.querySelector('input[name=\'dport\']').value,include_any:document.getElementById('include_any')?document.getElementById('include_any').checked:false,fuzzy:document.getElementById('fuzzy').checked};\n"
@@ -557,19 +557,73 @@ class WebHandler(BaseHTTPRequestHandler):
         return results
 
     def _render_packet(self, cfg_file: str, pkt: dict) -> str:
+        if pkt.get('error'):
+            return (
+                "<div class='results'>\n"
+                f"  <div class='section'><h2>{cfg_file}</h2><h3>Packet Check</h3>\n"
+                f"  <p style='color:red'>Error: {pkt.get('error')}</p></div>\n"
+                "</div>\n"
+            )
         status = 'ALLOWED' if pkt.get('allowed') else 'BLOCKED'
+        inp = pkt.get('input', {})
+        resolved = pkt.get('resolved', {})
+        nat = pkt.get('nat', {})
+        acl = pkt.get('acl', {})
+        context = pkt.get('context', {})
+        matches = acl.get('matches', [])
         lines = []
-        for e in pkt.get('matches', [])[:200]:
-            lines.append(f"  {e['raw']}\n   -> {self._fmt(e)}")
-        content = "\n".join(lines)
+        for item in matches[:200]:
+            summary = item.get('summary') or ''
+            lines.append(f"  {item.get('raw')}\n   -> {summary}")
+        content = "\n".join(lines) if lines else "  (no ACL matches)"
+        nat_trans = nat.get('translations', {})
+        src_nat = nat_trans.get('src', {})
+        dst_nat = nat_trans.get('dst', {})
+        nat_lines = []
+        if nat.get('applied'):
+            rule = nat.get('rule') or {}
+            nat_lines.append(f"Rule: {rule.get('raw', 'unknown')}")
+            nat_lines.append(f"Source: {src_nat.get('before')} -> {src_nat.get('after')}")
+            if src_nat.get('note'):
+                nat_lines.append(f"  note: {src_nat.get('note')}")
+            if dst_nat.get('after') and dst_nat.get('after') != dst_nat.get('before'):
+                nat_lines.append(f"Destination: {dst_nat.get('before')} -> {dst_nat.get('after')}")
+                if dst_nat.get('note'):
+                    nat_lines.append(f"  note: {dst_nat.get('note')}")
+        else:
+            nat_lines.append("No NAT rule matched.")
+        nat_block = "\n".join(nat_lines)
+        cand_lines = []
+        for cand in context.get('acl_candidates', []):
+            iface = cand.get('interface') or 'global'
+            direction = cand.get('direction') or '*'
+            cand_lines.append(f"  {iface} ({direction})")
+        candidate_block = ""
+        if cand_lines:
+            cand_text = "\n".join(cand_lines)
+            candidate_block = (
+                "  <div class='diff diff-aliases'><h3>ACL Candidate Bindings</h3>\n"
+                f"  <pre>{cand_text}</pre></div>\n"
+            )
         return (
             "<div class='results'>\n"
             f"  <div class='section'><h2>{cfg_file}</h2><h3>Packet Check</h3>\n"
-            f"  <p>Result: {status}</p></div>\n"
-            "  <div class='diff diff-raw'><h3>Matching Rules</h3>\n"
+            f"  <p>Status: {status} (NAT direction: {nat.get('direction') or 'n/a'})</p>\n"
+            f"  <p>Input: src={inp.get('src','')} dst={inp.get('dst','')} proto={inp.get('proto') or 'any'} dports={inp.get('dports') or 'any'}</p>\n"
+            f"  <p>Resolved: src={resolved.get('src')} -> {resolved.get('post_nat_src')} | dst={resolved.get('dst')} -> {resolved.get('post_nat_dst')}</p></div>\n"
+            "  <div class='diff diff-added'><h3>NAT Evaluation</h3>\n"
+            f"  <pre>{nat_block}</pre></div>\n"
+            f"{candidate_block}"
+            "  <div class='diff diff-raw'><h3>ACL Matches</h3>\n"
             f"  <pre data-lang='asa'>{content}</pre></div>\n"
             "</div>\n"
         )
+
+    def _packet_check_asa(self, cfg_text: str, src: str, dst: str, proto: Optional[str], dports: Set[int]) -> dict:
+        try:
+            return asa_parser.path_check(cfg_text, src, dst, proto=proto, dports=dports)
+        except Exception as exc:
+            return {'error': str(exc), 'allowed': False}
 
     def _fmt(self, rule: dict) -> str:
         src_str = ', '.join(sorted([str(s) for s in rule['src']]))
@@ -606,6 +660,7 @@ class WebHandler(BaseHTTPRequestHandler):
         content = body.encode('utf-8')
         self.send_response(status)
         self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate')
         self.send_header('Content-Length', str(len(content)))
         self.end_headers()
         self.wfile.write(content)
@@ -615,6 +670,7 @@ class WebHandler(BaseHTTPRequestHandler):
         data = json.dumps(payload).encode('utf-8')
         self.send_response(status)
         self.send_header('Content-Type', 'application/json; charset=utf-8')
+        self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate')
         self.send_header('Content-Length', str(len(data)))
         self.end_headers()
         self.wfile.write(data)
@@ -883,7 +939,7 @@ def main() -> None:
     import argparse
     ap = argparse.ArgumentParser(description='Web UI for access-list inspection/comparison')
     ap.add_argument('--addr', default='127.0.0.1', help='Bind address (default 127.0.0.1)')
-    ap.add_argument('--port', type=int, default=8080, help='TCP port (default 8080)')
+    ap.add_argument('--port', type=int, default=8083, help='TCP port (default 8083)')
     # Allow env overrides for config directories; falling back to defaults
     env_configs_cisco = os.environ.get('ACLINSPECTOR_CONFIGS_CISCO', 'configs/cisco')
     env_configs_fortigate = os.environ.get('ACLINSPECTOR_CONFIGS_FORTIGATE', 'configs/fortigate')

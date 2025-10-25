@@ -7,6 +7,18 @@ WORKDIR /app
 # Copy the entire application code into the container
 COPY . /app
 
+# Ensure basic build tools and curl for installer scripts
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Playwright (for headless tests) and fetch Chromium
+RUN pip install playwright && playwright install --with-deps chromium
+
+# Optional: install the MCP server adapter for Playwright automation
+RUN npm install -g mcp-server-playwright
+
 # Expose the port the web UI will listen on
 EXPOSE 8083
 

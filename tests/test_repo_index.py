@@ -32,15 +32,18 @@ access-list OUT extended permit tcp any object OBJ_HOST eq 443
         mod = importlib.util.module_from_spec(spec)
         assert spec and spec.loader
         spec.loader.exec_module(mod)  # type: ignore
-        count, errors = mod.index_repo(self.tmp_root, self.tmp_cache)
+        count, errors, vendor_counts = mod.index_repo(self.tmp_root, self.tmp_cache)
         self.assertGreaterEqual(count, 1)
         self.assertEqual(errors, 0)
+        self.assertIn('asa', vendor_counts)
         # manifest exists
         mf = os.path.join(self.tmp_cache, 'manifest.json')
         self.assertTrue(os.path.isfile(mf))
         with open(mf, 'r') as fh:
             j = json.load(fh)
         self.assertEqual(j.get('count'), count)
+        self.assertIn('vendor_counts', j)
+        self.assertIn('asa', j.get('vendor_counts', {}))
         # at least one cache file besides manifest
         files = [f for f in os.listdir(self.tmp_cache) if f.endswith('.json') and f != 'manifest.json']
         self.assertGreaterEqual(len(files), 1)

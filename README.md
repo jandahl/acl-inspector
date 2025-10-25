@@ -33,6 +33,9 @@ Quick start (CLI)
 - Compare two targets:
   `./access-list-inspector.py --vendor asa --config <asa.conf> --old <ip|cidr|object> --new <ip|cidr|object>`
 
+- Packet path check (NAT + ACL prototype):
+  `./access-list-inspector.py --vendor asa --config <asa.conf> --packet --packet-src <ip|object> --packet-dst <ip|object> --proto tcp --dport 443`
+
 - Find host across configs:
   - Directory: `./access-list-inspector.py --vendor asa --config /path/to/configs/cisco --find-host <ip|cidr|object>`
   - Single file: `./access-list-inspector.py --vendor asa --config /path/to/asa.conf --find-host <ip|cidr|object>`
@@ -77,8 +80,8 @@ Notes on parsing
 
 Web UI
 ------
-- Start a simple local UI:
-  `./access-list-web.py --port 8080`
+- Start a simple local UI (default port 8083):
+  `./access-list-web.py` or `make web` (use `WEB_PORT=8080 make web` to override)
 
 - The UI lists config files from the following directories by default:
   - ASA: `configs/cisco`
@@ -102,6 +105,7 @@ Web UI
     - `/api/aliases?vendor=asa&config=<file>&target=<name|ip|cidr>`
   - Default suggestion limit: 50 (override with `--search-limit` or env `ACLINSPECTOR_SEARCH_LIMIT`).
   - Search modes: checkbox in the UI toggles fuzzy search (default on). When enabled, matching uses case-insensitive subsequence scoring so e.g. `SQL` matches `Sidzvsql05`.
+  - Packet check tab evaluates a single flow through NAT + ACL (ASA prototype).
 
 - Dark mode and CSS:
   - Dark mode is default; use the switch in the toolbar to toggle.
@@ -118,8 +122,9 @@ Repo indexing (pre-warm cache)
 - A minimal indexer is provided to scan a repository of configs and prebuild indices compatible with the web UI cache.
 - Usage:
   - `python3 scripts/index_repo.py --root /path/to/rancid/checkout --cache-dir ./cache`
+  - Optional flags: `--vendors asa,fortigate` to scope indexing, `--max-size 2097152` to skip oversized files.
   - Or via make: `make index ROOT=/path/to/rancid/checkout CACHE=./cache`
-- This currently detects ASA (and placeholders for FortiGate) and indexes network objects/groups/literals for predictive search. It writes a `manifest.json` alongside the cache entries.
+- The indexer skips hidden files/dirs, applies improved vendor heuristics (ASA + FortiGate), and records per-file scores/reasons in `manifest.json` along with totals and settings, making `/api/index/status` summaries more informative.
 
 Next steps (roadmap)
 --------------------

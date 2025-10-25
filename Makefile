@@ -37,10 +37,12 @@ test:
 examples:
 	./access-list-inspector.py --examples
 
+WEB_PORT ?= 8083
+
 web:
 	$(if $(CONFIGS_CISCO),ACLINSPECTOR_CONFIGS_CISCO=$(CONFIGS_CISCO) ,)\
 	$(if $(CONFIGS_FORTIGATE),ACLINSPECTOR_CONFIGS_FORTIGATE=$(CONFIGS_FORTIGATE) ,)\
-	./access-list-web.py --port 8080
+	./access-list-web.py --port $(WEB_PORT)
 
 # Container targets
 CONTAINER_COMPOSE :=
