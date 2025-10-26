@@ -26,7 +26,7 @@ New features in this iteration
 ------------------------------
 - Duplicate object detection: For a given target, report other network-objects that resolve to the same IP/network
 - Robust tokenization for ACL parsing: consume service object(-group) names appearing in protocol position to prevent token bleed into src/dst parsing
- - Web UI: predictive search (prefix) via JSON API; UI structured with CSS classes and default dark mode with a switch; duplicates shown in a dedicated box; optional disk cache for indices
+- Web UI: predictive search (prefix) via JSON API; UI structured with CSS classes and default dark mode with a switch; mode tabs (Inspect/Compare, Find host, Packet check); duplicates shown in a dedicated box; optional disk cache for indices
 
 Quality and linting
 -------------------
@@ -100,6 +100,10 @@ Docker notes
     Access the web UI at `http://localhost:8083`.
   - Optional persistent cache volume for predictive index: see `Dockersetup/podman-compose.yaml` and set `ACLINSPECTOR_CACHE_DIR=/app/cache` (default) and `ACLINSPECTOR_SEARCH_LIMIT`.
   - `.env` is optional. Compose will read `Dockersetup/.env` if present for variable expansion (e.g., `ACLINSPECTOR_SEARCH_LIMIT=100`); absence will not cause failures.
+  - Convenience targets:
+    - `make container-stop` to halt the running container.
+    - `make container-prune` to remove the container while keeping the cached image layers for faster rebuilds.
+    - `make container-clean` for a full reset (removes containers, volumes, and cached images).
 
 Config directories
 ------------------

@@ -109,6 +109,7 @@ Web UI
     - `/api/aliases?vendor=asa&config=<file>&target=<name|ip|cidr>`
   - Default suggestion limit: 50 (override with `--search-limit` or env `ACLINSPECTOR_SEARCH_LIMIT`).
   - Search modes: checkbox in the UI toggles fuzzy search (default on). When enabled, matching uses case-insensitive subsequence scoring so e.g. `SQL` matches `Sidzvsql05`.
+  - Modes are organized as tabs: **Inspect / Compare** share a workspace with the rule filters, while **Find host** and **Packet check** get dedicated views. Switching tabs updates the hidden `mode` field that the server expects.
   - Packet check tab evaluates a single flow through NAT + ACL (ASA prototype).
 
 - Dark mode and CSS:

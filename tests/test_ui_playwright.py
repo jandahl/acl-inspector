@@ -119,7 +119,7 @@ access-list OUT extended permit tcp object OBJ_HOST object OBJ_WEB eq 443
     def _run_find(self, page, query="OBJ_HOST"):
         self._goto_root(page)
         self._select_config(page)
-        page.select_option("select#mode", value="find")
+        page.click("button[data-tab='find']")
         page.fill("input#findq", query)
         page.wait_for_selector("datalist#targets")  # ensure datalist exists
         page.click("form.form button[type=submit]")
@@ -129,7 +129,7 @@ access-list OUT extended permit tcp object OBJ_HOST object OBJ_WEB eq 443
         page = self._new_page()
         self._goto_root(page)
         self._select_config(page)
-        page.select_option("select#mode", value="find")
+        page.click("button[data-tab='find']")
         page.fill("input#findq", "OBJ")
         page.wait_for_selector("datalist#targets option")
         options = page.query_selector_all("datalist#targets option")
@@ -177,4 +177,3 @@ access-list OUT extended permit tcp object OBJ_HOST object OBJ_WEB eq 443
         body_class = page.get_attribute("body", "class") or ""
         self.assertIn("theme-light", body_class)
         self.assertFalse(page.is_checked("#hlToggle"))
-
