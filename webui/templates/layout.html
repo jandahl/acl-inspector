@@ -1,0 +1,166 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>ACL Inspector</title>
+    <link rel="stylesheet" href="/static/app.css">
+    <link rel="stylesheet" href="/static/themes.css">
+    <script>
+      window.ACL_THEMES = $themes_json;
+      window.ACL_CONFIG_OPTIONS = $config_options;
+      window.ACL_HISTORY_ENABLED = $history_enabled;
+      window.ACL_SEARCH_LIMIT = $search_limit;
+    </script>
+    <script defer src="/static/app.js"></script>
+  </head>
+  <body class="theme-dark">
+    <div class="app">
+      <div class="toolbar">
+        <h2>ACL Inspector</h2>
+        <div class="toolbar-controls">
+          <label class="theme-switch"><input type="checkbox" id="themeToggle"> Light mode</label>
+          <label class="hl-switch"><input type="checkbox" id="hlToggle"> Highlight output</label>
+          <button type="button" id="histToggle" class="history-toggle">History</button>
+        </div>
+      </div>
+      <div class="tab-shell">
+        <div class="mode-tabs">
+          <button type="button" class="tab active" data-tab="rules">Inspect / Compare</button>
+          <button type="button" class="tab" data-tab="find">Find host</button>
+          <button type="button" class="tab" data-tab="packet">Packet check</button>
+          <button type="button" class="tab" data-tab="config">Config</button>
+          <button type="button" class="tab" data-tab="prefs">Preferences</button>
+          <button type="button" class="tab" data-tab="about">About</button>
+        </div>
+        <form class="form" method="POST" action="/run">
+          <fieldset class="section section-config">
+            <legend>Config</legend>
+            <label>Vendor:</label>
+            <select name="vendor" id="vendor">
+              <option value="asa" selected>ASA</option>
+              <option value="fortigate">FortiGate</option>
+            </select>
+            <span id="meta" class="meta"></span><br>
+            <div id="asa_cfg">
+              <label>ASA Config:</label>
+              <select name="config" id="config">
+                $asa_options
+              </select>
+            </div>
+            <div id="ftg_cfg" style="display:none">
+              <label>FortiGate Config:</label>
+              <select name="config" id="config_ftg">
+                $fortigate_options
+              </select>
+            </div>
+          </fieldset>
+          <input type="hidden" name="mode" id="mode" value="inspect">
+          <div class="search-options global-search">
+            <label><input type="checkbox" id="fuzzy" checked> Fuzzy search</label>
+          </div>
+          <div class="tab-panels">
+            <section id="tab-rules" class="tab-panel active">
+              <fieldset class="section section-mode-rules">
+                <legend>Rule Mode</legend>
+                <div class="radio-group">
+                  <label><input type="radio" name="rule_mode" value="inspect" checked> Inspect</label>
+                  <label><input type="radio" name="rule_mode" value="compare"> Compare</label>
+                </div>
+              </fieldset>
+              <fieldset class="section section-targets">
+                <legend>Targets</legend>
+                <div id="inspect_fields">
+                  <label>Object / host:</label>
+                  <input type="text" name="inspect" id="inspect" list="targets" placeholder="Search object or host">
+                </div>
+                <div id="compare_fields" style="display:none">
+                  <label>Old object:</label>
+                  <input type="text" name="old" id="old" list="targets" placeholder="Original object">
+                  <label>New object:</label>
+                  <input type="text" name="new" id="new" list="targets" placeholder="Replacement object">
+                </div>
+              </fieldset>
+              <fieldset class="section section-results">
+                <legend>Results</legend>
+                <div class="results" data-tab="rules"></div>
+              </fieldset>
+            </section>
+            <section id="tab-find" class="tab-panel">
+              <fieldset class="section section-find">
+                <legend>Find host</legend>
+                <label>Address / object:</label>
+                <input type="text" name="findq" id="findq" list="targets" placeholder="Host or object">
+              </fieldset>
+              <fieldset class="section section-results">
+                <legend>Results</legend>
+                <div class="results" data-tab="find"></div>
+              </fieldset>
+            </section>
+            <section id="tab-packet" class="tab-panel">
+              <fieldset class="section section-packet">
+                <legend>Packet check</legend>
+                <label>Source:</label>
+                <input type="text" name="pkt_src" id="pkt_src" list="targets" placeholder="Source object / host">
+                <label>Destination:</label>
+                <input type="text" name="pkt_dst" id="pkt_dst" list="targets" placeholder="Destination object / host">
+              </fieldset>
+              <fieldset class="section section-results">
+                <legend>Results</legend>
+                <div class="results" data-tab="packet"></div>
+              </fieldset>
+            </section>
+            <section id="tab-config" class="tab-panel">
+              <fieldset class="section section-config-view">
+                <legend>Config Viewer</legend>
+                <textarea id="config_text" readonly></textarea>
+              </fieldset>
+            </section>
+            <section id="tab-prefs" class="tab-panel">
+              <fieldset class="section section-prefs">
+                <legend>Preferences</legend>
+                <div class="theme-control">
+                  <label for="theme_dark">Dark theme:</label>
+                  <select id="theme_dark"></select>
+                  <span class="theme-preview" id="preview_dark"></span>
+                </div>
+                <div class="theme-control">
+                  <label for="theme_light">Light theme:</label>
+                  <select id="theme_light"></select>
+                  <span class="theme-preview" id="preview_light"></span>
+                </div>
+                <p class="pref-note">Theme choices are remembered locally so your dark/light toggle keeps the look you pick.</p>
+              </fieldset>
+            </section>
+            <section id="tab-about" class="tab-panel">
+              <fieldset class="section section-about">
+                <legend>About</legend>
+                <p>Access-List Inspector parses Cisco ASA configurations to inspect ACL impact, compare objects, and surface duplicates.</p>
+                <p>Themes sourced from the iTerm2 color schemes project.</p>
+                <p>Current workspace dir: <code>$cwd</code></p>
+              </fieldset>
+            </section>
+          </div>
+          <fieldset class="section section-service" id="service_filters">
+            <legend>Service Filter</legend>
+            <label>Protocol:</label>
+            <select name="proto">
+              <option value="">Any</option>
+              <option value="tcp">TCP</option>
+              <option value="udp">UDP</option>
+              <option value="icmp">ICMP</option>
+              <option value="ip">IP</option>
+            </select>
+            <label>Destination ports (comma separated):</label>
+            <input type="text" name="dport" placeholder="443,1433">
+            <label id="include_any_label"><input type="checkbox" name="include_any" id="include_any"> Include rules with 'any' <span class="tip" title="By default, rules with any src/dst are skipped to reduce noise. Check to include them.">?</span></label>
+          </fieldset>
+          <div class="actions" id="run_actions">
+            <button type="submit">Run</button>
+          </div>
+        </form>
+      </div>
+      <aside id="history" class="history" style="display:none"></aside>
+    </div>
+    <datalist id="targets"></datalist>
+  </body>
+</html>

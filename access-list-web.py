@@ -17,11 +17,12 @@ import time
 import hashlib
 import ipaddress
 import plistlib
-from typing import Dict, List, Optional, Set, Tuple, Union
+from typing import Dict, List, Optional, Sequence, Set, Tuple, Union
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlparse
 
 from parsers.cisco import asa as asa_parser
+from webui.handlers import api as api_handlers
 
 # Expose small module-level helpers for unit tests
 def extract_meta_for_tests(vendor: str, text: str) -> dict:
@@ -56,7 +57,7 @@ def match_candidates_for_tests(index: dict, query: str, limit: int = 50, mode: s
     # Minimal adapter to exercise search modes in tests
     q = query.strip().lower()
     class _Dummy:
-        pass
+        server = type("Srv", (), {"app_state": None})()
     dummy = _Dummy()
     # bind fuzzy scorer so _match_fuzzy can call self._fuzzy_score
     dummy._fuzzy_score = lambda text, pattern: WebHandler._fuzzy_score(dummy, text, pattern)
@@ -375,6 +376,13 @@ class WebHandler(BaseHTTPRequestHandler):
         if proto or dports_clean:
             svc_filter = {'proto': (proto or None), 'dports': dports_clean}
 
+        inspect_target = fields.get('inspect', [''])[0]
+        compare_old = fields.get('old', [''])[0]
+        compare_new = fields.get('new', [''])[0]
+        find_target = fields.get('findq', [''])[0]
+        pkt_src_field = fields.get('pkt_src', [''])[0]
+        pkt_dst_field = fields.get('pkt_dst', [''])[0]
+
         cfg_dir = self.server.config_dirs.get(vendor)
         path = os.path.join(cfg_dir, cfg_file) if cfg_dir and cfg_file else ''
         if not path or not os.path.isfile(path):
@@ -390,7 +398,7 @@ class WebHandler(BaseHTTPRequestHandler):
         if vendor == 'asa':
             try:
                 if mode == 'inspect':
-                    target = fields.get('inspect', [''])[0]
+                    target = inspect_target
                     report = asa_parser.inspect_host(cfg_text, target, service_filter=svc_filter, include_any=include_any)
                     # Enrich aliases to include the target object as well
                     try:
@@ -406,8 +414,8 @@ class WebHandler(BaseHTTPRequestHandler):
                         pass
                     body = self._render_report(target, report, cfg_file)
                 elif mode == 'compare':
-                    old = fields.get('old', [''])[0]
-                    new = fields.get('new', [''])[0]
+                    old = compare_old
+                    new = compare_new
                     diff = asa_parser.compare_old_new(cfg_text, old, new, service_filter=svc_filter, include_any=include_any)
                     # Build alias boxes for old/new (inclusive of target names)
                     cfg = asa_parser.ASAConfig(cfg_text)
@@ -423,12 +431,12 @@ class WebHandler(BaseHTTPRequestHandler):
                     new_aliases = _incl(new) if new else {}
                     body = self._render_diff(old, new, diff, cfg_file, old_aliases=old_aliases, new_aliases=new_aliases)
                 elif mode == 'find':
-                    target = fields.get('findq', [''])[0]
+                    target = find_target
                     results = self._find_host(target)
                     body = self._render_find(target, results)
                 elif mode == 'packet':
-                    src = fields.get('pkt_src', [''])[0]
-                    dst = fields.get('pkt_dst', [''])[0]
+                    src = pkt_src_field
+                    dst = pkt_dst_field
                     dps = set()
                     for dp in dports_clean:
                         dps.add(dp)
@@ -436,6 +444,22 @@ class WebHandler(BaseHTTPRequestHandler):
                     body = self._render_packet(cfg_file, pkt)
                 else:
                     body = "<p style='color:red'>Unsupported mode.</p>"
+                app_state = getattr(self.server, 'app_state', None)
+                if app_state is not None:
+                    query = ''
+                    tab = 'rules'
+                    if mode == 'inspect':
+                        query = target
+                    elif mode == 'compare':
+                        query = f"{compare_old}->{compare_new}"
+                    elif mode == 'find':
+                        tab = 'find'
+                        query = find_target
+                    elif mode == 'packet':
+                        tab = 'packet'
+                        query = f"{pkt_src_field}->{pkt_dst_field}"
+                    if query:
+                        app_state.history.record(tab, query)
                 self._html(self._form() + body)
             except Exception as e:
                 self._html(f"<p style='color:red'>Error: {e}</p>" + self._form())
@@ -1277,6 +1301,19 @@ class WebHandler(BaseHTTPRequestHandler):
             limit = int(qs.get('limit', [str(self.server.search_limit)])[0])
         except Exception:
             limit = self.server.search_limit
+        app_state = getattr(self.server, 'app_state', None)
+        if app_state is not None:
+            status, payload = api_handlers.objects(
+                app_state,
+                vendor=vendor,
+                os_tag=os_tag,
+                version=version,
+                filename=cfg_file,
+                query=q,
+                mode=mode,
+                limit=limit,
+            )
+            return self._json(payload, status)
         cfg_dir = self.server.config_dirs.get(vendor)
         path = os.path.join(cfg_dir, cfg_file) if cfg_dir and cfg_file else ''
         if not path or not os.path.isfile(path):
@@ -1298,6 +1335,10 @@ class WebHandler(BaseHTTPRequestHandler):
         qs = parse_qs(query or '')
         vendor = (qs.get('vendor', ['asa'])[0] or 'asa').lower()
         cfg_file = qs.get('config', [''])[0]
+        app_state = getattr(self.server, 'app_state', None)
+        if app_state is not None:
+            status, payload = api_handlers.meta(app_state, vendor=vendor, filename=cfg_file)
+            return self._json(payload, status)
         cfg_dir = self.server.config_dirs.get(vendor)
         path = os.path.join(cfg_dir, cfg_file) if cfg_dir and cfg_file else ''
         if not path or not os.path.isfile(path):
@@ -1315,6 +1356,12 @@ class WebHandler(BaseHTTPRequestHandler):
         vendor = (qs.get('vendor', ['asa'])[0] or 'asa').lower()
         cfg_file = qs.get('config', [''])[0]
         target = qs.get('target', [''])[0]
+        app_state = getattr(self.server, 'app_state', None)
+        if app_state is not None:
+            status, payload = api_handlers.aliases(
+                app_state, vendor=vendor, filename=cfg_file, target=target
+            )
+            return self._json(payload, status)
         cfg_dir = self.server.config_dirs.get(vendor)
         path = os.path.join(cfg_dir, cfg_file) if cfg_dir and cfg_file else ''
         if not path or not os.path.isfile(path) or not target:
@@ -1337,6 +1384,12 @@ class WebHandler(BaseHTTPRequestHandler):
         qs = parse_qs(query or '')
         vendor = (qs.get('vendor', ['asa'])[0] or 'asa').lower()
         cfg_file = qs.get('config', [''])[0]
+        app_state = getattr(self.server, 'app_state', None)
+        if app_state is not None:
+            status, payload = api_handlers.config_text(
+                app_state, vendor=vendor, filename=cfg_file
+            )
+            return self._json(payload, status)
         cfg_dir = self.server.config_dirs.get(vendor)
         path = os.path.join(cfg_dir, cfg_file) if cfg_dir and cfg_file else ''
         if not path or not os.path.isfile(path):
@@ -1350,6 +1403,10 @@ class WebHandler(BaseHTTPRequestHandler):
 
     def _api_index_status(self, query: str):
         # No query params required; returns summary of in-memory + disk cache state
+        app_state = getattr(self.server, 'app_state', None)
+        if app_state is not None:
+            status, payload = api_handlers.index_status(app_state)
+            return self._json(payload, status)
         payload = index_status_for_tests(getattr(self.server, 'cache_dir', None), getattr(self.server, 'index_cache', {}))
         return self._json(payload)
 
@@ -1396,6 +1453,10 @@ class WebHandler(BaseHTTPRequestHandler):
             pass
 
     def _get_index(self, vendor: str, os_tag: str, version: str, path: str) -> dict:
+        app_state = getattr(self.server, 'app_state', None)
+        if app_state is not None:
+            entry = app_state.index_manager.get_index(vendor, os_tag, version, path)
+            return entry.index
         st = os.stat(path)
         cache_key = f"{vendor}-{os_tag}-{self._hash_path(path)}"
         # First check in-memory
@@ -1445,6 +1506,9 @@ class WebHandler(BaseHTTPRequestHandler):
         return {'objects': [], 'groups': [], 'literals': []}
 
     def _match_prefix(self, index: dict, q: str, limit: int) -> List[dict]:
+        app_state = getattr(self.server, 'app_state', None)
+        if app_state is not None:
+            return app_state.index_manager.suggest(index, q, 'prefix', limit)
         out: List[dict] = []
         ql = q.lower()
         def add_many(values: List[str], typ: str):
@@ -1468,6 +1532,9 @@ class WebHandler(BaseHTTPRequestHandler):
         return out[:limit]
 
     def _match_substring(self, index: dict, q: str, limit: int) -> List[dict]:
+        app_state = getattr(self.server, 'app_state', None)
+        if app_state is not None:
+            return app_state.index_manager.suggest(index, q, 'substring', limit)
         out: List[dict] = []
         ql = q.lower()
         def add_many(values: List[str], typ: str):
@@ -1505,6 +1572,9 @@ class WebHandler(BaseHTTPRequestHandler):
         return (gaps, start if start != -1 else 0, length)
 
     def _match_fuzzy(self, index: dict, q: str, limit: int) -> List[dict]:
+        app_state = getattr(self.server, 'app_state', None)
+        if app_state is not None:
+            return app_state.index_manager.suggest(index, q, 'fuzzy', limit)
         candidates: List[Tuple[Tuple[int,int,int], dict]] = []
         def consider(values: List[str], typ: str):
             for v in values:
@@ -1560,7 +1630,7 @@ class WebHandler(BaseHTTPRequestHandler):
         )
 
 
-def main() -> None:
+def main(argv: Optional[Sequence[str]] = None) -> None:
     import argparse
     ap = argparse.ArgumentParser(description='Web UI for access-list inspection/comparison')
     ap.add_argument('--addr', default='127.0.0.1', help='Bind address (default 127.0.0.1)')
@@ -1582,7 +1652,7 @@ def main() -> None:
     ap.add_argument('--search-limit', type=int, default=env_search_limit, help='Default suggestion limit (can be overridden via query)')
     ap.add_argument('--theme-dir', default=env_theme_dir, help='Directory with iTerm2 theme files (env ACLINSPECTOR_THEME_DIR)')
     ap.add_argument('--prewarm-all-configs', action='store_true', default=env_prewarm, help='Pre-build index cache for all configs on startup (env ACLINSPECTOR_PREWARM_ALL)')
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     server = HTTPServer((args.addr, args.port), WebHandler)
     server.config_dirs = {
