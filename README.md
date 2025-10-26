@@ -122,7 +122,7 @@ Web UI
   - Default suggestion limit: 50 (override with `--search-limit` or env `ACLINSPECTOR_SEARCH_LIMIT`).
   - Search modes: checkbox in the UI toggles fuzzy search (default on). When enabled, matching uses case-insensitive subsequence scoring so e.g. `SQL` matches `Sidzvsql05`.
 - Modes are organized as tabs: **Inspect / Compare** share a workspace with the rule filters, while **Find host** and **Packet check** get dedicated views. Switching tabs updates the hidden `mode` field that the server expects.
-  - A Preferences tab lets you pick the light and dark themes from the bundled iTerm2 palette directory (`themes/`). Choices persist in a cookie so the dark/light toggle reuses your favorites.
+  - Config tab renders the selected ASA config with a live filter; Preferences tab lets you pick dark/light themes from the bundled palette (`make themes`).
   - Packet check tab evaluates a single flow through NAT + ACL (ASA prototype).
 
 Third-party Notice

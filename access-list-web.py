@@ -164,6 +164,11 @@ DEFAULT_THEMES = [
             "sub": "#9da7b3",
             "accent": "#7aa2f7",
             "border": "#2b3240",
+            "hl-kw": "#c792ea",
+            "hl-proto": "#82aaff",
+            "hl-act": "#c3e88d",
+            "hl-addr": "#f78c6c",
+            "hl-num": "#ffcb6b",
         },
     },
     {
@@ -176,6 +181,11 @@ DEFAULT_THEMES = [
             "sub": "#57606a",
             "accent": "#0969da",
             "border": "#d0d7de",
+            "hl-kw": "#005cc5",
+            "hl-proto": "#0d6efd",
+            "hl-act": "#27a744",
+            "hl-addr": "#d73a49",
+            "hl-num": "#e36209",
         },
     },
 ]
@@ -201,6 +211,11 @@ def load_iterm_theme(path: str) -> Optional[dict]:
     border = _blend_hex(bg, fg, 0.25)
     luminance = sum(component * weight for component, weight in zip(_hex_to_rgb(bg), (0.2126, 0.7152, 0.0722))) / 255.0
     kind = "light" if luminance > 0.5 else "dark"
+    hl_kw = accent or fg
+    hl_proto = _blend_hex(accent or fg, fg, 0.5)
+    hl_act = _blend_hex("#6cc644", fg, 0.4)
+    hl_addr = _blend_hex("#f66a0a", fg, 0.4)
+    hl_num = _blend_hex("#ffcb6b", fg, 0.4)
     return {
         "name": os.path.splitext(os.path.basename(path))[0],
         "kind": kind,
@@ -211,6 +226,11 @@ def load_iterm_theme(path: str) -> Optional[dict]:
             "sub": sub,
             "accent": accent,
             "border": border,
+            "hl-kw": hl_kw,
+            "hl-proto": hl_proto,
+            "hl-act": hl_act,
+            "hl-addr": hl_addr,
+            "hl-num": hl_num,
         },
     }
 
@@ -505,6 +525,9 @@ class WebHandler(BaseHTTPRequestHandler):
             "      </section>\n"
             "      <section id='tab-config' class='tab-panel'>\n"
             "        <fieldset class='section section-config-view'><legend>Config Viewer</legend>\n"
+            "          <div class='config-select'><label>Config:</label><select id='config_select_tab'>\n"
+            + asa_opts +
+            "          </select></div>\n"
             "          <label>Search:</label>\n"
             "          <input type='text' id='config_filter' placeholder='filter text' autocomplete='off'/>\n"
             "          <div class='config-meta'>Showing <span id='config_name_display'>n/a</span></div>\n"
@@ -547,7 +570,7 @@ class WebHandler(BaseHTTPRequestHandler):
             "    <input type='text' name='dport' placeholder='443,1433'/>\n"
             "    <label id='include_any_label'><input type='checkbox' name='include_any' id='include_any'/> Include rules with 'any' <span class='tip' title='By default, rules with any src/dst are skipped to reduce noise. Check to include them.'>?</span></label>\n"
             "    </fieldset>\n"
-            "    <div class='actions'><button type='submit'>Run</button></div>\n"
+            "    <div class='actions' id='run_actions'><button type='submit'>Run</button></div>\n"
             "  </form>\n"
             "  </div>\n"
             "  <aside id='history' class='history' style='display:none'></aside>\n"
@@ -684,10 +707,36 @@ class WebHandler(BaseHTTPRequestHandler):
             "        pre.innerHTML = lines.join('\\n');\n"
             "      }\n"
             "    }\n"
+            "    let configCache={};\n"
+            "    let currentConfigTab='';\n"
+            "    function setConfigViewer(text,name){\n"
+            "      const pre=document.getElementById('config_viewer'); if(!pre){return;}\n"
+            "      pre.dataset.raw = text||'';\n"
+            "      const display=document.getElementById('config_name_display'); if(display){display.textContent=name||'n/a';}\n"
+            "      applyConfigFilter();\n"
+            "    }\n"
+            "    function applyConfigFilter(){\n"
+            "      const pre=document.getElementById('config_viewer'); if(!pre){return;}\n"
+            "      const raw=pre.dataset.raw||'';\n"
+            "      const query=(document.getElementById('config_filter')?.value||'').trim().toLowerCase();\n"
+            "      if(!query){pre.textContent = raw;} else {pre.textContent = raw.split(/\\n/).filter(line=>line.toLowerCase().includes(query)).join('\\n');}\n"
+            "      highlightAll((storageGet(HL_KEY,'on')||'on')==='on');\n"
+            "    }\n"
+            "    async function loadConfigText(name){\n"
+            "      const select=document.getElementById('config_select_tab');\n"
+            "      if(!name && select){name=select.value;}\n"
+            "      if(!name){return;}\n"
+            "      currentConfigTab=name;\n"
+            "      if(configCache[name]){setConfigViewer(configCache[name], name); return;}\n"
+            "      try{const resp=await fetch(`/api/config?vendor=asa&config=${encodeURIComponent(name)}`); if(!resp.ok){return;} const data=await resp.json(); configCache[name]=data.text||''; setConfigViewer(configCache[name], data.config||name);}catch(e){}\n"
+            "    }\n"
             "    function toggleVendor(){\n"
             "      var v = document.getElementById('vendor').value;\n"
             "      document.getElementById('asa_cfg').style.display = (v==='asa') ? 'block':'none';\n"
             "      document.getElementById('ftg_cfg').style.display = (v==='fortigate') ? 'block':'none';\n"
+            "      configCache={};\n"
+            "      const cfgSelectTab=document.getElementById('config_select_tab'); const cfgMain=document.getElementById('config');\n"
+            "      if(cfgSelectTab && cfgMain){cfgSelectTab.value=cfgMain.value; if(activeTab==='config'){loadConfigText(cfgSelectTab.value);}}\n"
             "    }\n"
             "    function setMode(mode){\n"
             "      const hidden=document.getElementById('mode');\n"
@@ -717,6 +766,7 @@ class WebHandler(BaseHTTPRequestHandler):
             "      const searchRow=document.querySelector('.global-search');\n"
             "      if(searchRow){searchRow.style.display = (tab==='rules') ? 'block' : 'none';}\n"
             "      document.querySelectorAll('.results[data-tab]').forEach(panel=>{panel.style.display = (panel.dataset.tab===tab)?'block':'none';});\n"
+            "      const runActions=document.getElementById('run_actions'); if(runActions){runActions.style.display = (['rules','find','packet'].includes(tab))?'block':'none';}\n"
             "      if(tab==='rules'){\n"
             "        const selected=document.querySelector(\"input[name='rule_mode']:checked\");\n"
             "        const chosen=selected?selected.value:'inspect';\n"
@@ -735,6 +785,7 @@ class WebHandler(BaseHTTPRequestHandler):
             "        if(service){service.style.display='none';}\n"
             "        if(includeAnyLabel){includeAnyLabel.style.display='none';}\n"
             "      }\n"
+            "      if(tab==='config'){loadConfigText(currentConfigTab);}\n"
             "      if(!suppressSave){saveState();}\n"
             "      setTimeout(()=>highlightAll((storageGet(HL_KEY,'on')||'on')==='on'),0);\n"
             "    }\n"
@@ -773,6 +824,7 @@ class WebHandler(BaseHTTPRequestHandler):
             "      const ruleSelected=document.querySelector(\"input[name='rule_mode']:checked\");\n"
             "      const st={vendor:document.getElementById('vendor').value,mode:document.getElementById('mode')?document.getElementById('mode').value:'inspect',rule_mode:ruleSelected?ruleSelected.value:'inspect',tab:activeTab,config:document.getElementById('config')?document.getElementById('config').value:'',config_ftg:document.getElementById('config_ftg')?document.getElementById('config_ftg').value:'',inspect:document.getElementById('inspect')?document.getElementById('inspect').value:'',old:document.getElementById('old')?document.getElementById('old').value:'',new:document.getElementById('new')?document.getElementById('new').value:'',findq:document.getElementById('findq')?document.getElementById('findq').value:'',pkt_src:document.getElementById('pkt_src')?document.getElementById('pkt_src').value:'',pkt_dst:document.getElementById('pkt_dst')?document.getElementById('pkt_dst').value:'',proto:document.querySelector(\"select[name='proto']\")?document.querySelector(\"select[name='proto']\").value:'',dport:document.querySelector(\"input[name='dport']\")?document.querySelector(\"input[name='dport']\").value:'',include_any:document.getElementById('include_any')?document.getElementById('include_any').checked:false,fuzzy:document.getElementById('fuzzy')?document.getElementById('fuzzy').checked:true};\n"
             "      storageSet('acl_state', JSON.stringify(st));\n"
+            "      const cfgSelectTab=document.getElementById('config_select_tab'); if(cfgSelectTab && document.getElementById('config')){cfgSelectTab.value=document.getElementById('config').value;}\n"
             "    }\n"
             "    function applyState(st, suppressSave){\n"
             "      if(!st||typeof st!=='object') return;\n"
@@ -781,6 +833,7 @@ class WebHandler(BaseHTTPRequestHandler):
             "        if(st.vendor && document.getElementById('vendor')){document.getElementById('vendor').value=st.vendor;}\n"
             "        toggleVendor();\n"
             "        if(st.config&&document.getElementById('config')){document.getElementById('config').value=st.config;}\n"
+            "        const cfgSelectTab=document.getElementById('config_select_tab'); if(st.config && cfgSelectTab){cfgSelectTab.value=st.config;}\n"
             "        if(st.config_ftg&&document.getElementById('config_ftg')){document.getElementById('config_ftg').value=st.config_ftg;}\n"
             "        if(st.inspect&&document.getElementById('inspect')){document.getElementById('inspect').value=st.inspect;}\n"
             "        if(st.old&&document.getElementById('old')){document.getElementById('old').value=st.old;}\n"
@@ -819,6 +872,8 @@ class WebHandler(BaseHTTPRequestHandler):
             "      document.querySelectorAll(\"input[name='rule_mode']\").forEach(radio=>{\n"
             "        radio.addEventListener('change', (e)=>{setMode(e.target.value); saveState();});\n"
             "      });\n"
+            "      const cfgSelectTab=document.getElementById('config_select_tab'); if(cfgSelectTab){cfgSelectTab.addEventListener('change', ()=>{loadConfigText(cfgSelectTab.value);});}\n"
+            "      const cfgFilter=document.getElementById('config_filter'); if(cfgFilter){cfgFilter.addEventListener('input', ()=>applyConfigFilter()); cfgFilter.addEventListener('keydown',(ev)=>{if(ev.key==='Enter'){ev.preventDefault();}});}\n"
             "    }\n"
             "    function setHistoryVisibility(show, skipSave){\n"
             "      const el=document.getElementById('history');\n"
@@ -844,7 +899,7 @@ class WebHandler(BaseHTTPRequestHandler):
             "    const hist = document.getElementById('history');\n"
             "    const histToggle=document.getElementById('histToggle'); if(histToggle){histToggle.addEventListener('click', ()=>{const want = storageGet(HIST_VIS_KEY,'off')==='on'; setHistoryVisibility(!want, false);});}\n"
             "    if(hist){hist.addEventListener('click', (ev)=>{const btn=ev.target.closest('.hist-entry'); if(!btn) return; ev.preventDefault(); try{const st=JSON.parse(decodeURIComponent(btn.dataset.state||'{}')); applyState(st, false);}catch(e){}});}\n"
-            "    applyTheme(); activateTab(activeTab, true); loadState(); toggleVendor(); attachTypeahead(); attachStateHandlers(); refreshMeta(); const hlOn=(storageGet(HL_KEY,'on')||'on')==='on'; highlightAll(hlOn); if(hlToggle){hlToggle.checked = hlOn;} renderHistory(); saveState();\n"
+            "    applyTheme(); activateTab(activeTab, true); loadState(); toggleVendor(); attachTypeahead(); attachStateHandlers(); refreshMeta(); const hlOn=(storageGet(HL_KEY,'on')||'on')==='on'; highlightAll(hlOn); if(hlToggle){hlToggle.checked = hlOn;} renderHistory(); saveState(); loadConfigText(currentConfigTab || document.getElementById('config_select_tab')?.value || '');\n"
             "  </script>\n"
             "</body></html>\n"
         )
@@ -1278,6 +1333,21 @@ class WebHandler(BaseHTTPRequestHandler):
             return self._json({'aliases': out})
         return self._json({'aliases': {}})
 
+    def _api_config(self, query: str):
+        qs = parse_qs(query or '')
+        vendor = (qs.get('vendor', ['asa'])[0] or 'asa').lower()
+        cfg_file = qs.get('config', [''])[0]
+        cfg_dir = self.server.config_dirs.get(vendor)
+        path = os.path.join(cfg_dir, cfg_file) if cfg_dir and cfg_file else ''
+        if not path or not os.path.isfile(path):
+            return self._json({'error': 'invalid_config'}, 400)
+        try:
+            with open(path, 'r') as f:
+                text = f.read()
+        except Exception as e:
+            return self._json({'error': f'read_failed: {e}'}, 500)
+        return self._json({'vendor': vendor, 'config': cfg_file, 'text': text})
+
     def _api_index_status(self, query: str):
         # No query params required; returns summary of in-memory + disk cache state
         payload = index_status_for_tests(getattr(self.server, 'cache_dir', None), getattr(self.server, 'index_cache', {}))
@@ -1466,10 +1536,11 @@ class WebHandler(BaseHTTPRequestHandler):
             ".actions{margin-top:8px;} button{background:var(--accent);color:#fff;border:none;border-radius:6px;padding:6px 10px;cursor:pointer;} button:hover{opacity:0.9;}\n"
             ".results{max-width:960px;margin:12px auto;}\n"
             ".results .diff{background:var(--muted);border:1px solid var(--border);border-radius:8px;margin:10px 0;padding:8px;}\n"
+            ".results a{color:var(--accent);} .results a:visited{color:var(--sub);}\n"
             "pre{white-space:pre-wrap;background:#00000022;padding:8px;border-radius:6px;overflow:auto;}\n"
             ".meta{margin-left:10px;color:var(--sub);} .theme-switch{font-size:0.9em;color:var(--sub);} .hl-switch{font-size:0.9em;color:var(--sub);} .rr{display:none;}\n"
             ".toolbar-controls{display:flex;gap:12px;align-items:center;}\n"
-            ".kw{color:#c792ea;} .proto{color:#82aaff;} .act{color:#c3e88d;} .addr{color:#f78c6c;} .num{color:#ffcb6b;}\n"
+            ".kw{color:var(--hl-kw);} .proto{color:var(--hl-proto);} .act{color:var(--hl-act);} .addr{color:var(--hl-addr);} .num{color:var(--hl-num);}\n"
             ".tip{display:inline-block;width:16px;height:16px;line-height:16px;text-align:center;border-radius:50%;border:1px solid var(--sub);color:var(--sub);font-size:12px;cursor:help;}\n"
             ".history{position:fixed;right:8px;top:64px;width:260px;max-height:70vh;overflow:auto;background:var(--muted);border:1px solid var(--border);border-radius:8px;padding:8px;z-index:30;}\n"
             ".hist-entry{display:block;width:100%;text-align:left;background:transparent;color:var(--text);border:1px solid transparent;border-radius:6px;padding:6px;margin-bottom:4px;cursor:pointer;}\n"
