@@ -18,6 +18,7 @@ help:
 	@echo "  container-status- show the status of the web UI container"
 	@echo "  container-logs  - show logs of the web UI container"
 	@echo "  container-stop  - stop the web UI container"
+	@echo "  container-prune - stop and remove the container, but keep the built image"
 	@echo "  container-clean - stop and remove the web UI container"
 	@echo "  index     - index a repo root into cache (set ROOT=/path CACHE=./cache)"
 	@echo "  build     - compile key Python modules"
@@ -84,6 +85,10 @@ container-logs:
 container-stop:
 	@echo "Using $(CONTAINER_COMPOSE) to stop the container..."
 	$(CONTAINER_COMPOSE) -f Dockersetup/podman-compose.yaml -p aclinspector stop
+
+container-prune:
+	@echo "Using $(CONTAINER_COMPOSE) to remove the container while keeping cached images..."
+	$(CONTAINER_COMPOSE) -f Dockersetup/podman-compose.yaml -p aclinspector down
 
 container-clean:
 	@echo "Using $(CONTAINER_COMPOSE) to stop and remove the container..."

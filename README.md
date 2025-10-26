@@ -96,6 +96,10 @@ Web UI
   - `ACLINSPECTOR_CONFIGS_CISCO=/data/asa` (defaults to `configs/cisco`)
   - `ACLINSPECTOR_CONFIGS_FORTIGATE=/data/fortigate` (defaults to `configs/fortigate`)
   - Both can point to the same directory if production layouts are unified. Vendor detection heuristics can be added later; for now select the vendor in the UI to parse appropriately.
+- Container helper targets:
+  - `make container-stop` stops the running container but keeps its filesystem.
+  - `make container-prune` removes the container while preserving the built image layers (fast rebuilds).
+  - `make container-clean` removes the container, associated volumes, and cached images (full reset).
 
 - Predictive search and metadata:
   - The UI offers prefix-based suggestions for target inputs (objects, groups, literals) using a JSON API.
