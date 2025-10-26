@@ -1,6 +1,13 @@
 Access-List Inspector
 =====================
 
+Migration Plan (In Progress)
+----------------------------
+- Split `access-list-web.py` into modular packages (`webui/server.py`, `webui/handlers`, `webui/templates`, `webui/themes`, `webui/indexer`, `webui/state`, `webui/settings`) so each concern is isolated and testable.
+- Introduce a JSON settings loader that feeds both CLI and container builds; CLI/env flags continue to override settings.
+- Treat experimental features as opt-in “beta” modules under `webui/beta/`, toggled via the settings file.
+- Replace the monolithic entrypoint with a thin bootstrap once the refactor lands; no legacy shim required before production.
+
 Overview
 --------
 The tool parses firewall configurations (currently Cisco ASA; rudimentary FortiGate) to:

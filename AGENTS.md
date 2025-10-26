@@ -1,6 +1,13 @@
 Agent Guidelines
 ================
 
+Migration Plan
+--------------
+- Factor the web UI into modular packages (`webui/server.py`, `webui/handlers`, `webui/templates`, `webui/themes`, `webui/indexer`, `webui/state`, `webui/settings`) to keep responsibilities focused and tests targeted.
+- Add a JSON settings loader that feeds both local CLI runs and Docker builds while allowing CLI/env overrides.
+- Ship experimental features as opt-in modules under `webui/beta/`, controlled via the settings file.
+- Remove the monolithic `access-list-web.py` once the refactor lands; the new, slimmer entrypoint will simply bootstrap the modular server.
+
 Scope
 -----
 This repository contains a Python tool to inspect and compare ACLs. Current vendor support focuses on Cisco ASA. The tool parses configs, resolves objects, reports ACL impacts, and is structured to accommodate other vendors and a separate web UI.
