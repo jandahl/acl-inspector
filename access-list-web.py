@@ -15,8 +15,9 @@ import os
 import json
 import time
 import hashlib
+import ipaddress
 import plistlib
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple, Union
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -259,6 +260,28 @@ def prewarm_all_configs(server) -> int:
     return total
 
 
+def _load_asa_configs(server) -> List[dict]:
+    dirpath = getattr(server, 'config_dirs', {}).get('asa')
+    if not dirpath:
+        return []
+    items: List[dict] = []
+    for name in list_files(dirpath):
+        path = os.path.join(dirpath, name)
+        if not os.path.isfile(path):
+            continue
+        try:
+            with open(path, 'r') as f:
+                text = f.read()
+        except Exception:
+            continue
+        try:
+            cfg = asa_parser.ASAConfig(text)
+        except Exception:
+            continue
+        items.append({'vendor': 'asa', 'file': name, 'path': path, 'text': text, 'cfg': cfg})
+    return items
+
+
 def list_files(dirpath: str):
     try:
         return sorted(
@@ -301,6 +324,8 @@ class WebHandler(BaseHTTPRequestHandler):
             return self._api_aliases(parsed.query)
         if parsed.path == '/api/index/status':
             return self._api_index_status(parsed.query)
+        if parsed.path == '/api/config':
+            return self._api_config(parsed.query)
         # UI
         self._html(self._form())
 
@@ -379,7 +404,7 @@ class WebHandler(BaseHTTPRequestHandler):
                     body = self._render_diff(old, new, diff, cfg_file, old_aliases=old_aliases, new_aliases=new_aliases)
                 elif mode == 'find':
                     target = fields.get('findq', [''])[0]
-                    results = self._find_host(vendor, target)
+                    results = self._find_host(target)
                     body = self._render_find(target, results)
                 elif mode == 'packet':
                     src = fields.get('pkt_src', [''])[0]
@@ -415,7 +440,9 @@ class WebHandler(BaseHTTPRequestHandler):
             "      <button type='button' class='tab active' data-tab='rules'>Inspect / Compare</button>\n"
             "      <button type='button' class='tab' data-tab='find'>Find host</button>\n"
             "      <button type='button' class='tab' data-tab='packet'>Packet check</button>\n"
+            "      <button type='button' class='tab' data-tab='config'>Config</button>\n"
             "      <button type='button' class='tab' data-tab='prefs'>Preferences</button>\n"
+            "      <button type='button' class='tab' data-tab='about'>About</button>\n"
             "    </div>\n"
             "    <form class='form' method='POST' action='/run'>\n"
             "    <fieldset class='section section-config'><legend>Config</legend>\n"
@@ -476,6 +503,14 @@ class WebHandler(BaseHTTPRequestHandler):
             "          <input type='text' name='pkt_dst' id='pkt_dst' list='targets' autocomplete='off' placeholder='name|ip|cidr'/>\n"
             "        </fieldset>\n"
             "      </section>\n"
+            "      <section id='tab-config' class='tab-panel'>\n"
+            "        <fieldset class='section section-config-view'><legend>Config Viewer</legend>\n"
+            "          <label>Search:</label>\n"
+            "          <input type='text' id='config_filter' placeholder='filter text' autocomplete='off'/>\n"
+            "          <div class='config-meta'>Showing <span id='config_name_display'>n/a</span></div>\n"
+            "          <pre id='config_viewer' data-lang='asa'></pre>\n"
+            "        </fieldset>\n"
+            "      </section>\n"
             "      <section id='tab-prefs' class='tab-panel'>\n"
             "        <fieldset class='section section-preferences'><legend>Preferences</legend>\n"
             "          <div class='theme-control'>\n"
@@ -489,6 +524,13 @@ class WebHandler(BaseHTTPRequestHandler):
             "            <div id='preview_light' class='theme-preview'></div>\n"
             "          </div>\n"
             "          <p class='pref-note'>Theme choices are remembered in a cookie so your dark/light toggle keeps the look you pick.</p>\n"
+            "        </fieldset>\n"
+            "      </section>\n"
+            "      <section id='tab-about' class='tab-panel'>\n"
+            "        <fieldset class='section section-about'><legend>About</legend>\n"
+            "          <p>Access-List Inspector parses Cisco ASA configurations to inspect ACL impact, compare objects, and surface duplicates.</p>\n"
+            "          <p>Source and documentation: <a href='https://github.com/mbadolato/iTerm2-Color-Schemes' target='_blank' rel='noopener'>iTerm2-Color-Schemes</a> for theming data.</p>\n"
+            "          <p>Current workspace dir: <code>" + os.getcwd() + "</code></p>\n"
             "        </fieldset>\n"
             "      </section>\n"
             "    </div>\n"
@@ -670,6 +712,11 @@ class WebHandler(BaseHTTPRequestHandler):
             "      buttons.forEach(btn=>btn.classList.toggle('active', btn.dataset.tab===tab));\n"
             "      const service=document.getElementById('service_filters');\n"
             "      const includeAnyLabel=document.getElementById('include_any_label');\n"
+            "      const cfgSection=document.querySelector('.section-config');\n"
+            "      if(cfgSection){cfgSection.style.display = (tab==='rules'||tab==='packet') ? 'block':'none';}\n"
+            "      const searchRow=document.querySelector('.global-search');\n"
+            "      if(searchRow){searchRow.style.display = (tab==='rules') ? 'block' : 'none';}\n"
+            "      document.querySelectorAll('.results[data-tab]').forEach(panel=>{panel.style.display = (panel.dataset.tab===tab)?'block':'none';});\n"
             "      if(tab==='rules'){\n"
             "        const selected=document.querySelector(\"input[name='rule_mode']:checked\");\n"
             "        const chosen=selected?selected.value:'inspect';\n"
@@ -689,6 +736,7 @@ class WebHandler(BaseHTTPRequestHandler):
             "        if(includeAnyLabel){includeAnyLabel.style.display='none';}\n"
             "      }\n"
             "      if(!suppressSave){saveState();}\n"
+            "      setTimeout(()=>highlightAll((storageGet(HL_KEY,'on')||'on')==='on'),0);\n"
             "    }\n"
             "    function debounce(fn,ms){let t;return (...a)=>{clearTimeout(t);t=setTimeout(()=>fn.apply(this,a),ms)};}\n"
             "    function currentConfig(){\n"
@@ -706,6 +754,7 @@ class WebHandler(BaseHTTPRequestHandler):
             "      }\n"
             "    }\n"
 "    const fetchSuggest = debounce(async function(ev){\n"
+"      if(activeTab!=='rules'){fillDatalist([]);return;}\n"
 "      const q=ev.target.value; if(!q||q.length<1){fillDatalist([]);return;}\n"
 "      const {vendor,config}=currentConfig();\n"
 "      const mode=document.getElementById('fuzzy').checked ? 'fuzzy' : 'prefix';\n"
@@ -753,6 +802,7 @@ class WebHandler(BaseHTTPRequestHandler):
             "        }\n"
             "        if(!['rules','find','packet','prefs'].includes(desiredTab)) desiredTab='rules';\n"
             "        activateTab(desiredTab, true);\n"
+            "        setTimeout(()=>highlightAll((storageGet(HL_KEY,'on')||'on')==='on'),0);\n"
             "      }catch(e){}\n"
             "      finally{\n"
             "        stateGuard = false;\n"
@@ -813,7 +863,7 @@ class WebHandler(BaseHTTPRequestHandler):
             # Subtle rickroll link per request when empty
             alias_html = "<div class='rr'><a href='https://youtu.be/dQw4w9WgXcQ' target='_blank' rel='noopener'>No duplicates found</a></div>"
         return f"""
-<div class='results'>
+<div class='results results-rules' data-tab='rules'>
   <div class='section'><h2>{cfg_file}</h2><h3>Inspection Report for {target}</h3>
   <p>Resolved to: {', '.join(str(n) for n in report['target_nets'])}</p>
   <p>Found {len(report['hits'])} matching ACL entries.</p></div>
@@ -844,7 +894,7 @@ class WebHandler(BaseHTTPRequestHandler):
         if not alias_section:
             alias_section = "<div class='rr'><a href='https://youtu.be/dQw4w9WgXcQ' target='_blank' rel='noopener'>No duplicates</a></div>"
         return f"""
-<div class='results'>
+<div class='results results-rules' data-tab='rules'>
   <div class='section'><h2>{cfg_file}</h2><h3>Comparison</h3>
   <p>Old target: {old}</p>
   <p>New target: {new}</p>
@@ -860,84 +910,191 @@ class WebHandler(BaseHTTPRequestHandler):
 
     def _render_find(self, target: str, results: list) -> str:
         if not target:
-            return "<div class='results'><div class='section'><h3>Find Host</h3><p>No target provided.</p></div></div>"
+            return "<div class='results results-find' data-tab='find'><div class='section'><h3>Find Host</h3><p>No target provided.</p></div></div>"
         if not results:
-            return f"<div class='results'><div class='section'><h3>Find Host</h3><p>No matches for {target}.</p></div></div>"
-        items = []
-        for r in results[:200]:
-            objs = ', '.join(sorted(r.get('objects') or []))
-            lits = ', '.join(sorted(r.get('literals') or []))
-            parts = []
-            if objs:
-                parts.append(f"objects: {objs}")
-            if lits:
-                parts.append(f"literals: {lits}")
-            if r.get('text_hit'):
-                parts.append("text match")
-            items.append(f"  {r['file']} -> {('; '.join(parts) or 'match')}")
-        return "<div class='results'><div class='section'><h3>Find Host Results</h3><pre>" + "\n".join(items) + "</pre></div></div>"
+            return f"<div class='results results-find' data-tab='find'><div class='section'><h3>Find Host</h3><p>No matches for {target}.</p></div></div>"
+        blocks: List[str] = []
+        for idx, entry in enumerate(results[:200]):
+            header = f"{entry['vendor'].upper()} {entry['file']}"
+            if entry.get('best'):
+                header += "  ← best match"
+            lines = [header]
+            if entry.get('objects'):
+                lines.append("  Objects: " + ', '.join(entry['objects']))
+            if entry.get('literals'):
+                lines.append("  Resolved IPs: " + ', '.join(entry['literals']))
+            if entry.get('interfaces'):
+                lines.append("  Interfaces: " + ', '.join(entry['interfaces']))
+            if entry.get('text_hit'):
+                lines.append("  (config text contains query)")
+            blocks.append("\n".join(lines))
+        return "<div class='results results-find' data-tab='find'><div class='section'><h3>Find Host Results</h3><pre data-lang='asa'>" + "\n\n".join(blocks) + "</pre></div></div>"
 
-    def _find_host(self, vendor: str, target: str) -> List[dict]:
-        vendor = (vendor or 'asa').lower()
+    def _find_host(self, target: str) -> List[dict]:
         query = (target or '').strip()
         if not query:
             return []
-        cfg_dir = self.server.config_dirs.get(vendor)
-        if not cfg_dir:
+        data = _load_asa_configs(self.server)
+        if not data:
             return []
-        candidates: List[Tuple[str, str]] = []
+        query_lower = query.lower()
+        names_lower: Set[str] = {query_lower}
+        nets: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]] = set()
         try:
-            for name in sorted(os.listdir(cfg_dir)):
-                if name.startswith('.'):
-                    continue
-                path = os.path.join(cfg_dir, name)
-                if os.path.isfile(path):
-                    candidates.append((name, path))
+            nets.add(ipaddress.ip_address(query))
         except Exception:
-            return []
-        results: List[dict] = []
-        for name, path in candidates:
-            try:
-                with open(path, 'r') as f:
-                    text = f.read()
-            except Exception:
-                continue
-            if vendor == 'asa':
-                try:
-                    cfg = asa_parser.ASAConfig(text)
-                except Exception:
-                    continue
-                objects: Set[str] = set()
-                literals: Set[str] = set()
-                if query in cfg.network_objects:
-                    objects.add(query)
-                    for net in cfg.network_objects[query]:
-                        literals.add(str(net))
-                try:
-                    nets = cfg.resolve_network(query)
-                except Exception:
-                    nets = set()
-                for net in nets:
+            pass
+        try:
+            nets.add(ipaddress.ip_network(query, strict=False))
+        except Exception:
+            pass
+
+        changed = True
+        while changed:
+            changed = False
+            for entry in data:
+                cfg = entry['cfg']
+                for name, netset in cfg.network_objects.items():
+                    if name.lower() in names_lower:
+                        before = len(nets)
+                        nets.update(netset)
+                        if len(nets) > before:
+                            changed = True
+                for net in list(nets):
                     for obj in cfg.ip_to_objects.get(net, set()):
-                        objects.add(obj)
-                        literals.add(str(net))
-                text_hit = query in text
-                if objects or literals or text_hit:
-                    results.append({
-                        'file': name,
-                        'objects': sorted(objects),
-                        'literals': sorted(literals),
-                        'text_hit': text_hit,
-                    })
-            else:
-                if query and query in text:
-                    results.append({'file': name, 'objects': [], 'literals': [], 'text_hit': True})
+                        if obj.lower() not in names_lower:
+                            names_lower.add(obj.lower())
+                            changed = True
+            for entry in data:
+                try:
+                    resolved = entry['cfg'].resolve_network(query)
+                except Exception:
+                    resolved = set()
+                before = len(nets)
+                nets.update(resolved)
+                if len(nets) > before:
+                    changed = True
+
+        # Final sweep to ensure names derived from newly added nets are included
+        for entry in data:
+            cfg = entry['cfg']
+            for net in list(nets):
+                for obj in cfg.ip_to_objects.get(net, set()):
+                    names_lower.add(obj.lower())
+
+        try:
+            query_ip = ipaddress.ip_address(query)
+        except Exception:
+            query_ip = None
+        try:
+            query_network = ipaddress.ip_network(query, strict=False)
+        except Exception:
+            query_network = None
+
+        results: List[dict] = []
+        for entry in data:
+            cfg = entry['cfg']
+            text_lower = entry['text'].lower()
+            matched_objects: Set[str] = set()
+            matched_literals: Set[str] = set()
+            interface_hits: Set[str] = set()
+            score = 0
+            direct_object = False
+
+            for name, netset in cfg.network_objects.items():
+                if name.lower() in names_lower:
+                    matched_objects.add(name)
+                    matched_literals.update(str(val) for val in netset)
+                    if name.lower() == query_lower:
+                        direct_object = True
+                        score = max(score, 4)
+                    else:
+                        score = max(score, 2)
+
+            for net in nets:
+                for obj in cfg.ip_to_objects.get(net, set()):
+                    matched_objects.add(obj)
+                matched_literals.add(str(net))
+                if query_ip is not None:
+                    if isinstance(net, ipaddress.IPv4Address) and net == query_ip:
+                        score = max(score, 3)
+                    if isinstance(net, ipaddress.IPv4Network) and query_ip in net:
+                        score = max(score, 3)
+                if query_network is not None and isinstance(net, ipaddress.IPv4Network) and net == query_network:
+                    score = max(score, 3)
+
+            try:
+                resolved = cfg.resolve_network(query)
+            except Exception:
+                resolved = set()
+            matched_literals.update(str(val) for val in resolved)
+            for val in resolved:
+                if query_ip is not None and isinstance(val, ipaddress.IPv4Address) and val == query_ip:
+                    score = max(score, 3)
+
+            candidate_ips: Set[ipaddress.IPv4Address] = set()
+            for name in matched_objects:
+                for val in cfg.network_objects.get(name, set()):
+                    if isinstance(val, ipaddress.IPv4Address):
+                        candidate_ips.add(val)
+                    elif isinstance(val, ipaddress.IPv4Network):
+                        candidate_ips.add(val.network_address)
+            for net in nets:
+                if isinstance(net, ipaddress.IPv4Address):
+                    candidate_ips.add(net)
+                elif isinstance(net, ipaddress.IPv4Network):
+                    candidate_ips.add(net.network_address)
+
+            for iface, meta in cfg.interfaces.items():
+                ipv4_val = meta.get('ipv4')
+                if isinstance(ipv4_val, ipaddress.IPv4Interface):
+                    network = ipv4_val.network
+                    display = f"{iface} {ipv4_val}"
+                elif isinstance(ipv4_val, ipaddress.IPv4Network):
+                    network = ipv4_val
+                    display = f"{iface} {ipv4_val}"
+                else:
+                    continue
+                if any(ip in network for ip in candidate_ips):
+                    interface_hits.add(display)
+                    score = max(score, 3)
+                for net in nets:
+                    if isinstance(net, ipaddress.IPv4Network) and network == net:
+                        interface_hits.add(display)
+                        score = max(score, 3)
+
+            text_hit = query_lower in text_lower
+            if text_hit:
+                score = max(score, 1)
+
+            if not (matched_objects or matched_literals or text_hit):
+                continue
+
+            results.append({
+                'vendor': entry['vendor'],
+                'file': entry['file'],
+                'objects': sorted(matched_objects),
+                'literals': sorted(matched_literals),
+                'interfaces': sorted(interface_hits),
+                'text_hit': text_hit,
+                'score': score,
+                'direct': direct_object,
+            })
+
+        if not results:
+            return []
+
+        results.sort(key=lambda r: (-r['score'], -len(r['interfaces']), -len(r['objects']), r['file']))
+        for r in results:
+            r['best'] = False
+        if results and results[0]['score'] > 0:
+            results[0]['best'] = True
         return results
 
     def _render_packet(self, cfg_file: str, pkt: dict) -> str:
         if pkt.get('error'):
             return (
-                "<div class='results'>\n"
+                "<div class='results results-packet' data-tab='packet'>\n"
                 f"  <div class='section'><h2>{cfg_file}</h2><h3>Packet Check</h3>\n"
                 f"  <p style='color:red'>Error: {pkt.get('error')}</p></div>\n"
                 "</div>\n"
@@ -984,7 +1141,7 @@ class WebHandler(BaseHTTPRequestHandler):
                 f"  <pre>{cand_text}</pre></div>\n"
             )
         return (
-            "<div class='results'>\n"
+            "<div class='results results-packet' data-tab='packet'>\n"
             f"  <div class='section'><h2>{cfg_file}</h2><h3>Packet Check</h3>\n"
             f"  <p>Status: {status} (NAT direction: {nat.get('direction') or 'n/a'})</p>\n"
             f"  <p>Input: src={inp.get('src','')} dst={inp.get('dst','')} proto={inp.get('proto') or 'any'} dports={inp.get('dports') or 'any'}</p>\n"
@@ -1299,14 +1456,15 @@ class WebHandler(BaseHTTPRequestHandler):
             ".app{max-width:1200px;margin:0 auto;padding:16px;}\n"
             ".toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}\n"
             "h2{margin:0;}\n"
-            ".tab-shell{margin-top:12px;}\n"
+            ".tab-shell{margin-top:12px;max-width:960px;margin-left:auto;margin-right:auto;}\n"
             ".mode-tabs{display:flex;gap:4px;margin:0 0 -1px;padding:0 8px;}\n"
             ".mode-tabs .tab{background:var(--muted);color:var(--text);border:1px solid var(--border);border-bottom:none;border-radius:6px 6px 0 0;padding:6px 14px;cursor:pointer;font-size:0.95em;box-shadow:inset 1px 1px 0 rgba(255,255,255,0.15);}\n"
             ".mode-tabs .tab.active{background:var(--bg);color:var(--text);border-bottom:1px solid var(--bg);position:relative;top:1px;}\n"
-            ".form{background:var(--muted);padding:12px;border:1px solid var(--border);border-radius:0 8px 8px 8px;margin-bottom:16px;position:sticky;top:48px;z-index:10;}\n"
+            ".form{background:var(--muted);padding:12px;border:1px solid var(--border);border-radius:0 8px 8px 8px;margin-bottom:16px;position:sticky;top:48px;z-index:10;max-width:960px;margin-left:auto;margin-right:auto;}\n"
             ".section{margin-bottom:10px;} fieldset.section{border:1px solid var(--border);border-radius:8px;} legend{color:var(--sub);}\n"
             "label{margin-right:6px;} select,input[type=text]{margin-right:8px;margin-bottom:6px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:transparent;color:var(--text);}\n"
             ".actions{margin-top:8px;} button{background:var(--accent);color:#fff;border:none;border-radius:6px;padding:6px 10px;cursor:pointer;} button:hover{opacity:0.9;}\n"
+            ".results{max-width:960px;margin:12px auto;}\n"
             ".results .diff{background:var(--muted);border:1px solid var(--border);border-radius:8px;margin:10px 0;padding:8px;}\n"
             "pre{white-space:pre-wrap;background:#00000022;padding:8px;border-radius:6px;overflow:auto;}\n"
             ".meta{margin-left:10px;color:var(--sub);} .theme-switch{font-size:0.9em;color:var(--sub);} .hl-switch{font-size:0.9em;color:var(--sub);} .rr{display:none;}\n"

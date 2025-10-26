@@ -1,7 +1,9 @@
 SHELL := /bin/bash
 WEB_PORT ?= 8083
+THEMES_REPO ?= https://github.com/mbadolato/iTerm2-Color-Schemes.git
+THEMES_DIR ?= themes
 
-.PHONY: help venv lint test unit examples web build clean
+.PHONY: help venv lint test unit examples web build clean themes themes-refresh
 
 help:
 	@echo "Targets:"
@@ -47,6 +49,21 @@ web:
 
 web-e2e:
 	PYTHONPYCACHEPREFIX=.pyc_cache python3 -m unittest tests.test_ui_playwright
+
+themes:
+	@mkdir -p $(THEMES_DIR)
+	@if [ ! -f $(THEMES_DIR)/.source ]; then \
+		tmp=$$(mktemp -d); \
+		git clone --depth 1 $(THEMES_REPO) $$tmp/iterm >/dev/null 2>&1; \
+		cp -f $$tmp/iterm/themes/*.itermcolors $(THEMES_DIR)/ 2>/dev/null || true; \
+		cp -f $$tmp/iterm/themes/*.yaml $(THEMES_DIR)/ 2>/dev/null || true; \
+		echo "$(THEMES_REPO)" > $(THEMES_DIR)/.source; \
+		rm -rf $$tmp; \
+	fi
+
+themes-refresh:
+	rm -f $(THEMES_DIR)/.source
+	$(MAKE) themes
 
 # Container targets
 CONTAINER_COMPOSE :=
@@ -94,7 +111,7 @@ container-clean:
 	@echo "Using $(CONTAINER_COMPOSE) to stop and remove the container..."
 	$(CONTAINER_COMPOSE) -f Dockersetup/podman-compose.yaml -p aclinspector down --rmi all --volumes
 
-build:
+build: themes
 	PYTHONPYCACHEPREFIX=.pyc_cache python3 -m py_compile access-list-inspector.py parsers/cisco/asa.py parsers/fortigate/fortigate.py access-list-web.py
 
 clean:

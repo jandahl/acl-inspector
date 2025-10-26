@@ -29,6 +29,10 @@ Requirements
 - Python 3.9+
 - No external packages are required
 
+Setup
+-----
+- Run `make themes` to download/update the optional iTerm2 color scheme files used by the web UI Preferences tab. The palettes come from the [iTerm2-Color-Schemes](https://github.com/mbadolato/iTerm2-Color-Schemes) project (MIT); see `LICENSE` for attribution.
+
 Quick start (CLI)
 -----------------
 - Inspect a host/object:
@@ -117,9 +121,13 @@ Web UI
     - `/api/aliases?vendor=asa&config=<file>&target=<name|ip|cidr>`
   - Default suggestion limit: 50 (override with `--search-limit` or env `ACLINSPECTOR_SEARCH_LIMIT`).
   - Search modes: checkbox in the UI toggles fuzzy search (default on). When enabled, matching uses case-insensitive subsequence scoring so e.g. `SQL` matches `Sidzvsql05`.
-  - Modes are organized as tabs: **Inspect / Compare** share a workspace with the rule filters, while **Find host** and **Packet check** get dedicated views. Switching tabs updates the hidden `mode` field that the server expects.
+- Modes are organized as tabs: **Inspect / Compare** share a workspace with the rule filters, while **Find host** and **Packet check** get dedicated views. Switching tabs updates the hidden `mode` field that the server expects.
   - A Preferences tab lets you pick the light and dark themes from the bundled iTerm2 palette directory (`themes/`). Choices persist in a cookie so the dark/light toggle reuses your favorites.
   - Packet check tab evaluates a single flow through NAT + ACL (ASA prototype).
+
+Third-party Notice
+------------------
+- The optional color schemes under `themes/` are sourced from the [iTerm2-Color-Schemes](https://github.com/mbadolato/iTerm2-Color-Schemes) project (MIT). Use `make themes` or `make themes-refresh` to synchronize with their latest palettes.
 
 - Dark mode and CSS:
   - Dark mode is default; use the switch in the toolbar to toggle.
