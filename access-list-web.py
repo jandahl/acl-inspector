@@ -15,6 +15,7 @@ import os
 import json
 import time
 import hashlib
+import plistlib
 from typing import Dict, List, Optional, Set, Tuple
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -102,6 +103,160 @@ def index_status_for_tests(cache_dir: Optional[str], index_cache: dict) -> dict:
         except Exception:
             disk['manifest'] = None
     return {'in_memory': mem, 'disk': disk}
+
+
+def _vendor_os_tag(vendor: str) -> str:
+    vendor = (vendor or '').lower()
+    if vendor == 'asa':
+        return 'ASA'
+    if vendor == 'fortigate':
+        return 'FortiOS'
+    return vendor.upper() or 'UNKNOWN'
+
+
+def _channel_to_int(value: Optional[float]) -> int:
+    if value is None:
+        return 0
+    if value > 1.0:
+        if value > 255.0:
+            value = value / 257.0
+        return int(max(0, min(255, round(value))))
+    return int(max(0, min(255, round(value * 255.0))))
+
+
+def _plist_color_to_hex(data: Optional[dict]) -> str:
+    if not isinstance(data, dict):
+        return "#000000"
+    r = _channel_to_int(data.get("Red Component"))
+    g = _channel_to_int(data.get("Green Component"))
+    b = _channel_to_int(data.get("Blue Component"))
+    return "#{:02x}{:02x}{:02x}".format(r, g, b)
+
+
+def _hex_to_rgb(color: str) -> Tuple[int, int, int]:
+    color = color.lstrip("#")
+    if len(color) == 3:
+        color = "".join(ch * 2 for ch in color)
+    if len(color) != 6:
+        return (0, 0, 0)
+    return tuple(int(color[i : i + 2], 16) for i in range(0, 6, 2))
+
+
+def _blend_hex(hex_a: str, hex_b: str, ratio: float) -> str:
+    ratio = max(0.0, min(1.0, ratio))
+    ra, ga, ba = _hex_to_rgb(hex_a)
+    rb, gb, bb = _hex_to_rgb(hex_b)
+    r = int(round(ra * (1 - ratio) + rb * ratio))
+    g = int(round(ga * (1 - ratio) + gb * ratio))
+    b = int(round(ba * (1 - ratio) + bb * ratio))
+    return "#{:02x}{:02x}{:02x}".format(r, g, b)
+
+
+DEFAULT_THEMES = [
+    {
+        "name": "Builtin Dark",
+        "kind": "dark",
+        "vars": {
+            "bg": "#0e1116",
+            "muted": "#1a1f29",
+            "text": "#e6edf3",
+            "sub": "#9da7b3",
+            "accent": "#7aa2f7",
+            "border": "#2b3240",
+        },
+    },
+    {
+        "name": "Builtin Light",
+        "kind": "light",
+        "vars": {
+            "bg": "#ffffff",
+            "muted": "#f6f8fa",
+            "text": "#24292f",
+            "sub": "#57606a",
+            "accent": "#0969da",
+            "border": "#d0d7de",
+        },
+    },
+]
+
+
+def load_iterm_theme(path: str) -> Optional[dict]:
+    try:
+        with open(path, "rb") as fh:
+            data = plistlib.load(fh)
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    bg = _plist_color_to_hex(data.get("Background Color"))
+    fg = _plist_color_to_hex(data.get("Foreground Color"))
+    accent = _plist_color_to_hex(
+        data.get("Ansi 4 Color")
+        or data.get("Cursor Color")
+        or data.get("Ansi 6 Color")
+    )
+    muted = _blend_hex(bg, fg, 0.15)
+    sub = _blend_hex(fg, bg, 0.35)
+    border = _blend_hex(bg, fg, 0.25)
+    luminance = sum(component * weight for component, weight in zip(_hex_to_rgb(bg), (0.2126, 0.7152, 0.0722))) / 255.0
+    kind = "light" if luminance > 0.5 else "dark"
+    return {
+        "name": os.path.splitext(os.path.basename(path))[0],
+        "kind": kind,
+        "vars": {
+            "bg": bg,
+            "muted": muted,
+            "text": fg,
+            "sub": sub,
+            "accent": accent,
+            "border": border,
+        },
+    }
+
+
+def load_themes(theme_dir: str) -> List[dict]:
+    themes: List[dict] = []
+    if theme_dir and os.path.isdir(theme_dir):
+        try:
+            for entry in sorted(os.listdir(theme_dir)):
+                if not entry.lower().endswith(".itermcolors"):
+                    continue
+                theme = load_iterm_theme(os.path.join(theme_dir, entry))
+                if theme:
+                    themes.append(theme)
+        except Exception:
+            pass
+    for default in DEFAULT_THEMES:
+        if not any(t["name"] == default["name"] and t["kind"] == default["kind"] for t in themes):
+            themes.insert(0, default)
+    for default in DEFAULT_THEMES:
+        if not any(t["kind"] == default["kind"] for t in themes):
+            themes.append(default)
+    return themes
+
+
+def prewarm_all_configs(server) -> int:
+    """Eagerly build index cache entries for all known configs."""
+    handler = WebHandler.__new__(WebHandler)
+    handler.server = server
+    total = 0
+    for vendor, dirpath in getattr(server, 'config_dirs', {}).items():
+        if not dirpath:
+            continue
+        try:
+            entries = list_files(dirpath)
+        except Exception:
+            continue
+        for name in entries:
+            path = os.path.join(dirpath, name)
+            if not os.path.isfile(path):
+                continue
+            try:
+                handler._get_index(vendor, _vendor_os_tag(vendor), 'auto', path)
+                total += 1
+            except Exception:
+                continue
+    return total
 
 
 def list_files(dirpath: str):
@@ -247,6 +402,8 @@ class WebHandler(BaseHTTPRequestHandler):
         asa_opts = "\n".join(["<option value='{}'>{}</option>".format(x, x) for x in list_files(self.server.config_dirs.get('asa', 'configs/cisco'))])
         ftg_opts = "\n".join(["<option value='{}'>{}</option>".format(x, x) for x in list_files(self.server.config_dirs.get('fortigate', 'configs/fortigate'))])
         css = self._css()
+        themes = getattr(self.server, 'themes', DEFAULT_THEMES)
+        themes_json = json.dumps(themes).replace('</', '<\\/')
         return (
             "<!doctype html>\n"
             "<html><head><meta charset='utf-8'><title>ACL Inspector</title><style>" + css + "</style></head>\n"
@@ -258,6 +415,7 @@ class WebHandler(BaseHTTPRequestHandler):
             "      <button type='button' class='tab active' data-tab='rules'>Inspect / Compare</button>\n"
             "      <button type='button' class='tab' data-tab='find'>Find host</button>\n"
             "      <button type='button' class='tab' data-tab='packet'>Packet check</button>\n"
+            "      <button type='button' class='tab' data-tab='prefs'>Preferences</button>\n"
             "    </div>\n"
             "    <form class='form' method='POST' action='/run'>\n"
             "    <fieldset class='section section-config'><legend>Config</legend>\n"
@@ -318,6 +476,21 @@ class WebHandler(BaseHTTPRequestHandler):
             "          <input type='text' name='pkt_dst' id='pkt_dst' list='targets' autocomplete='off' placeholder='name|ip|cidr'/>\n"
             "        </fieldset>\n"
             "      </section>\n"
+            "      <section id='tab-prefs' class='tab-panel'>\n"
+            "        <fieldset class='section section-preferences'><legend>Preferences</legend>\n"
+            "          <div class='theme-control'>\n"
+            "            <label for='theme_dark'>Dark theme:</label>\n"
+            "            <select id='theme_dark'></select>\n"
+            "            <div id='preview_dark' class='theme-preview'></div>\n"
+            "          </div>\n"
+            "          <div class='theme-control'>\n"
+            "            <label for='theme_light'>Light theme:</label>\n"
+            "            <select id='theme_light'></select>\n"
+            "            <div id='preview_light' class='theme-preview'></div>\n"
+            "          </div>\n"
+            "          <p class='pref-note'>Theme choices are remembered in a cookie so your dark/light toggle keeps the look you pick.</p>\n"
+            "        </fieldset>\n"
+            "      </section>\n"
             "    </div>\n"
             "    <fieldset class='section section-service' id='service_filters'><legend>Service Filter</legend>\n"
             "    <label>Protocol:</label>\n"
@@ -338,10 +511,14 @@ class WebHandler(BaseHTTPRequestHandler):
             "  <aside id='history' class='history' style='display:none'></aside>\n"
             "  </div>\n"
             "  <script>\n"
+            "    const THEMES=" + themes_json + ";\n"
+            "    const PREF_COOKIE='acl_theme_pref';\n"
             "    const THEME_KEY='acl_theme';\n"
             "    const HL_KEY='acl_highlight';\n"
+            "    const HIST_VIS_KEY='acl_history_visible';\n"
             "    let activeTab='rules';\n"
             "    let stateGuard=false;\n"
+            "    let themePref={};\n"
             "    function storageGet(key, fallback){\n"
             "      try{if(typeof window!=='undefined' && 'localStorage' in window){const v=window.localStorage.getItem(key); return (v===null||v===undefined)?fallback:v;}}catch(e){}\n"
             "      return fallback;\n"
@@ -349,12 +526,96 @@ class WebHandler(BaseHTTPRequestHandler):
             "    function storageSet(key, value){\n"
             "      try{if(typeof window!=='undefined' && 'localStorage' in window){window.localStorage.setItem(key, value);}}catch(e){}\n"
             "    }\n"
+            "    function cookieGet(name){\n"
+            "      if(typeof document==='undefined'){return null;}\n"
+            "      const match = document.cookie.match(new RegExp('(?:^|; )'+name+'=([^;]*)'));\n"
+            "      return match ? decodeURIComponent(match[1]) : null;\n"
+            "    }\n"
+            "    function cookieSet(name, value){\n"
+            "      if(typeof document==='undefined'){return;}\n"
+            "      const ttl=60*60*24*365;\n"
+            "      document.cookie = `${name}=${encodeURIComponent(value)};path=/;max-age=${ttl}`;\n"
+            "    }\n"
+            "    function loadThemePrefs(){\n"
+            "      try{return JSON.parse(cookieGet(PREF_COOKIE)||'{}')||{};}catch(e){return {};}\n"
+            "    }\n"
+            "    function saveThemePrefs(){\n"
+            "      try{cookieSet(PREF_COOKIE, JSON.stringify(themePref));}catch(e){}\n"
+            "    }\n"
+            "    function themeByName(name, kind){\n"
+            "      return THEMES.find(t=>t.name===name && (!kind || t.kind===kind));\n"
+            "    }\n"
+            "    function ensureThemePref(){\n"
+            "      ['dark','light'].forEach(kind=>{\n"
+            "        const available = THEMES.filter(t=>t.kind===kind);\n"
+            "        if(!available.length){\n"
+            "          return;\n"
+            "        }\n"
+            "        const current = themePref[kind];\n"
+            "        if(!current || !themeByName(current, kind)){\n"
+            "          themePref[kind] = available[0].name;\n"
+            "        }\n"
+            "      });\n"
+            "    }\n"
+            "    function themeForKind(kind){\n"
+            "      ensureThemePref();\n"
+            "      return themeByName(themePref[kind], kind) || THEMES.find(t=>t.kind===kind) || THEMES[0];\n"
+            "    }\n"
+            "    function applyThemeVars(theme){\n"
+            "      if(!theme || !theme.vars){return;}\n"
+            "      const root=document.documentElement;\n"
+            "      for(const [key,val] of Object.entries(theme.vars)){\n"
+            "        root.style.setProperty(`--${key}`, val);\n"
+            "      }\n"
+            "    }\n"
+            "    function updateThemePreview(kind){\n"
+            "      const tgt=document.getElementById(kind==='light'?'preview_light':'preview_dark');\n"
+            "      if(!tgt){return;}\n"
+            "      const theme=themeForKind(kind);\n"
+            "      if(!theme){return;}\n"
+            "      tgt.style.background = theme.vars.bg;\n"
+            "      tgt.style.color = theme.vars.text;\n"
+            "      tgt.style.borderColor = theme.vars.border;\n"
+            "      tgt.textContent = theme.name;\n"
+            "    }\n"
+            "    function populateThemeSelect(kind){\n"
+            "      const select=document.getElementById(kind==='light'?'theme_light':'theme_dark');\n"
+            "      if(!select){return;}\n"
+            "      const themes = THEMES.filter(t=>t.kind===kind);\n"
+            "      select.innerHTML='';\n"
+            "      themes.forEach(t=>{\n"
+            "        const opt=document.createElement('option');\n"
+            "        opt.value=t.name;\n"
+            "        opt.textContent=t.name;\n"
+            "        select.appendChild(opt);\n"
+            "      });\n"
+            "      ensureThemePref();\n"
+            "      if(themePref[kind] && themeByName(themePref[kind], kind)){\n"
+            "        select.value=themePref[kind];\n"
+            "      }\n"
+            "      select.onchange = (ev)=>{\n"
+            "        themePref[kind] = ev.target.value;\n"
+            "        ensureThemePref();\n"
+            "        saveThemePrefs();\n"
+            "        applyTheme();\n"
+            "        updateThemePreview(kind);\n"
+            "      };\n"
+            "      updateThemePreview(kind);\n"
+            "    }\n"
+            "    function populateThemeSelectors(){\n"
+            "      populateThemeSelect('dark');\n"
+            "      populateThemeSelect('light');\n"
+            "    }\n"
             "    function applyTheme(){\n"
             "      const mode=storageGet(THEME_KEY,'dark')||'dark';\n"
+            "      const theme=themeForKind(mode==='light'?'light':'dark');\n"
+            "      applyThemeVars(theme);\n"
             "      document.documentElement.setAttribute('data-theme', mode);\n"
             "      document.body.classList.toggle('theme-light', mode==='light');\n"
             "      document.body.classList.toggle('theme-dark', mode!=='light');\n"
             "      const t=document.getElementById('themeToggle'); if(t){t.checked = (mode==='light');}\n"
+            "      updateThemePreview('dark');\n"
+            "      updateThemePreview('light');\n"
             "    }\n"
             "    function escapeHtml(s){return s.replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}\n"
             "    function hlASA(line){\n"
@@ -389,6 +650,10 @@ class WebHandler(BaseHTTPRequestHandler):
             "    function setMode(mode){\n"
             "      const hidden=document.getElementById('mode');\n"
             "      if(hidden){hidden.value = mode;}\n"
+            "      if(mode==='inspect' || mode==='compare'){\n"
+            "        const radio=document.querySelector(`input[name='rule_mode'][value='${mode}']`);\n"
+            "        if(radio && !radio.checked){radio.checked=true;}\n"
+            "      }\n"
             "      updateRuleModeUI(mode);\n"
             "    }\n"
             "    function updateRuleModeUI(mode){\n"
@@ -414,9 +679,13 @@ class WebHandler(BaseHTTPRequestHandler):
             "      }else if(tab==='find'){\n"
             "        setMode('find');\n"
             "        if(service){service.style.display='none';}\n"
+            "        if(includeAnyLabel){includeAnyLabel.style.display='none';}\n"
             "      }else if(tab==='packet'){\n"
             "        setMode('packet');\n"
             "        if(service){service.style.display='block';}\n"
+            "        if(includeAnyLabel){includeAnyLabel.style.display='none';}\n"
+            "      }else{\n"
+            "        if(service){service.style.display='none';}\n"
             "        if(includeAnyLabel){includeAnyLabel.style.display='none';}\n"
             "      }\n"
             "      if(!suppressSave){saveState();}\n"
@@ -456,12 +725,11 @@ class WebHandler(BaseHTTPRequestHandler):
             "      const st={vendor:document.getElementById('vendor').value,mode:document.getElementById('mode')?document.getElementById('mode').value:'inspect',rule_mode:ruleSelected?ruleSelected.value:'inspect',tab:activeTab,config:document.getElementById('config')?document.getElementById('config').value:'',config_ftg:document.getElementById('config_ftg')?document.getElementById('config_ftg').value:'',inspect:document.getElementById('inspect')?document.getElementById('inspect').value:'',old:document.getElementById('old')?document.getElementById('old').value:'',new:document.getElementById('new')?document.getElementById('new').value:'',findq:document.getElementById('findq')?document.getElementById('findq').value:'',pkt_src:document.getElementById('pkt_src')?document.getElementById('pkt_src').value:'',pkt_dst:document.getElementById('pkt_dst')?document.getElementById('pkt_dst').value:'',proto:document.querySelector(\"select[name='proto']\")?document.querySelector(\"select[name='proto']\").value:'',dport:document.querySelector(\"input[name='dport']\")?document.querySelector(\"input[name='dport']\").value:'',include_any:document.getElementById('include_any')?document.getElementById('include_any').checked:false,fuzzy:document.getElementById('fuzzy')?document.getElementById('fuzzy').checked:true};\n"
             "      storageSet('acl_state', JSON.stringify(st));\n"
             "    }\n"
-            "    function loadState(){\n"
+            "    function applyState(st, suppressSave){\n"
+            "      if(!st||typeof st!=='object') return;\n"
+            "      stateGuard = true;\n"
             "      try{\n"
-            "        stateGuard = true;\n"
-            "        const st=JSON.parse(storageGet('acl_state','{}')||'{}');\n"
-            "        if(!st||typeof st!=='object') return;\n"
-            "        if(st.vendor){document.getElementById('vendor').value=st.vendor;}\n"
+            "        if(st.vendor && document.getElementById('vendor')){document.getElementById('vendor').value=st.vendor;}\n"
             "        toggleVendor();\n"
             "        if(st.config&&document.getElementById('config')){document.getElementById('config').value=st.config;}\n"
             "        if(st.config_ftg&&document.getElementById('config_ftg')){document.getElementById('config_ftg').value=st.config_ftg;}\n"
@@ -483,12 +751,16 @@ class WebHandler(BaseHTTPRequestHandler):
             "          else if(st.mode==='packet') desiredTab='packet';\n"
             "          else desiredTab='rules';\n"
             "        }\n"
-            "        if(!['rules','find','packet'].includes(desiredTab)) desiredTab='rules';\n"
+            "        if(!['rules','find','packet','prefs'].includes(desiredTab)) desiredTab='rules';\n"
             "        activateTab(desiredTab, true);\n"
             "      }catch(e){}\n"
             "      finally{\n"
             "        stateGuard = false;\n"
             "      }\n"
+            "      if(!suppressSave){saveState();}\n"
+            "    }\n"
+            "    function loadState(){\n"
+            "      try{const st=JSON.parse(storageGet('acl_state','{}')||'{}'); applyState(st, true);}catch(e){}\n"
             "    }\n"
             "    function attachStateHandlers(){\n"
             "      for(const sel of ['vendor','config','config_ftg','inspect','old','new','findq','pkt_src','pkt_dst','include_any','fuzzy']){const el=document.getElementById(sel); if(el){el.addEventListener('change',saveState); el.addEventListener('input',saveState);}}\n"
@@ -498,8 +770,16 @@ class WebHandler(BaseHTTPRequestHandler):
             "        radio.addEventListener('change', (e)=>{setMode(e.target.value); saveState();});\n"
             "      });\n"
             "    }\n"
+            "    function setHistoryVisibility(show, skipSave){\n"
+            "      const el=document.getElementById('history');\n"
+            "      if(!el){return;}\n"
+            "      el.dataset.wantVisible = show ? '1':'0';\n"
+            "      const hasEntries = el.dataset.hasEntries === '1';\n"
+            "      el.style.display = (show && hasEntries) ? 'block':'none';\n"
+            "      if(!skipSave){storageSet(HIST_VIS_KEY, show?'on':'off');}\n"
+            "    }\n"
             "    function addToHistory(){try{saveState(); const h=JSON.parse(storageGet('acl_history','[]')||'[]'); const st=JSON.parse(storageGet('acl_state','{}')||'{}'); h.unshift({t:Date.now(),st}); storageSet('acl_history', JSON.stringify(h.slice(0,50))); renderHistory();}catch(e){}}\n"
-            "    function renderHistory(){try{const h=JSON.parse(storageGet('acl_history','[]')||'[]'); const el=document.getElementById('history'); if(!el) return; el.style.display = h.length? 'block':'none'; el.innerHTML='<h3>History</h3>' + h.map(x=>{const s=x.st||{}; return `<div class=\'h-item\'><div>${new Date(x.t).toLocaleString()}</div><div>${s.mode||''} ${s.inspect||s.old||''}${s.new?(' -> '+s.new):''}</div></div>`}).join('');}catch(e){} }\n"
+            "    function renderHistory(){try{const h=JSON.parse(storageGet('acl_history','[]')||'[]'); const el=document.getElementById('history'); if(!el) return; el.innerHTML='<h3>History</h3>' + h.map(x=>{const s=x.st||{}; const payload=encodeURIComponent(JSON.stringify(s)); return `<button type=\"button\" class=\"hist-entry\" data-state=\"${payload}\"><div class=\"hist-time\">${new Date(x.t).toLocaleString()}</div><div class=\"hist-desc\">${s.mode||''} ${s.inspect||s.old||''}${s.new?(' -> '+s.new):''}</div></button>`}).join(''); el.dataset.hasEntries = h.length ? '1':'0'; const want=(storageGet(HIST_VIS_KEY,'off')==='on'); setHistoryVisibility(want, true);}catch(e){} }\n"
             "    document.addEventListener('DOMContentLoaded', ()=>{const f=document.querySelector('form.form'); if(f){f.addEventListener('submit', addToHistory);}});\n"
             "    async function refreshMeta(){\n"
             "      const {vendor,config}=currentConfig();\n"
@@ -508,9 +788,12 @@ class WebHandler(BaseHTTPRequestHandler):
             "      try{const r=await fetch(`/api/meta?vendor=${vendor}&config=${encodeURIComponent(config)}`); if(r.ok){const j=await r.json(); el.textContent = `OS: ${j.os||vendor.toUpperCase()}  Version: ${j.version||'unknown'}`;}}catch(e){}\n"
             "    }\n"
             "    document.querySelectorAll('.mode-tabs .tab').forEach(btn=>{btn.addEventListener('click', ()=>activateTab(btn.dataset.tab));});\n"
+            "    themePref = loadThemePrefs(); ensureThemePref(); saveThemePrefs(); populateThemeSelectors();\n"
             "    const themeToggle=document.getElementById('themeToggle'); if(themeToggle){themeToggle.addEventListener('change', (e)=>{const mode=e.target.checked?'light':'dark'; storageSet(THEME_KEY, mode); applyTheme();});}\n"
             "    const hlToggle=document.getElementById('hlToggle'); if(hlToggle){hlToggle.addEventListener('change', (e)=>{const on=e.target.checked?'on':'off'; storageSet(HL_KEY, on); highlightAll(on==='on');});}\n"
-            "    const histToggle=document.getElementById('histToggle'); if(histToggle){histToggle.addEventListener('click', ()=>{const el=document.getElementById('history'); if(!el) return; el.style.display = (el.style.display==='none'||!el.style.display)?'block':'none';});}\n"
+            "    const hist = document.getElementById('history');\n"
+            "    const histToggle=document.getElementById('histToggle'); if(histToggle){histToggle.addEventListener('click', ()=>{const want = storageGet(HIST_VIS_KEY,'off')==='on'; setHistoryVisibility(!want, false);});}\n"
+            "    if(hist){hist.addEventListener('click', (ev)=>{const btn=ev.target.closest('.hist-entry'); if(!btn) return; ev.preventDefault(); try{const st=JSON.parse(decodeURIComponent(btn.dataset.state||'{}')); applyState(st, false);}catch(e){}});}\n"
             "    applyTheme(); activateTab(activeTab, true); loadState(); toggleVendor(); attachTypeahead(); attachStateHandlers(); refreshMeta(); const hlOn=(storageGet(HL_KEY,'on')||'on')==='on'; highlightAll(hlOn); if(hlToggle){hlToggle.checked = hlOn;} renderHistory(); saveState();\n"
             "  </script>\n"
             "</body></html>\n"
@@ -1030,7 +1313,11 @@ class WebHandler(BaseHTTPRequestHandler):
             ".toolbar-controls{display:flex;gap:12px;align-items:center;}\n"
             ".kw{color:#c792ea;} .proto{color:#82aaff;} .act{color:#c3e88d;} .addr{color:#f78c6c;} .num{color:#ffcb6b;}\n"
             ".tip{display:inline-block;width:16px;height:16px;line-height:16px;text-align:center;border-radius:50%;border:1px solid var(--sub);color:var(--sub);font-size:12px;cursor:help;}\n"
-            ".history{position:fixed;right:8px;top:64px;width:260px;max-height:70vh;overflow:auto;background:var(--muted);border:1px solid var(--border);border-radius:8px;padding:8px;z-index:30;} .h-item{border-bottom:1px solid var(--border);padding:4px 0;} .h-item:last-child{border-bottom:none;}\n"
+            ".history{position:fixed;right:8px;top:64px;width:260px;max-height:70vh;overflow:auto;background:var(--muted);border:1px solid var(--border);border-radius:8px;padding:8px;z-index:30;}\n"
+            ".hist-entry{display:block;width:100%;text-align:left;background:transparent;color:var(--text);border:1px solid transparent;border-radius:6px;padding:6px;margin-bottom:4px;cursor:pointer;}\n"
+            ".hist-entry:hover{border-color:var(--accent);background:rgba(122,162,247,0.12);}\n"
+            ".hist-time{font-size:0.85em;color:var(--sub);}\n"
+            ".hist-desc{font-size:0.95em;}\n"
             ".tab-panels{margin-top:12px;}\n"
             ".tab-panel{display:none;}\n"
             ".tab-panel.active{display:block;}\n"
@@ -1038,6 +1325,9 @@ class WebHandler(BaseHTTPRequestHandler):
             ".global-search label{display:inline-flex;align-items:center;gap:6px;}\n"
             "#include_any_label{display:inline-flex;align-items:center;gap:4px;}\n"
             ".radio-group{display:flex;gap:16px;align-items:center;} .radio-group label{margin-right:0;}\n"
+            ".theme-control{display:flex;align-items:center;gap:12px;margin-bottom:8px;} .theme-control select{min-width:180px;}\n"
+            ".theme-preview{width:80px;height:32px;border-radius:6px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:0.8em;}\n"
+            ".pref-note{font-size:0.85em;color:var(--sub);margin-top:8px;}\n"
         )
 
 
@@ -1053,12 +1343,16 @@ def main() -> None:
     ap.add_argument('--configs-fortigate', default=env_configs_fortigate, help='Directory with FortiGate configs (env ACLINSPECTOR_CONFIGS_FORTIGATE)')
     # Robust env parsing for optional overrides
     env_cache_dir = os.environ.get('ACLINSPECTOR_CACHE_DIR', '')
+    env_theme_dir = os.environ.get('ACLINSPECTOR_THEME_DIR', 'themes')
     try:
         env_search_limit = int(os.environ.get('ACLINSPECTOR_SEARCH_LIMIT', '').strip() or '50')
     except Exception:
         env_search_limit = 50
+    env_prewarm = os.environ.get('ACLINSPECTOR_PREWARM_ALL', '').strip().lower() in {'1', 'true', 'yes', 'on'}
     ap.add_argument('--cache-dir', default=env_cache_dir, help='Disk cache directory (optional; enable by setting a path)')
     ap.add_argument('--search-limit', type=int, default=env_search_limit, help='Default suggestion limit (can be overridden via query)')
+    ap.add_argument('--theme-dir', default=env_theme_dir, help='Directory with iTerm2 theme files (env ACLINSPECTOR_THEME_DIR)')
+    ap.add_argument('--prewarm-all-configs', action='store_true', default=env_prewarm, help='Pre-build index cache for all configs on startup (env ACLINSPECTOR_PREWARM_ALL)')
     args = ap.parse_args()
 
     server = HTTPServer((args.addr, args.port), WebHandler)
@@ -1069,6 +1363,11 @@ def main() -> None:
     server.index_cache: Dict[str, dict] = {}
     server.cache_dir = args.cache_dir or None
     server.search_limit = args.search_limit
+    server.theme_dir = args.theme_dir
+    server.themes = load_themes(args.theme_dir)
+    if args.prewarm_all_configs:
+        count = prewarm_all_configs(server)
+        print(f"Prewarmed indices for {count} config(s).")
     print(f"Web UI running at http://{args.addr}:{args.port}")
     try:
         server.serve_forever()

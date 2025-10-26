@@ -96,6 +96,7 @@ Web UI
   - `ACLINSPECTOR_CONFIGS_CISCO=/data/asa` (defaults to `configs/cisco`)
   - `ACLINSPECTOR_CONFIGS_FORTIGATE=/data/fortigate` (defaults to `configs/fortigate`)
   - Both can point to the same directory if production layouts are unified. Vendor detection heuristics can be added later; for now select the vendor in the UI to parse appropriately.
+  - `ACLINSPECTOR_PREWARM_ALL=1` eagerly builds the suggestion index for every config at startup (same as `--prewarm-all-configs`).
 - Container helper targets:
   - `make container-stop` stops the running container but keeps its filesystem.
   - `make container-prune` removes the container while preserving the built image layers (fast rebuilds).
@@ -110,6 +111,7 @@ Web UI
   - Default suggestion limit: 50 (override with `--search-limit` or env `ACLINSPECTOR_SEARCH_LIMIT`).
   - Search modes: checkbox in the UI toggles fuzzy search (default on). When enabled, matching uses case-insensitive subsequence scoring so e.g. `SQL` matches `Sidzvsql05`.
   - Modes are organized as tabs: **Inspect / Compare** share a workspace with the rule filters, while **Find host** and **Packet check** get dedicated views. Switching tabs updates the hidden `mode` field that the server expects.
+  - A Preferences tab lets you pick the light and dark themes from the bundled iTerm2 palette directory (`themes/`). Choices persist in a cookie so the dark/light toggle reuses your favorites.
   - Packet check tab evaluates a single flow through NAT + ACL (ASA prototype).
 
 - Dark mode and CSS:
