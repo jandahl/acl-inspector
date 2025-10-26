@@ -1,4 +1,5 @@
 SHELL := /bin/bash
+WEB_PORT ?= 8083
 
 .PHONY: help venv lint test unit examples web build clean
 
@@ -9,8 +10,9 @@ help:
 	@echo "  unit      - run python -m unittest"
 	@echo "  test      - run self-test via CLI"
 	@echo "  examples  - print CLI examples"
-	@echo "  web       - run the web UI (localhost:8080)"
+	@echo "  web       - run the web UI (localhost:$(WEB_PORT))"
 	@echo "             (override config dirs: make web CONFIGS_CISCO=/path/to/asa CONFIGS_FORTIGATE=/path/to/ftg)"
+	@echo "  web-e2e   - run Playwright-based UI smoke tests"
 	@echo "  container-build - build the web UI container image"
 	@echo "  container-run   - run the web UI container (localhost:8083)"
 	@echo "  container-status- show the status of the web UI container"
@@ -37,12 +39,13 @@ test:
 examples:
 	./access-list-inspector.py --examples
 
-WEB_PORT ?= 8083
-
 web:
 	$(if $(CONFIGS_CISCO),ACLINSPECTOR_CONFIGS_CISCO=$(CONFIGS_CISCO) ,)\
 	$(if $(CONFIGS_FORTIGATE),ACLINSPECTOR_CONFIGS_FORTIGATE=$(CONFIGS_FORTIGATE) ,)\
 	./access-list-web.py --port $(WEB_PORT)
+
+web-e2e:
+	PYTHONPYCACHEPREFIX=.pyc_cache python3 -m unittest tests.test_ui_playwright
 
 # Container targets
 CONTAINER_COMPOSE :=

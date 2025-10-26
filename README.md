@@ -200,6 +200,10 @@ Testing
 - Run unit tests in the `tests` directory:
   `python3 -m unittest discover -s tests`
 
+- Web UI smoke tests (headless Playwright):
+  `make web-e2e`
+  (requires `pip install playwright` and `playwright install chromium`)
+
 - A legacy test file (`test_ASA-ACL-inspector.py`) exists; it targets an older version and may not pass. Prefer the tests under `tests/`.
 
 Development
