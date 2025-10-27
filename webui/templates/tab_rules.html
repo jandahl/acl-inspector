@@ -10,15 +10,18 @@
     <legend>Targets</legend>
     <div id="inspect_fields">
       <label>Object / host:</label>
-      <input type="text" name="inspect" id="inspect" list="targets" placeholder="Search object or host">
+      <input type="text" name="inspect" id="inspect" list="targets" placeholder="Search object or host" autocomplete="off">
     </div>
     <div id="compare_fields" style="display:none">
       <label>Old object:</label>
-      <input type="text" name="old" id="old" list="targets" placeholder="Original object">
+      <input type="text" name="old" id="old" list="targets" placeholder="Original object" autocomplete="off">
       <label>New object:</label>
-      <input type="text" name="new" id="new" list="targets" placeholder="Replacement object">
+      <input type="text" name="new" id="new" list="targets" placeholder="Replacement object" autocomplete="off">
     </div>
   </fieldset>
+  <div class="actions actions-run" data-tab="rules">
+    <button type="submit">Run</button>
+  </div>
   <fieldset class="section section-results">
     <legend>Results</legend>
     <div class="results" data-tab="rules"></div>

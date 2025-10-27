@@ -51,6 +51,20 @@
     document.cookie = `${name}=${encodeURIComponent(value)};path=/;max-age=${ttl}`;
   }
 
+  function parseBool(value, fallback = false) {
+    if (value === null || value === undefined || value === "") {
+      return fallback;
+    }
+    const text = String(value).toLowerCase();
+    if (["1", "true", "yes", "on"].includes(text)) {
+      return true;
+    }
+    if (["0", "false", "no", "off"].includes(text)) {
+      return false;
+    }
+    return fallback;
+  }
+
   function loadThemePrefs() {
     try {
       return JSON.parse(cookieGet(PREF_COOKIE) || "{}") || {};
@@ -289,11 +303,26 @@
           )
           .join("");
         panel.dataset.hasEntries = items.length ? "1" : "0";
+        attachHistoryHandlers();
         if (storageGet(HIST_VIS_KEY, "off") === "on") {
           panel.style.display = items.length ? "block" : "none";
         }
       })
       .catch(() => {});
+  }
+
+  function attachHistoryHandlers() {
+    const panel = document.getElementById("history");
+    if (!panel) {
+      return;
+    }
+    panel.querySelectorAll(".hist-entry").forEach((button) => {
+      button.addEventListener("click", () => {
+        const tab = button.dataset.mode || "rules";
+        const query = button.dataset.query || "";
+        restoreFromHistory(tab, query);
+      });
+    });
   }
 
   function toggleHistory() {
@@ -307,6 +336,67 @@
     if (!visible) {
       listHistory();
     }
+  }
+
+  function updateRunActions(tab) {
+    document.querySelectorAll(".actions-run").forEach((node) => {
+      const shouldShow = node.dataset.tab === tab && ["rules", "find", "packet"].includes(tab);
+      node.style.display = shouldShow ? "block" : "none";
+    });
+  }
+
+  function restoreFromHistory(tab, query) {
+    if (!tab) {
+      return;
+    }
+    const normalizedTab = tab || "rules";
+    const cleanQuery = query || "";
+    stateGuard = true;
+    try {
+      if (normalizedTab === "rules") {
+        const isCompare = cleanQuery.includes("->");
+        activateTab("rules", true);
+        setMode(isCompare ? "compare" : "inspect");
+        const inspectField = document.getElementById("inspect");
+        const oldField = document.getElementById("old");
+        const newField = document.getElementById("new");
+        if (inspectField) {
+          inspectField.value = isCompare ? "" : cleanQuery;
+        }
+        const parts = cleanQuery.split("->");
+        if (oldField) {
+          oldField.value = isCompare ? (parts[0] || "") : "";
+        }
+        if (newField) {
+          newField.value = isCompare ? (parts[1] || "") : "";
+        }
+      } else if (normalizedTab === "find") {
+        activateTab("find", true);
+        setMode("find");
+        const findField = document.getElementById("findq");
+        if (findField) {
+          findField.value = cleanQuery;
+        }
+      } else if (normalizedTab === "packet") {
+        activateTab("packet", true);
+        setMode("packet");
+        const [srcVal = "", dstVal = ""] = cleanQuery.split("->");
+        const srcField = document.getElementById("pkt_src");
+        const dstField = document.getElementById("pkt_dst");
+        if (srcField) {
+          srcField.value = srcVal;
+        }
+        if (dstField) {
+          dstField.value = dstVal;
+        }
+      } else {
+        activateTab(normalizedTab, true);
+      }
+    } finally {
+      stateGuard = false;
+    }
+    saveState();
+    triggerRun();
   }
 
   function setMode(mode) {
@@ -355,10 +445,7 @@
       panel.style.display = isActive ? "block" : "none";
       panel.classList.toggle("active", isActive);
     });
-    const runActions = document.getElementById("run_actions");
-    if (runActions) {
-      runActions.style.display = ["rules", "find", "packet"].includes(tab) ? "block" : "none";
-    }
+    updateRunActions(tab);
     if (tab === "rules") {
       const selected = document.querySelector("input[name='rule_mode']:checked");
       const chosen = selected ? selected.value : "inspect";
@@ -394,7 +481,7 @@
       }
     }
     if (tab === "config") {
-      loadConfigText("current");
+      loadConfigText();
     }
     if (!suppressSave) {
       saveState();
@@ -470,13 +557,11 @@
     });
   }
 
-  function saveState() {
-    if (stateGuard) {
-      return;
-    }
-    const payload = {
+  function gatherState() {
+    const vendor = document.getElementById("vendor").value;
+    return {
       tab: activeTab,
-      vendor: document.getElementById("vendor").value,
+      vendor,
       config: document.getElementById("config").value,
       config_ftg: document.getElementById("config_ftg").value,
       mode: document.getElementById("mode").value,
@@ -489,25 +574,103 @@
       proto: document.querySelector("select[name='proto']").value,
       dport: document.querySelector("input[name='dport']").value,
       include_any: document.getElementById("include_any").checked,
+      fuzzy: document.getElementById("fuzzy").checked,
     };
-    storageSet("acl_state", JSON.stringify(payload));
   }
 
-  function loadState() {
-    let payload = null;
-    try {
-      payload = JSON.parse(storageGet("acl_state", "{}"));
-    } catch (err) {
-      payload = null;
-    }
-    if (!payload) {
+  function updateUrlFromState(state) {
+    if (typeof window === "undefined" || !window.history || !window.location) {
       return;
+    }
+    const params = new URLSearchParams();
+    const assign = (key, value) => {
+      if (value === null || value === undefined) {
+        return;
+      }
+      const text = typeof value === "string" ? value.trim() : String(value);
+      if (text) {
+        params.set(key, text);
+      }
+    };
+    assign("tab", state.tab);
+    assign("mode", state.mode);
+    assign("vendor", state.vendor);
+    assign("config", state.config);
+    assign("config_ftg", state.config_ftg);
+    assign("inspect", state.inspect);
+    assign("old", state.old);
+    assign("new", state.new);
+    assign("find", state.findq);
+    assign("pkt_src", state.pkt_src);
+    assign("pkt_dst", state.pkt_dst);
+    assign("proto", state.proto);
+    assign("dport", state.dport);
+    if (state.include_any) {
+      params.set("include_any", "1");
+    }
+    params.set("fuzzy", state.fuzzy ? "1" : "0");
+    const query = params.toString();
+    const url = query ? `${window.location.pathname}?${query}` : window.location.pathname;
+    try {
+      window.history.replaceState({}, "", url);
+    } catch (err) {
+      console.warn("replaceState failed", err);
+    }
+  }
+
+  function parseQueryState() {
+    if (typeof window === "undefined") {
+      return null;
+    }
+    const params = new URLSearchParams(window.location.search || "");
+    if (!Array.from(params.keys()).length) {
+      return null;
+    }
+    const state = {};
+    let hasValue = false;
+    const take = (key, target) => {
+      const value = params.get(key);
+      if (value !== null) {
+        state[target] = value;
+        hasValue = true;
+      }
+    };
+    take("tab", "tab");
+    take("mode", "mode");
+    take("vendor", "vendor");
+    take("config", "config");
+    take("config_ftg", "config_ftg");
+    take("inspect", "inspect");
+    take("old", "old");
+    take("new", "new");
+    take("find", "findq");
+    take("findq", "findq");
+    take("pkt_src", "pkt_src");
+    take("pkt_dst", "pkt_dst");
+    take("proto", "proto");
+    take("dport", "dport");
+    if (params.has("include_any")) {
+      state.include_any = parseBool(params.get("include_any"), false);
+      hasValue = true;
+    }
+    if (params.has("fuzzy")) {
+      state.fuzzy = parseBool(params.get("fuzzy"), true);
+      hasValue = true;
+    }
+    return hasValue ? state : null;
+  }
+
+  function applyState(payload) {
+    if (!payload) {
+      return false;
     }
     stateGuard = true;
     try {
-      const vendor = document.getElementById("vendor");
-      if (vendor && payload.vendor) {
-        vendor.value = payload.vendor;
+      if (payload.vendor) {
+        const vendorSelect = document.getElementById("vendor");
+        if (vendorSelect) {
+          vendorSelect.value = payload.vendor;
+        }
       }
       toggleVendor();
       const assign = (id, value) => {
@@ -534,17 +697,72 @@
       }
       const includeAny = document.getElementById("include_any");
       if (includeAny && payload.include_any !== undefined) {
-        includeAny.checked = payload.include_any;
+        includeAny.checked = !!payload.include_any;
       }
-      if (payload.tab) {
-        activateTab(payload.tab, true);
+      const fuzzyToggle = document.getElementById("fuzzy");
+      if (fuzzyToggle && payload.fuzzy !== undefined) {
+        fuzzyToggle.checked = !!payload.fuzzy;
       }
-      if (payload.mode) {
-        setMode(payload.mode);
+      const configSelectTab = document.getElementById("config_select_tab");
+      const currentVendor = (document.getElementById("vendor")?.value || payload.vendor || "asa").toLowerCase();
+      if (configSelectTab && currentVendor === "asa" && payload.config !== undefined) {
+        configSelectTab.value = payload.config;
       }
     } finally {
       stateGuard = false;
     }
+    if (payload.tab) {
+      activateTab(payload.tab, true);
+    }
+    if (payload.mode) {
+      setMode(payload.mode);
+    }
+    return true;
+  }
+
+  function shouldAutoRun(state) {
+    if (!state || !state.tab) {
+      return false;
+    }
+    if (state.tab === "rules") {
+      if (state.mode === "compare") {
+        return Boolean((state.old || "").trim() && (state.new || "").trim());
+      }
+      return Boolean((state.inspect || "").trim());
+    }
+    if (state.tab === "find") {
+      return Boolean((state.findq || "").trim());
+    }
+    if (state.tab === "packet") {
+      return Boolean((state.pkt_src || "").trim() && (state.pkt_dst || "").trim());
+    }
+    return false;
+  }
+
+  function saveState() {
+    if (stateGuard) {
+      return;
+    }
+    const payload = gatherState();
+    storageSet("acl_state", JSON.stringify(payload));
+    updateUrlFromState(payload);
+  }
+
+  function loadState() {
+    const queryState = parseQueryState();
+    if (queryState && applyState(queryState)) {
+      return queryState;
+    }
+    let payload = null;
+    try {
+      payload = JSON.parse(storageGet("acl_state", "{}"));
+    } catch (err) {
+      payload = null;
+    }
+    if (payload && Object.keys(payload).length) {
+      applyState(payload);
+    }
+    return null;
   }
 
   let currentConfigText = "";
@@ -659,8 +877,13 @@
   }
 
   async function submitForm(event) {
-    event.preventDefault();
-    const form = event.target;
+    if (event && typeof event.preventDefault === "function") {
+      event.preventDefault();
+    }
+    const form = (event && event.target) ? event.target : document.forms[0];
+    if (!form) {
+      return;
+    }
     const formData = new FormData(form);
     const params = new URLSearchParams();
     formData.forEach((value, key) => {
@@ -683,6 +906,14 @@
     } catch (err) {
       setRunResults("rules", `<div class="section"><p style="color:red">Request failed: ${err}</p></div>`);
     }
+  }
+
+  function triggerRun() {
+    const form = document.forms[0];
+    if (!form) {
+      return;
+    }
+    submitForm({ target: form });
   }
 
   function refreshMeta() {
@@ -755,10 +986,13 @@
     applyTheme();
     highlightAll((storageGet(HL_KEY, "on") || "on") === "on");
     attachTypeahead();
-    loadState();
+    const queryState = loadState();
     refreshMeta();
     ensureHistoryVisibility();
     activateTab(activeTab, true);
+    if (queryState && shouldAutoRun(queryState)) {
+      triggerRun();
+    }
 
     const themeToggle = document.getElementById("themeToggle");
     if (themeToggle) {
@@ -792,6 +1026,33 @@
     document.forms[0].addEventListener("input", saveState);
     document.forms[0].addEventListener("submit", submitForm);
     loadConfigText();
+
+    window.addEventListener("popstate", () => {
+      const state = parseQueryState();
+      if (state && applyState(state)) {
+        const snapshot = gatherState();
+        storageSet("acl_state", JSON.stringify(snapshot));
+        activateTab(activeTab, true);
+        refreshMeta();
+        if (activeTab === "config") {
+          loadConfigText();
+        }
+        if (shouldAutoRun(state)) {
+          triggerRun();
+        }
+        return;
+      }
+      const fallbackState = loadState();
+      activateTab(activeTab, true);
+      refreshMeta();
+      if (activeTab === "config") {
+        loadConfigText();
+      }
+      const snapshot = fallbackState || gatherState();
+      if (shouldAutoRun(snapshot)) {
+        triggerRun();
+      }
+    });
   }
 
   if (document.readyState === "loading") {

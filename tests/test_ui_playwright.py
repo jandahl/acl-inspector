@@ -122,7 +122,7 @@ access-list OUT extended permit tcp object OBJ_HOST object OBJ_WEB eq 443
         page.click("button[data-tab='find']")
         page.fill("input#findq", query)
         page.wait_for_selector("datalist#targets")  # ensure datalist exists
-        page.click("form.form button[type=submit]")
+        page.click("div.actions-run[data-tab='find'] button[type=submit]")
         page.wait_for_selector("div.results pre")
 
     def test_find_host_results_and_suggestions(self):
@@ -134,7 +134,7 @@ access-list OUT extended permit tcp object OBJ_HOST object OBJ_WEB eq 443
         page.wait_for_selector("datalist#targets option")
         options = page.query_selector_all("datalist#targets option")
         self.assertTrue(any("OBJ_HOST" in opt.get_attribute("value") for opt in options))
-        page.click("form.form button[type=submit]")
+        page.click("div.actions-run[data-tab='find'] button[type=submit]")
         page.wait_for_selector("div.results pre")
         text = page.text_content("div.results pre")
         self.assertIn("OBJ_HOST", text or "")
@@ -188,7 +188,7 @@ access-list OUT extended permit tcp object OBJ_HOST object OBJ_WEB eq 443
         )
         page.fill("input#findq", "OBJ_HOST")
         start_url = page.url
-        page.click("form.form button[type=submit]")
+        page.click("div.actions-run[data-tab='find'] button[type=submit]")
         page.wait_for_function(
             "() => document.querySelector(\"div.results[data-tab='find']\").textContent.includes('OBJ_HOST')"
         )
@@ -198,9 +198,9 @@ access-list OUT extended permit tcp object OBJ_HOST object OBJ_WEB eq 443
         page = self._new_page()
         self._goto_root(page)
         self._select_config(page)
-        self.assertTrue(page.is_visible("#run_actions button[type=submit]"))
+        self.assertTrue(page.is_visible("div.actions-run[data-tab='rules'] button[type=submit]"))
         page.fill("input#inspect", "OBJ_HOST")
-        page.click("#run_actions button[type=submit]")
+        page.click("div.actions-run[data-tab='rules'] button[type=submit]")
         page.wait_for_function(
             "() => { const el = document.querySelector(\"div.results[data-tab='rules']\"); return el && el.textContent.includes('Inspection Report'); }"
         )
@@ -208,3 +208,58 @@ access-list OUT extended permit tcp object OBJ_HOST object OBJ_WEB eq 443
             "() => window.getComputedStyle(document.querySelector(\"div.results[data-tab='rules']\")).display"
         )
         self.assertEqual(display, "block")
+
+    def test_history_entry_replays_search(self):
+        page = self._new_page()
+        self._goto_root(page)
+        self._select_config(page)
+        page.fill("input#inspect", "OBJ_HOST")
+        page.click("div.actions-run[data-tab='rules'] button[type=submit]")
+        page.wait_for_function(
+            "() => document.querySelector(\"div.results[data-tab='rules']\").textContent.includes('OBJ_HOST')"
+        )
+        page.fill("input#inspect", "OBJ_WEB")
+        page.click("div.actions-run[data-tab='rules'] button[type=submit]")
+        page.wait_for_function(
+            "() => document.querySelector(\"div.results[data-tab='rules']\").textContent.includes('OBJ_WEB')"
+        )
+        page.click("#histToggle")
+        page.wait_for_selector("button.hist-entry")
+        page.wait_for_function(
+            "() => Array.from(document.querySelectorAll('button.hist-entry'))"
+            " .some(el => (el.textContent || '').includes('OBJ_HOST'))"
+        )
+        entries = page.query_selector_all("button.hist-entry")
+        target = None
+        for entry in entries:
+            text = entry.text_content() or ""
+            if "OBJ_HOST" in text:
+                target = entry
+                break
+        self.assertIsNotNone(target)
+        assert target
+        target.click()
+        page.wait_for_function(
+            "() => document.querySelector(\"div.results[data-tab='rules']\").textContent.includes('OBJ_HOST')"
+        )
+
+    def test_shareable_link_restores_state(self):
+        page = self._new_page()
+        self._goto_root(page)
+        self._select_config(page)
+        page.fill("input#inspect", "OBJ_HOST")
+        page.click("div.actions-run[data-tab='rules'] button[type=submit]")
+        page.wait_for_function(
+            "() => document.querySelector(\"div.results[data-tab='rules']\").textContent.includes('OBJ_HOST')"
+        )
+        share_url = page.url
+        self.assertIn("inspect=OBJ_HOST", share_url)
+        new_page = self._new_page()
+        new_page.goto(share_url, wait_until="networkidle")
+        new_page.wait_for_function(
+            "() => document.querySelector(\"div.results[data-tab='rules']\") && document.querySelector(\"div.results[data-tab='rules']\").textContent.includes('OBJ_HOST')"
+        )
+        config_value = new_page.get_attribute("select#config", "value")
+        self.assertEqual(config_value, self._config_name)
+        inspect_value = new_page.get_attribute("input#inspect", "value")
+        self.assertEqual(inspect_value, "OBJ_HOST")

@@ -2,8 +2,11 @@
   <fieldset class="section section-find">
     <legend>Find host</legend>
     <label>Address / object:</label>
-    <input type="text" name="findq" id="findq" list="targets" placeholder="Host or object">
+    <input type="text" name="findq" id="findq" list="targets" placeholder="Host or object" autocomplete="off">
   </fieldset>
+  <div class="actions actions-run" data-tab="find">
+    <button type="submit">Run</button>
+  </div>
   <fieldset class="section section-results">
     <legend>Results</legend>
     <div class="results" data-tab="find"></div>
