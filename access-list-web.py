@@ -16,24 +16,35 @@ import json
 import time
 import hashlib
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from typing import List, Optional, Sequence, Tuple
+from http.server import BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
 
 from parsers.cisco import asa as asa_parser
+from webui.themes import DEFAULT_THEMES as _DEFAULT_THEMES, load_themes as _load_themes
 from webui.handlers import actions as actions_handlers
-from webui.themes import DEFAULT_THEMES, load_themes
 from webui.handlers import api as api_handlers
 from webui.handlers import pages as pages_handlers
 from webui import settings as webui_settings
 from webui.state import AppState
 from webui.testing import (
-    extract_meta_for_tests,
-    build_index_for_tests,
-    match_candidates_for_tests,
-    highlight_asa_for_tests,
-    index_status_for_tests,
+    extract_meta_for_tests as _extract_meta_for_tests,
+    build_index_for_tests as _build_index_for_tests,
+    match_candidates_for_tests as _match_candidates_for_tests,
+    highlight_asa_for_tests as _highlight_asa_for_tests,
+    index_status_for_tests as _index_status_for_tests,
 )
+
+
+# Re-export helpers for legacy unit tests
+extract_meta_for_tests = _extract_meta_for_tests
+build_index_for_tests = _build_index_for_tests
+match_candidates_for_tests = _match_candidates_for_tests
+highlight_asa_for_tests = _highlight_asa_for_tests
+index_status_for_tests = _index_status_for_tests
+
+DEFAULT_THEMES = _DEFAULT_THEMES
+load_themes = _load_themes
 
 # Expose small module-level helpers for unit tests
 def _vendor_os_tag(vendor: str) -> str:
@@ -197,12 +208,11 @@ class WebHandler(BaseHTTPRequestHandler):
                 try:
                     app_js_path = Path(__file__).resolve().parent / 'webui' / 'static' / 'app.js'
                     app_js = app_js_path.read_text(encoding='utf-8')
-                    close_idx = html.find('</script>')
-                    if close_idx != -1:
-                        html = html[:close_idx] + '\n' + app_js + '\n' + html[close_idx:]
-                    else:
-                        html = '<script>' + app_js + '</script>' + html
-
+                    safe_js = app_js.replace('</', '<\\/')
+                    marker = '</script>'
+                    index = html.find(marker)
+                    if index != -1:
+                        html = html[:index] + '\n' + safe_js + '\n' + html[index:]
                 except Exception:
                     pass
             return html
@@ -494,8 +504,13 @@ class WebHandler(BaseHTTPRequestHandler):
 
     def _fuzzy_score(self, text: str, pattern: str) -> Optional[Tuple[int, int, int]]:
         # Returns a tuple score (gaps, start, length) where lower is better; None if no subsequence match
-        t = text.lower(); p = pattern.lower()
-        ti = 0; pi = 0; start = -1; gaps = 0; last_match = -1
+        t = text.lower()
+        p = pattern.lower()
+        ti = 0
+        pi = 0
+        start = -1
+        gaps = 0
+        last_match = -1
         while ti < len(t) and pi < len(p):
             if t[ti] == p[pi]:
                 if start == -1:

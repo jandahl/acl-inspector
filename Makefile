@@ -55,8 +55,8 @@ themes:
 	@if [ ! -f $(THEMES_DIR)/.source ]; then \
 		tmp=$$(mktemp -d); \
 		git clone --depth 1 $(THEMES_REPO) $$tmp/iterm >/dev/null 2>&1; \
-		cp -f $$tmp/iterm/themes/*.itermcolors $(THEMES_DIR)/ 2>/dev/null || true; \
-		cp -f $$tmp/iterm/themes/*.yaml $(THEMES_DIR)/ 2>/dev/null || true; \
+		cp -f $$tmp/iterm/schemes/*.itermcolors $(THEMES_DIR)/ 2>/dev/null || true; \
+		cp -f $$tmp/iterm/schemes/*.yaml $(THEMES_DIR)/ 2>/dev/null || true; \
 		echo "$(THEMES_REPO)" > $(THEMES_DIR)/.source; \
 		rm -rf $$tmp; \
 	fi

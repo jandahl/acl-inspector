@@ -177,3 +177,34 @@ access-list OUT extended permit tcp object OBJ_HOST object OBJ_WEB eq 443
         body_class = page.get_attribute("body", "class") or ""
         self.assertIn("theme-light", body_class)
         self.assertFalse(page.is_checked("#hlToggle"))
+
+    def test_tab_switch_and_run_updates_results(self):
+        page = self._new_page()
+        self._goto_root(page)
+        self._select_config(page)
+        page.click("button[data-tab='find']")
+        page.wait_for_function(
+            "() => document.querySelector('#tab-find').classList.contains('active')"
+        )
+        page.fill("input#findq", "OBJ_HOST")
+        start_url = page.url
+        page.click("form.form button[type=submit]")
+        page.wait_for_function(
+            "() => document.querySelector(\"div.results[data-tab='find']\").textContent.includes('OBJ_HOST')"
+        )
+        self.assertEqual(page.url, start_url)
+
+    def test_inspect_run_shows_results_without_tab_switch(self):
+        page = self._new_page()
+        self._goto_root(page)
+        self._select_config(page)
+        self.assertTrue(page.is_visible("#run_actions button[type=submit]"))
+        page.fill("input#inspect", "OBJ_HOST")
+        page.click("#run_actions button[type=submit]")
+        page.wait_for_function(
+            "() => { const el = document.querySelector(\"div.results[data-tab='rules']\"); return el && el.textContent.includes('Inspection Report'); }"
+        )
+        display = page.evaluate(
+            "() => window.getComputedStyle(document.querySelector(\"div.results[data-tab='rules']\")).display"
+        )
+        self.assertEqual(display, "block")

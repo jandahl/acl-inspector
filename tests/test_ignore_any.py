@@ -1,6 +1,6 @@
 import unittest
 
-from parsers.cisco.asa import ASAConfig, inspect_host
+from parsers.cisco.asa import inspect_host
 
 
 ASA_SAMPLE = """

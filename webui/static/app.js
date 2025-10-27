@@ -150,6 +150,11 @@
     const mode = storageGet(THEME_KEY, "dark");
     const root = document.documentElement;
     root.dataset.theme = mode;
+    const body = document.body;
+    if (body) {
+      body.classList.remove("theme-dark", "theme-light");
+      body.classList.add(mode === "light" ? "theme-light" : "theme-dark");
+    }
     const theme = themeForKind(mode === "light" ? "light" : "dark");
     applyThemeVars(theme);
     themePref[mode] = theme ? theme.name : themePref[mode];
@@ -168,8 +173,69 @@
     applyTheme();
   }
 
+  function escapeHtml(text) {
+    return (text || "").replace(/[&<>"']/g, (ch) => {
+      switch (ch) {
+        case "&":
+          return "&amp;";
+        case "<":
+          return "&lt;";
+        case ">":
+          return "&gt;";
+        case '"':
+          return "&quot;";
+        case "'":
+          return "&#39;";
+        default:
+          return ch;
+      }
+    });
+  }
+
+  function highlightAsaBlock(text) {
+    let html = escapeHtml(text);
+    html = html.replace(/\b(permit|deny)\b/gi, "<span class='act'>$1</span>");
+    html = html.replace(/\b(tcp|udp|icmp|ip)\b/gi, "<span class='proto'>$1</span>");
+    html = html.replace(
+      /\b(access-list|extended|object-group|object|host|subnet|eq|lt|gt|neq|range|any|any4|any6)\b/gi,
+      "<span class='kw'>$1</span>"
+    );
+    html = html.replace(
+      /\b(\d{1,3}(?:\.\d{1,3}){3})(?:\/(\d{1,2}))?\b/g,
+      (_match, addr, mask) => `<span class='addr'>${addr}${mask ? `/${mask}` : ""}</span>`
+    );
+    html = html.replace(/\b(\d{2,5})\b/g, "<span class='num'>$1</span>");
+    return html;
+  }
+
+  function applyHighlight(pre, enable) {
+    if (!pre.dataset.raw) {
+      pre.dataset.raw = pre.textContent || "";
+    }
+    const raw = pre.dataset.raw || "";
+    if (!enable) {
+      pre.textContent = raw;
+      return;
+    }
+    const lang = (pre.dataset.lang || "").toLowerCase();
+    if (lang === "asa") {
+      pre.innerHTML = highlightAsaBlock(raw);
+      return;
+    }
+    pre.textContent = raw;
+  }
+
+  function refreshHighlights(enable) {
+    document.querySelectorAll("pre[data-lang]").forEach((pre) => {
+      applyHighlight(pre, enable);
+    });
+  }
+
   function highlightAll(enable) {
-    document.body.classList.toggle("hl-off", !enable);
+    if (document.body) {
+      document.body.classList.toggle("hl-off", !enable);
+    }
+    refreshHighlights(enable);
     storageSet(HL_KEY, enable ? "on" : "off");
   }
 
@@ -248,14 +314,6 @@
     if (modeInput) {
       modeInput.value = mode;
     }
-    const fuzzy = document.getElementById("fuzzy");
-    if (fuzzy) {
-      fuzzy.checked = mode === "rules";
-    }
-    const runActions = document.getElementById("run_actions");
-    if (runActions) {
-      runActions.style.display = ["rules", "find", "packet"].includes(mode) ? "block" : "none";
-    }
     if (mode === "inspect" || mode === "compare") {
       const radio = document.querySelector(`input[name='rule_mode'][value='${mode}']`);
       if (radio && !radio.checked) {
@@ -293,7 +351,9 @@
       searchRow.style.display = tab === "rules" ? "block" : "none";
     }
     document.querySelectorAll(".results[data-tab]").forEach((panel) => {
-      panel.style.display = panel.dataset.tab === tab ? "block" : "none";
+      const isActive = panel.dataset.tab === tab;
+      panel.style.display = isActive ? "block" : "none";
+      panel.classList.toggle("active", isActive);
     });
     const runActions = document.getElementById("run_actions");
     if (runActions) {
@@ -487,35 +547,114 @@
     }
   }
 
-  function loadConfigText(which) {
-    const textarea = document.getElementById("config_text");
-    if (!textarea) {
+  let currentConfigText = "";
+
+  function updateConfigViewer(filterText) {
+    const viewer = document.getElementById("config_text");
+    if (!viewer) {
       return;
     }
+    const filter = (filterText || "").trim().toLowerCase();
+    if (!filter) {
+      viewer.textContent = currentConfigText;
+    } else {
+      const lines = currentConfigText.split("\n").filter((line) => line.toLowerCase().includes(filter));
+      viewer.textContent = lines.join("\n");
+    }
+    viewer.dataset.raw = viewer.textContent || "";
+    const nameDisplay = document.getElementById("config_name_display");
+    if (nameDisplay) {
+      const { config } = currentConfig();
+      nameDisplay.textContent = config || "n/a";
+    }
+    const hlToggle = document.getElementById("hlToggle");
+    const highlightEnabled = hlToggle ? hlToggle.checked : (storageGet(HL_KEY, "on") || "on") === "on";
+    refreshHighlights(highlightEnabled);
+  }
+
+  function loadConfigText() {
     const { vendor, config } = currentConfig();
+    const viewer = document.getElementById("config_text");
+    if (!viewer) {
+      return;
+    }
     if (!config) {
-      textarea.value = "";
+      currentConfigText = "";
+      updateConfigViewer(document.getElementById("config_filter")?.value || "");
       return;
     }
     fetch(`/api/config?vendor=${vendor}&config=${encodeURIComponent(config)}`)
       .then((resp) => (resp.ok ? resp.json() : Promise.reject()))
       .then((data) => {
-        textarea.value = data.text || "";
+        currentConfigText = (data.text || "").replace(/\r\n?/g, "\n");
+        updateConfigViewer(document.getElementById("config_filter")?.value || "");
       })
       .catch(() => {
-        textarea.value = "";
+        currentConfigText = "";
+        updateConfigViewer("");
       });
   }
 
-  function setRunResults(tab, htmlContent) {
-    const targetTab = tab || "rules";
-    const container = document.querySelector(`.results[data-tab='${targetTab}']`);
+  function setRunResults(tab, htmlContent, meta) {
+    let targetTab = tab || "rules";
+    let container = document.querySelector(`.results[data-tab='${targetTab}']`);
+    if (!container && targetTab !== "rules") {
+      targetTab = "rules";
+      container = document.querySelector(".results[data-tab='rules']");
+    }
     if (container) {
       container.innerHTML = htmlContent || "";
-      container.dataset.tabActive = "1";
     }
-    if (targetTab !== activeTab) {
-      activateTab(targetTab);
+    activateTab(targetTab, true);
+    const highlightToggle = document.getElementById("hlToggle");
+    const enable = highlightToggle ? highlightToggle.checked : true;
+    highlightAll(enable);
+    if (meta) {
+      if (meta.mode) {
+        const modeInput = document.getElementById("mode");
+        if (modeInput) {
+          modeInput.value = meta.mode;
+        }
+        const radio = document.querySelector(`input[name='rule_mode'][value='${meta.mode}']`);
+        if (radio) {
+          radio.checked = true;
+        }
+        updateRuleModeUI(meta.mode);
+      }
+      if (meta.mode === "inspect" && typeof meta.query === "string") {
+        const inspectField = document.getElementById("inspect");
+        if (inspectField && !inspectField.value) {
+          inspectField.value = meta.query;
+        }
+      }
+      if (meta.mode === "compare" && typeof meta.query === "string") {
+        const parts = meta.query.split("->");
+        const oldField = document.getElementById("old");
+        const newField = document.getElementById("new");
+        if (oldField && !oldField.value && parts[0]) {
+          oldField.value = parts[0];
+        }
+        if (newField && !newField.value && parts[1]) {
+          newField.value = parts[1];
+        }
+      }
+      if (meta.mode === "find" && typeof meta.query === "string") {
+        const findField = document.getElementById("findq");
+        if (findField && !findField.value) {
+          findField.value = meta.query;
+        }
+      }
+      if (meta.mode === "packet" && typeof meta.query === "string") {
+        const [srcVal = "", dstVal = ""] = meta.query.split("->");
+        const srcField = document.getElementById("pkt_src");
+        const dstField = document.getElementById("pkt_dst");
+        if (srcField && !srcField.value) {
+          srcField.value = srcVal;
+        }
+        if (dstField && !dstField.value) {
+          dstField.value = dstVal;
+        }
+      }
     }
   }
 
@@ -538,7 +677,7 @@
         setRunResults("rules", `<div class="section"><p style="color:red">${(data && data.error) || "Failed to run"}</p></div>`);
         return;
       }
-      setRunResults(data.tab || "rules", data.html || "");
+      setRunResults(data.tab || "rules", data.html || "", data.meta || null);
       saveState();
       listHistory();
     } catch (err) {
@@ -579,6 +718,38 @@
   function init() {
     themePref = loadThemePrefs();
     populateConfigs();
+    const configSelectTab = document.getElementById("config_select_tab");
+    if (configSelectTab) {
+      configSelectTab.innerHTML = CONFIG_OPTIONS.asa
+        .map((name) => `<option value='${name}'>${name}</option>`)
+        .join("");
+      configSelectTab.addEventListener("change", () => {
+        const vendorSelect = document.getElementById("vendor");
+        if (vendorSelect && vendorSelect.value !== "asa") {
+          vendorSelect.value = "asa";
+          toggleVendor();
+        }
+        const option = configSelectTab.value;
+        const mainSelect = document.getElementById("config");
+        if (mainSelect && mainSelect.value !== option) {
+          mainSelect.value = option;
+        }
+        loadConfigText();
+      });
+    }
+    const configFilter = document.getElementById("config_filter");
+    if (configFilter) {
+      const updateConfig = () => updateConfigViewer(configFilter.value);
+      const debouncedUpdateConfig = debounce(updateConfig, 120);
+      configFilter.addEventListener("input", debouncedUpdateConfig);
+      configFilter.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          updateConfig();
+        }
+      });
+    }
+    updateConfigViewer("");
     toggleVendor();
     populateThemeSelectors();
     applyTheme();
@@ -587,6 +758,7 @@
     loadState();
     refreshMeta();
     ensureHistoryVisibility();
+    activateTab(activeTab, true);
 
     const themeToggle = document.getElementById("themeToggle");
     if (themeToggle) {
@@ -619,6 +791,7 @@
     document.forms[0].addEventListener("change", saveState);
     document.forms[0].addEventListener("input", saveState);
     document.forms[0].addEventListener("submit", submitForm);
+    loadConfigText();
   }
 
   if (document.readyState === "loading") {
@@ -627,4 +800,3 @@
     init();
   }
 })();
-*** End Patch

@@ -23,7 +23,6 @@ cross-vendor compare at the CLI level.
 from __future__ import annotations
 
 import ipaddress
-import re
 import socket
 from collections import defaultdict
 from typing import Dict, List, Optional, Set, Tuple, Union
@@ -54,7 +53,7 @@ class FTGConfig:
         the first VDOM encountered is parsed. If no 'config vdom' is present,
         the whole file is parsed as a single context.
         """
-        self._raw_lines = [l.rstrip() for l in text.splitlines()]
+        self._raw_lines = [line.rstrip() for line in text.splitlines()]
         self.vdom = vdom
         # Extract VDOM-specific view if applicable
         self.lines = self._select_vdom_lines(self._raw_lines, vdom)
@@ -96,7 +95,6 @@ class FTGConfig:
         want_vdom; if want_vdom is None, pick the first. Returns just the inner
         lines of that VDOM context. If no 'config vdom' found, returns lines.
         """
-        sel: List[str] = []
         i = 0
         L = len(lines)
         while i < L:
@@ -196,19 +194,15 @@ class FTGConfig:
     def _parse_service_custom(self, i: int) -> int:
         i, blk = self._parse_block(i)
         cur: Optional[str] = None
-        proto = None
         tcp_range = udp_range = None
         for line in blk:
             s = line.strip()
             if s.startswith('edit '):
                 cur = s.split('edit', 1)[1].strip().strip('"')
-                proto = None
                 tcp_range = udp_range = None
             elif s.startswith('set tcp-portrange '):
-                proto = 'tcp'
                 tcp_range = s.split('set tcp-portrange', 1)[1].strip()
             elif s.startswith('set udp-portrange '):
-                proto = 'udp'
                 udp_range = s.split('set udp-portrange', 1)[1].strip()
             elif s.startswith('next') and cur:
                 spec = {}
@@ -419,7 +413,8 @@ def compare_old_new(cfg_text: str, old_target: str, new_target: str, service_fil
     entries = cfg.flatten_policies()
     old_hits = evaluate(entries, old_nets, service_filter)
     new_hits = evaluate(entries, new_nets, service_filter)
-    rule_id = lambda e: e['raw']
+    def rule_id(entry: dict) -> str:
+        return entry['raw']
     old_ids = {rule_id(e) for e in old_hits}
     new_ids = {rule_id(e) for e in new_hits}
     added_ids = new_ids - old_ids

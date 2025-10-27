@@ -1,5 +1,4 @@
 import unittest
-import os
 
 from parsers.cisco import asa as cisco_asa
 from parsers.fortigate import fortigate as ftg

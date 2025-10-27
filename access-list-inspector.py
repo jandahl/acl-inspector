@@ -260,10 +260,17 @@ def main() -> None:
         svc_filter = {'proto': args.proto, 'dports': set(args.dport or [])}
 
     use_color = _use_color(args)
-    green = lambda s: _c(s, '32;1', use_color)
-    red = lambda s: _c(s, '31;1', use_color)
-    blue = lambda s: _c(s, '34;1', use_color)
-    bold = lambda s: _c(s, '1', use_color)
+    def green(s: str) -> str:
+        return _c(s, '32;1', use_color)
+
+    def red(s: str) -> str:
+        return _c(s, '31;1', use_color)
+
+    def blue(s: str) -> str:
+        return _c(s, '34;1', use_color)
+
+    def bold(s: str) -> str:
+        return _c(s, '1', use_color)
 
     if args.vendor == 'asa':
         if args.packet:

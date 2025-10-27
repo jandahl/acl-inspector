@@ -67,7 +67,7 @@ def to_ip_network(ip: str, mask: Optional[str] = None) -> Union[ipaddress.IPv4Ad
 
 class ASAConfig:
     def __init__(self, text: str) -> None:
-        self.lines = [l.rstrip() for l in text.splitlines()]
+        self.lines = [line.rstrip() for line in text.splitlines()]
         self.network_objects: Dict[str, Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]]] = {}
         self.network_object_groups: Dict[str, List[Union[dict, ipaddress.IPv4Address, ipaddress.IPv4Network]]] = {}
         self.acls: Dict[str, List[str]] = defaultdict(list)
@@ -990,7 +990,8 @@ def compare_old_new(cfg_text: str, old_target: str, new_target: str, service_fil
     entries = cfg.flatten_acl()
     old_hits = evaluate_acl(entries, old_nets, cfg, service_filter=service_filter, ignore_any=(not include_any))
     new_hits = evaluate_acl(entries, new_nets, cfg, service_filter=service_filter, ignore_any=(not include_any))
-    rule_id = lambda e: e['raw']
+    def rule_id(entry: dict) -> str:
+        return entry['raw']
     old_ids = {rule_id(e) for e in old_hits}
     new_ids = {rule_id(e) for e in new_hits}
     added_ids = new_ids - old_ids
@@ -1117,7 +1118,6 @@ def _nat_result_template(src_ip: ipaddress.IPv4Address, dst_ip: ipaddress.IPv4Ad
 def _apply_nat_rule_outbound(rule: dict, src_ip: ipaddress.IPv4Address, dst_ip: ipaddress.IPv4Address, src_iface: Optional[str], dst_iface: Optional[str]) -> dict:
     result = _nat_result_template(src_ip, dst_ip)
     rule_src_if = (rule.get('src_if') or '').lower() or None
-    rule_dst_if = (rule.get('dst_if') or '').lower() or None
     if rule_src_if and src_iface and rule_src_if != src_iface:
         return result
     if rule.get('type') == 'auto':

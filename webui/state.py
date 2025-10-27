@@ -151,17 +151,6 @@ class SearchIndex:
             return {"entries": len(self._cache), "keys": keys}
 
 
-@dataclass
-class IndexEntry:
-    key: str
-    vendor: str
-    os_tag: str
-    version: str
-    built_at: float
-    src_mtime: float
-    src_size: int
-    index: Dict[str, Any]
-
 
 @dataclass
 class AppState:

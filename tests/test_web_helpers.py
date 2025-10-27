@@ -37,7 +37,7 @@ class TestWebHelpers(unittest.TestCase):
         self.assertIn('GRP_NET', idx['groups'])
         # literals include host and subnet
         self.assertIn('10.0.0.1', idx['literals'])
-        self.assertTrue(any(l.startswith('10.0.1.0/') for l in idx['literals']))
+        self.assertTrue(any(literal.startswith('10.0.1.0/') for literal in idx['literals']))
 
 
 if __name__ == '__main__':

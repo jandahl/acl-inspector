@@ -58,14 +58,6 @@
           <div class="search-options global-search">
             <label><input type="checkbox" id="fuzzy" checked> Fuzzy search</label>
           </div>
-          <div class="tab-panels">
-            $tab_rules
-            $tab_find
-            $tab_packet
-            $tab_config
-            $tab_prefs
-            $tab_about
-          </div>
           <fieldset class="section section-service" id="service_filters">
             <legend>Service Filter</legend>
             <label>Protocol:</label>
@@ -80,6 +72,14 @@
             <input type="text" name="dport" placeholder="443,1433">
             <label id="include_any_label"><input type="checkbox" name="include_any" id="include_any"> Include rules with 'any' <span class="tip" title="By default, rules with any src/dst are skipped to reduce noise. Check to include them.">?</span></label>
           </fieldset>
+          <div class="tab-panels">
+            $tab_rules
+            $tab_find
+            $tab_packet
+            $tab_config
+            $tab_prefs
+            $tab_about
+          </div>
           <div class="actions" id="run_actions">
             <button type="submit">Run</button>
           </div>

@@ -18,7 +18,7 @@ from urllib.parse import parse_qs, urlparse
 
 from . import settings as settings_mod
 from .state import AppState
-from .router import Request, Response, RouteNotFound, Router
+from .router import Request, RouteNotFound, Router
 from .handlers import register_api, register_pages
 from .handlers.static import register_static
 

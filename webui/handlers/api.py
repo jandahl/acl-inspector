@@ -7,8 +7,6 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from parsers.cisco import asa as asa_parser
-
-from .. import settings as settings_mod
 from ..state import AppState
 
 

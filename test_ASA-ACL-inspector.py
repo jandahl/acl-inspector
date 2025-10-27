@@ -3,7 +3,7 @@ import sys
 sys.path.insert(0, '.')
 import unittest
 import ipaddress
-from ASA_ACL_inspector import ASAConfig, to_ip_network, nets_overlap, evaluate_acl, inspect_host, compare_old_new
+from ASA_ACL_inspector import ASAConfig, to_ip_network, nets_overlap, inspect_host, compare_old_new
 
 class TestASAACLInspector(unittest.TestCase):
 

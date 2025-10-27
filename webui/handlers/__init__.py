@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from typing import Dict, List
 from urllib.parse import parse_qs
 
 from . import actions as action_handlers
