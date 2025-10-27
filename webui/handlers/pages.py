@@ -38,6 +38,17 @@ def _render_home(state: AppState) -> str:
         "fortigate_options": _options_for_vendor(state, "fortigate"),
         "cwd": os.getcwd(),
     }
+    partial_map = {
+        "tab_rules": "tab_rules.html",
+        "tab_find": "tab_find.html",
+        "tab_packet": "tab_packet.html",
+        "tab_config": "tab_config.html",
+        "tab_prefs": "tab_prefs.html",
+        "tab_about": "tab_about.html",
+    }
+    for key, filename in partial_map.items():
+        partial = resources.read_text("webui.templates", filename)
+        context[key] = Template(partial).substitute(context)
     return Template(template).substitute(context)
 
 

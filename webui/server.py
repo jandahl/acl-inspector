@@ -125,10 +125,10 @@ def _make_handler(router: Router):
     base_cls = _legacy.WebHandler
 
     class ModularHandler(base_cls):  # type: ignore
-        router = router
 
-        def _dispatch(self, method: str) -> bool:
-            if not getattr(self, "router", None):
+        def _dispatch(self, method: str, body: bytes = b"") -> bool:
+            router = getattr(self.server, "router", None)
+            if router is None:
                 return False
             parsed = urlparse(self.path)
             request = Request(
@@ -136,11 +136,11 @@ def _make_handler(router: Router):
                 path=parsed.path or "/",
                 query=parse_qs(parsed.query),
                 headers={k.lower(): v for k, v in self.headers.items()},
-                body=b"",
+                body=body,
                 state=getattr(self.server, "app_state", None),
             )
             try:
-                response = self.router.dispatch(request)
+                response = router.dispatch(request)
             except RouteNotFound:
                 return False
             self.send_response(response.status)
@@ -159,7 +159,9 @@ def _make_handler(router: Router):
             super().do_GET()
 
         def do_POST(self):  # noqa: N802
-            if self._dispatch("POST"):
+            length = int(self.headers.get("Content-Length", "0") or "0")
+            body = self.rfile.read(length) if length > 0 else b""
+            if self._dispatch("POST", body):
                 return
             super().do_POST()
 

@@ -59,86 +59,12 @@
             <label><input type="checkbox" id="fuzzy" checked> Fuzzy search</label>
           </div>
           <div class="tab-panels">
-            <section id="tab-rules" class="tab-panel active">
-              <fieldset class="section section-mode-rules">
-                <legend>Rule Mode</legend>
-                <div class="radio-group">
-                  <label><input type="radio" name="rule_mode" value="inspect" checked> Inspect</label>
-                  <label><input type="radio" name="rule_mode" value="compare"> Compare</label>
-                </div>
-              </fieldset>
-              <fieldset class="section section-targets">
-                <legend>Targets</legend>
-                <div id="inspect_fields">
-                  <label>Object / host:</label>
-                  <input type="text" name="inspect" id="inspect" list="targets" placeholder="Search object or host">
-                </div>
-                <div id="compare_fields" style="display:none">
-                  <label>Old object:</label>
-                  <input type="text" name="old" id="old" list="targets" placeholder="Original object">
-                  <label>New object:</label>
-                  <input type="text" name="new" id="new" list="targets" placeholder="Replacement object">
-                </div>
-              </fieldset>
-              <fieldset class="section section-results">
-                <legend>Results</legend>
-                <div class="results" data-tab="rules"></div>
-              </fieldset>
-            </section>
-            <section id="tab-find" class="tab-panel">
-              <fieldset class="section section-find">
-                <legend>Find host</legend>
-                <label>Address / object:</label>
-                <input type="text" name="findq" id="findq" list="targets" placeholder="Host or object">
-              </fieldset>
-              <fieldset class="section section-results">
-                <legend>Results</legend>
-                <div class="results" data-tab="find"></div>
-              </fieldset>
-            </section>
-            <section id="tab-packet" class="tab-panel">
-              <fieldset class="section section-packet">
-                <legend>Packet check</legend>
-                <label>Source:</label>
-                <input type="text" name="pkt_src" id="pkt_src" list="targets" placeholder="Source object / host">
-                <label>Destination:</label>
-                <input type="text" name="pkt_dst" id="pkt_dst" list="targets" placeholder="Destination object / host">
-              </fieldset>
-              <fieldset class="section section-results">
-                <legend>Results</legend>
-                <div class="results" data-tab="packet"></div>
-              </fieldset>
-            </section>
-            <section id="tab-config" class="tab-panel">
-              <fieldset class="section section-config-view">
-                <legend>Config Viewer</legend>
-                <textarea id="config_text" readonly></textarea>
-              </fieldset>
-            </section>
-            <section id="tab-prefs" class="tab-panel">
-              <fieldset class="section section-prefs">
-                <legend>Preferences</legend>
-                <div class="theme-control">
-                  <label for="theme_dark">Dark theme:</label>
-                  <select id="theme_dark"></select>
-                  <span class="theme-preview" id="preview_dark"></span>
-                </div>
-                <div class="theme-control">
-                  <label for="theme_light">Light theme:</label>
-                  <select id="theme_light"></select>
-                  <span class="theme-preview" id="preview_light"></span>
-                </div>
-                <p class="pref-note">Theme choices are remembered locally so your dark/light toggle keeps the look you pick.</p>
-              </fieldset>
-            </section>
-            <section id="tab-about" class="tab-panel">
-              <fieldset class="section section-about">
-                <legend>About</legend>
-                <p>Access-List Inspector parses Cisco ASA configurations to inspect ACL impact, compare objects, and surface duplicates.</p>
-                <p>Themes sourced from the iTerm2 color schemes project.</p>
-                <p>Current workspace dir: <code>$cwd</code></p>
-              </fieldset>
-            </section>
+            $tab_rules
+            $tab_find
+            $tab_packet
+            $tab_config
+            $tab_prefs
+            $tab_about
           </div>
           <fieldset class="section section-service" id="service_filters">
             <legend>Service Filter</legend>

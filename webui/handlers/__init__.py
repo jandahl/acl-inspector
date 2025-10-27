@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import json
+from typing import Dict, List
+from urllib.parse import parse_qs
+
+from . import actions as action_handlers
 from . import api as api_handlers
 from .pages import register_pages  # re-export for server wiring
 from ..router import Request, Response, Router
@@ -96,3 +100,13 @@ def register_api(router: Router, state: AppState) -> None:
     router.add("GET", "/api/index/status", handle_index_status)
     router.add("GET", "/api/history", handle_history)
     router.add("GET", "/healthz", handle_health)
+
+    def handle_run(request: Request) -> Response:
+        if request.state is None:
+            return json_response({"error": "Server state unavailable"}, 500)
+        form = request.body.decode("utf-8")
+        fields = parse_qs(form, keep_blank_values=True)
+        status, payload = action_handlers.process_run(request.state, fields)
+        return json_response(payload, status)
+
+    router.add("POST", "/run", handle_run)

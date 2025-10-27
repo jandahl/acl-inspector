@@ -222,6 +222,10 @@
               ).toLocaleString()}</span></button>`
           )
           .join("");
+        panel.dataset.hasEntries = items.length ? "1" : "0";
+        if (storageGet(HIST_VIS_KEY, "off") === "on") {
+          panel.style.display = items.length ? "block" : "none";
+        }
       })
       .catch(() => {});
   }
@@ -503,6 +507,45 @@
       });
   }
 
+  function setRunResults(tab, htmlContent) {
+    const targetTab = tab || "rules";
+    const container = document.querySelector(`.results[data-tab='${targetTab}']`);
+    if (container) {
+      container.innerHTML = htmlContent || "";
+      container.dataset.tabActive = "1";
+    }
+    if (targetTab !== activeTab) {
+      activateTab(targetTab);
+    }
+  }
+
+  async function submitForm(event) {
+    event.preventDefault();
+    const form = event.target;
+    const formData = new FormData(form);
+    const params = new URLSearchParams();
+    formData.forEach((value, key) => {
+      params.append(key, value);
+    });
+    try {
+      const resp = await fetch("/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: params.toString(),
+      });
+      const data = await resp.json();
+      if (!resp.ok || data.error) {
+        setRunResults("rules", `<div class="section"><p style="color:red">${(data && data.error) || "Failed to run"}</p></div>`);
+        return;
+      }
+      setRunResults(data.tab || "rules", data.html || "");
+      saveState();
+      listHistory();
+    } catch (err) {
+      setRunResults("rules", `<div class="section"><p style="color:red">Request failed: ${err}</p></div>`);
+    }
+  }
+
   function refreshMeta() {
     const { vendor, config } = currentConfig();
     const metaSpan = document.getElementById("meta");
@@ -575,6 +618,7 @@
     });
     document.forms[0].addEventListener("change", saveState);
     document.forms[0].addEventListener("input", saveState);
+    document.forms[0].addEventListener("submit", submitForm);
   }
 
   if (document.readyState === "loading") {
