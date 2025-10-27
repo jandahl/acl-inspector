@@ -62,6 +62,22 @@ class ActionHandlersTest(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertIn("error", payload)
 
+    def test_history_replay_suppresses_record(self):
+        status, payload = action_handlers.process_run(
+            self.state,
+            {
+                "vendor": ["asa"],
+                "mode": ["inspect"],
+                "config": ["sample.cfg"],
+                "inspect": ["OBJ_WEB"],
+                "history_replay": ["1"],
+            },
+        )
+        self.assertEqual(status, 200)
+        self.assertIn("OBJ_WEB", payload["html"])
+        history = self.state.history.snapshot()["entries"]
+        self.assertFalse(history)
+
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

@@ -11,40 +11,38 @@ def _load(path):
 
 class TestExamplesCrossVendor(unittest.TestCase):
     def setUp(self):
-        self.asa_cfg = _load('configs/cisco/ciscoasa-example')
-        self.ftg_cfg = _load('configs/fortigate/fortigate7-2-example')
+        self.asa_cfg = _load('configs/cisco/cisco-asa-example')
+        self.ftg_cfg = _load('configs/fortigate/fortigate7-4-example')
+        self.vdom = 'Alpha'
 
-    def test_host_a_rules_equivalence(self):
-        # Host A should have DB:1433 and WEB:443 permits in both vendors
-        asa_report = cisco_asa.inspect_host(self.asa_cfg, 'HOST_A', service_filter=None)
-        ftg_report = ftg.inspect_host(self.ftg_cfg, 'HOST_A', service_filter=None, vdom='root')
-        # Basic sanity: at least two hits in both
-        self.assertGreaterEqual(len(asa_report['hits']), 2)
-        self.assertGreaterEqual(len(ftg_report['hits']), 2)
-        # Check that we can filter by tcp:1433 and tcp:443 and get at least one in each
-        f_1433 = {'proto': 'tcp', 'dports': {1433}}
-        f_443 = {'proto': 'tcp', 'dports': {443}}
-        asa_1433 = cisco_asa.inspect_host(self.asa_cfg, 'HOST_A', service_filter=f_1433)['hits']
-        asa_443 = cisco_asa.inspect_host(self.asa_cfg, 'HOST_A', service_filter=f_443)['hits']
-        ftg_1433 = ftg.inspect_host(self.ftg_cfg, 'HOST_A', service_filter=f_1433, vdom='root')['hits']
-        ftg_443 = ftg.inspect_host(self.ftg_cfg, 'HOST_A', service_filter=f_443, vdom='root')['hits']
-        self.assertGreaterEqual(len(asa_1433), 1)
-        self.assertGreaterEqual(len(asa_443), 1)
-        self.assertGreaterEqual(len(ftg_1433), 1)
-        self.assertGreaterEqual(len(ftg_443), 1)
+    def test_lobby_net_http_and_https(self):
+        asa_report = cisco_asa.inspect_host(self.asa_cfg, 'alpha_lobby_net', service_filter=None)
+        ftg_report = ftg.inspect_host(self.ftg_cfg, 'lobby-net', service_filter=None, vdom=self.vdom)
+        self.assertGreaterEqual(len(asa_report['hits']), 5)
+        self.assertGreaterEqual(len(ftg_report['hits']), 5)
 
-    def test_host_b_db_only(self):
-        # Host B should only have DB:1433 permit, not WEB:443
-        f_1433 = {'proto': 'tcp', 'dports': {1433}}
-        f_443 = {'proto': 'tcp', 'dports': {443}}
-        asa_1433 = cisco_asa.inspect_host(self.asa_cfg, 'HOST_B', service_filter=f_1433)['hits']
-        asa_443 = [e for e in cisco_asa.inspect_host(self.asa_cfg, 'HOST_B', service_filter=f_443)['hits'] if e['action'] == 'permit']
-        ftg_1433 = ftg.inspect_host(self.ftg_cfg, 'HOST_B', service_filter=f_1433, vdom='root')['hits']
-        ftg_443 = [e for e in ftg.inspect_host(self.ftg_cfg, 'HOST_B', service_filter=f_443, vdom='root')['hits'] if e['action'] == 'permit']
-        self.assertGreaterEqual(len(asa_1433), 1)
-        self.assertEqual(len(asa_443), 0)
-        self.assertGreaterEqual(len(ftg_1433), 1)
-        self.assertEqual(len(ftg_443), 0)
+        f_http = {'proto': 'tcp', 'dports': {80}}
+        f_https = {'proto': 'tcp', 'dports': {443}}
+        asa_http = cisco_asa.inspect_host(self.asa_cfg, 'alpha_lobby_net', service_filter=f_http)['hits']
+        asa_https = cisco_asa.inspect_host(self.asa_cfg, 'alpha_lobby_net', service_filter=f_https)['hits']
+        ftg_http = ftg.inspect_host(self.ftg_cfg, 'lobby-net', service_filter=f_http, vdom=self.vdom)['hits']
+        ftg_https = ftg.inspect_host(self.ftg_cfg, 'lobby-net', service_filter=f_https, vdom=self.vdom)['hits']
+        self.assertGreaterEqual(len(asa_http), 1)
+        self.assertGreaterEqual(len(asa_https), 1)
+        self.assertGreaterEqual(len(ftg_http), 1)
+        self.assertGreaterEqual(len(ftg_https), 1)
+
+    def test_lobby_net_dns_and_ntp(self):
+        f_dns = {'proto': 'udp', 'dports': {53}}
+        f_ntp = {'proto': 'udp', 'dports': {123}}
+        asa_dns = cisco_asa.inspect_host(self.asa_cfg, 'alpha_lobby_net', service_filter=f_dns)['hits']
+        asa_ntp = cisco_asa.inspect_host(self.asa_cfg, 'alpha_lobby_net', service_filter=f_ntp)['hits']
+        ftg_dns = ftg.inspect_host(self.ftg_cfg, 'lobby-net', service_filter=f_dns, vdom=self.vdom)['hits']
+        ftg_ntp = ftg.inspect_host(self.ftg_cfg, 'lobby-net', service_filter=f_ntp, vdom=self.vdom)['hits']
+        self.assertGreaterEqual(len(asa_dns), 1)
+        self.assertGreaterEqual(len(asa_ntp), 1)
+        self.assertGreaterEqual(len(ftg_dns), 1)
+        self.assertGreaterEqual(len(ftg_ntp), 1)
 
 
 if __name__ == '__main__':

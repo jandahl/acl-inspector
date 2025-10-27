@@ -10,6 +10,7 @@ from string import Template
 from . import api as api_handlers
 from ..router import Request, Response, Router
 from ..state import AppState
+from .. import __version__ as WEBUI_VERSION
 
 
 def _options_for_vendor(state: AppState, vendor: str) -> str:
@@ -34,14 +35,17 @@ def _render_home(state: AppState) -> str:
         "config_options": json.dumps(config_options),
         "history_enabled": "true" if state.settings.features.history_tracking else "false",
         "search_limit": str(state.settings.features.predictive_search.limit),
+        "beta_modules": json.dumps(list(state.settings.beta.enabled_modules)),
         "asa_options": _options_for_vendor(state, "asa"),
         "fortigate_options": _options_for_vendor(state, "fortigate"),
         "cwd": os.getcwd(),
+        "version": WEBUI_VERSION,
     }
     partial_map = {
         "tab_rules": "tab_rules.html",
         "tab_find": "tab_find.html",
         "tab_packet": "tab_packet.html",
+        "tab_packet_probe": "tab_packet_probe.html",
         "tab_config": "tab_config.html",
         "tab_prefs": "tab_prefs.html",
         "tab_about": "tab_about.html",

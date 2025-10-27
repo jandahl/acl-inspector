@@ -124,6 +124,8 @@ Web UI
 - Modes are organized as tabs: **Inspect / Compare** share a workspace with the rule filters, while **Find host** and **Packet check** get dedicated views. Switching tabs updates the hidden `mode` field that the server expects.
   - Config tab renders the selected ASA config with a live filter; Preferences tab lets you pick dark/light themes from the bundled palette (`make themes`).
   - Packet check tab evaluates a single flow through NAT + ACL (ASA prototype).
+  - Packet probe tab (beta) exposes the experimental `/api/probe` endpoint. It reuses the flattened ACL view and current NAT evaluation; expect ASA support first, with richer NAT coverage staged on the roadmap.
+- Preferences now include a **Debug** section with buttons to flush server caches (index + history) and reset browser-side settings/local storage.
 
 Third-party Notice
 ------------------
@@ -153,6 +155,7 @@ Next steps (roadmap)
 - ASA NAT parsing and normalization (priority)
   - Parse object/auto NAT and manual NAT (sections 1/2/3), dynamic/static PAT, and policy NAT; codify rule order.
   - Add unit tests covering representative NAT variants and precedence.
+- Split vendor parsers into focused modules (tokenisation, object/group resolution, NAT, flattening) to keep files manageable as new vendors are introduced.
 - Interface and ACL context mapping (ASA)
   - Associate ACLs to interfaces/direction; capture global policy where feasible.
   - Extend flattened entries with interface context for path evaluation.

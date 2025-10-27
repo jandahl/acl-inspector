@@ -2,11 +2,26 @@
   <fieldset class="section section-config-view">
     <legend>Config Viewer</legend>
     <div class="config-select">
+      <label for="config_vendor_tab">Vendor:</label>
+      <select id="config_vendor_tab">
+        <option value="asa">ASA</option>
+        <option value="fortigate">FortiGate</option>
+      </select>
+    </div>
+    <div class="config-select">
       <label for="config_select_tab">Config:</label>
       <select id="config_select_tab"></select>
     </div>
     <label for="config_filter">Search:</label>
     <input type="text" id="config_filter" placeholder="Filter text" autocomplete="off">
+    <div class="config-filter-options">
+      <label><input type="checkbox" id="config_filter_context_toggle"> Include context</label>
+      <label>Lines of context:<input type="number" id="config_filter_context_lines" min="0" max="20" value="3"></label>
+      <label>Min characters:<input type="number" id="config_filter_min_chars" min="1" max="20" value="4"></label>
+      <label><input type="checkbox" id="config_filter_regex"> Regex</label>
+    </div>
+    <div class="config-filter-notice" id="config_filter_notice"></div>
+    <div class="config-loading" id="config_loading">Loading config…</div>
     <div class="config-meta">Showing <span id="config_name_display">n/a</span></div>
     <div class="results results-config" data-tab="config">
       <div class="result-box">

@@ -6,7 +6,7 @@ import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Mapping, MutableMapping, Optional, Sequence
+from typing import Any, Dict, List, Mapping, MutableMapping, Optional, Sequence
 
 DEFAULT_SETTINGS_PATH = Path("settings.json")
 ENV_PREFIX = "ACLINSPECTOR_"
@@ -129,7 +129,7 @@ def _default_dict() -> Dict[str, Any]:
             },
         },
         "beta": {
-            "enabled_modules": [],
+            "enabled_modules": ["packet-check"],
             "config": {},
         },
     }
@@ -257,8 +257,18 @@ def _build_settings(config: Mapping[str, Any], settings_path: Path) -> Settings:
     enabled_modules = beta_conf.get("enabled_modules", [])
     if isinstance(enabled_modules, str):
         enabled_modules = [segment.strip() for segment in enabled_modules.split(",") if segment.strip()]
+    normalised_modules: List[str] = []
+    seen_modules = set()
+    for module in enabled_modules:
+        if not isinstance(module, str):
+            continue
+        key = module.strip().lower().replace("_", "-")
+        if not key or key in seen_modules:
+            continue
+        seen_modules.add(key)
+        normalised_modules.append(key)
     beta = BetaSettings(
-        enabled_modules=tuple(enabled_modules),
+        enabled_modules=tuple(normalised_modules),
         config=dict(beta_conf.get("config", {})),
     )
 

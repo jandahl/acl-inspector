@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from parsers.cisco import asa as asa_parser
 from ..state import AppState
@@ -134,3 +134,71 @@ def config_listing(state: AppState, *, vendor: str) -> Dict[str, str]:
         }
     except Exception:
         return {}
+
+
+def flush_caches(state: AppState, include_disk: bool = False) -> Tuple[int, Dict[str, Any]]:
+    summary = state.flush_caches(include_disk=include_disk)
+    return 200, {"status": "ok", **summary}
+
+
+def _parse_ports(values: Sequence[Any]) -> Set[int]:
+    ports: Set[int] = set()
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, int):
+            ports.add(value)
+            continue
+        text = str(value).strip()
+        if not text:
+            continue
+        for part in text.split(","):
+            item = part.strip()
+            if not item:
+                continue
+            try:
+                ports.add(int(item))
+            except Exception:
+                continue
+    return ports
+
+
+def packet_probe(
+    state: AppState,
+    *,
+    vendor: str,
+    filename: str,
+    src: str,
+    dst: str,
+    proto: Optional[str],
+    dports: Sequence[Any],
+    include_any: bool,
+) -> Tuple[int, Dict[str, Any]]:
+    vendor_lower = (vendor or "").lower()
+    path = _resolve_config(state, vendor_lower, filename)
+    if not path:
+        return 400, {"error": "invalid_config"}
+    if vendor_lower != "asa":
+        return 400, {"error": "vendor_not_supported"}
+    src = (src or "").strip()
+    dst = (dst or "").strip()
+    if not src or not dst:
+        return 400, {"error": "missing_endpoints"}
+    try:
+        text = path.read_text(encoding="utf-8")
+    except Exception as exc:  # pragma: no cover - filesystem errors
+        return 500, {"error": f"read_failed: {exc}"}
+    ports = _parse_ports(dports)
+    try:
+        result = asa_parser.path_check(
+            text,
+            src,
+            dst,
+            proto=proto if proto else None,
+            dports=ports,
+            include_any=include_any,
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        return 500, {"error": str(exc)}
+    state.history.record("packet-probe", f"{src}->{dst}")
+    return 200, {"vendor": vendor_lower, "config": filename, "result": result}

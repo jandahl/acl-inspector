@@ -84,6 +84,26 @@ class DiskCache:
         except Exception:
             return None
 
+    def clear(self, keep: Optional[List[str]] = None) -> int:
+        if not self.root:
+            return 0
+        keep_set = {name for name in (keep or [])}
+        removed = 0
+        try:
+            for entry in self.root.iterdir():
+                if not entry.is_file():
+                    continue
+                if entry.name in keep_set:
+                    continue
+                try:
+                    entry.unlink()
+                    removed += 1
+                except Exception:
+                    continue
+        except Exception:
+            return removed
+        return removed
+
     @property
     def path(self) -> str:
         return str(self.root) if self.root else ""
@@ -129,6 +149,13 @@ class HistoryTracker:
                 "visibility": dict(self.visibility),
             }
 
+    def clear(self) -> int:
+        with self._lock:
+            removed = len(self._entries)
+            self._entries.clear()
+            self.visibility.clear()
+            return removed
+
 
 class SearchIndex:
     """In-memory search index cache."""
@@ -149,6 +176,12 @@ class SearchIndex:
         with self._lock:
             keys = sorted(self._cache.keys())[:limit]
             return {"entries": len(self._cache), "keys": keys}
+
+    def clear(self) -> int:
+        with self._lock:
+            removed = len(self._cache)
+            self._cache.clear()
+            return removed
 
 
 
@@ -187,3 +220,9 @@ class AppState:
             history=history,
             themes=themes,
         )
+
+    def flush_caches(self, include_disk: bool = False) -> Dict[str, Any]:
+        summary = {}
+        summary["index"] = self.index_manager.flush(include_disk=include_disk)
+        summary["history"] = {"cleared": self.history.clear()}
+        return summary

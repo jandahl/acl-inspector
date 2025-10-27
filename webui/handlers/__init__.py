@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 from urllib.parse import parse_qs
 
 from . import actions as action_handlers
@@ -92,6 +93,59 @@ def register_api(router: Router, state: AppState) -> None:
         headers = {"Content-Type": "text/plain; charset=utf-8", "Content-Length": "2"}
         return Response(status=200, headers=headers, body=body)
 
+    def handle_cache_flush(request: Request) -> Response:
+        if request.state is None:
+            return json_response({"error": "Server state unavailable"}, 500)
+        include_disk = False
+        if request.body:
+            try:
+                payload = json.loads(request.body.decode("utf-8") or "{}")
+            except Exception:
+                payload = {}
+            include_disk = bool(payload.get("disk"))
+        else:
+            include_disk = _get_param(request.query, "disk", "0").lower() in {"1", "true", "yes", "on"}
+        status, payload = api_handlers.flush_caches(request.state, include_disk=include_disk)
+        return json_response(payload, status)
+
+    def handle_probe(request: Request) -> Response:
+        if request.state is None:
+            return json_response({"error": "Server state unavailable"}, 500)
+        data: Dict[str, Any] = {}
+        if request.body:
+            try:
+                data = json.loads(request.body.decode("utf-8") or "{}")
+            except Exception:
+                data = {}
+        vendor = str(data.get("vendor") or _get_param(request.query, "vendor", "asa")).lower()
+        filename = str(data.get("config") or _get_param(request.query, "config", ""))
+        src = str(data.get("src") or _get_param(request.query, "src", ""))
+        dst = str(data.get("dst") or _get_param(request.query, "dst", ""))
+        proto = data.get("proto") or _get_param(request.query, "proto", "")
+        dports: List[Any] = []
+        if "dports" in data:
+            dports = data.get("dports") if isinstance(data.get("dports"), list) else [data.get("dports")]
+        elif "dport" in data:
+            dports = [data.get("dport")]
+        else:
+            query_dports = _get_param(request.query, "dport", "")
+            if query_dports:
+                dports = [query_dports]
+        include_any = bool(data.get("include_any"))
+        if "include_any" not in data:
+            include_any = _get_param(request.query, "include_any", "0").lower() in {"1", "true", "yes", "on"}
+        status, payload = api_handlers.packet_probe(
+            request.state,
+            vendor=vendor,
+            filename=filename,
+            src=src,
+            dst=dst,
+            proto=proto if proto else None,
+            dports=dports,
+            include_any=include_any,
+        )
+        return json_response(payload, status)
+
     router.add("GET", "/api/objects", handle_objects)
     router.add("GET", "/api/meta", handle_meta)
     router.add("GET", "/api/aliases", handle_aliases)
@@ -99,6 +153,8 @@ def register_api(router: Router, state: AppState) -> None:
     router.add("GET", "/api/index/status", handle_index_status)
     router.add("GET", "/api/history", handle_history)
     router.add("GET", "/healthz", handle_health)
+    router.add("POST", "/api/cache/flush", handle_cache_flush)
+    router.add("POST", "/api/probe", handle_probe)
 
     def handle_run(request: Request) -> Response:
         if request.state is None:

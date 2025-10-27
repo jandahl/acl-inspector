@@ -100,15 +100,12 @@ class FTGConfig:
         while i < L:
             s = lines[i].strip()
             if s.startswith('config vdom'):
-                # Parse vdom list until 'end'
                 i += 1
-                chosen: Optional[str] = None
-                buf: List[str] = []
+                vdom_blocks: Dict[str, List[str]] = {}
                 while i < L:
                     s2 = lines[i].strip()
                     if s2.startswith('edit '):
                         name = s2.split('edit', 1)[1].strip().strip('"')
-                        # Collect sub-block until 'next'
                         i += 1
                         sub: List[str] = []
                         nest = 0
@@ -116,28 +113,30 @@ class FTGConfig:
                             s3 = lines[i].strip()
                             if s3 == 'next' and nest == 0:
                                 break
-                            # Track nested 'config ... end' blocks
                             if s3.startswith('config '):
                                 nest += 1
                             if s3 == 'end' and nest > 0:
                                 nest -= 1
                             sub.append(lines[i])
                             i += 1
-                        # Decide whether to take this VDOM
-                        if chosen is None and ((want_vdom is None) or (name == want_vdom)):
-                            chosen = name
-                            buf = sub[:]
-                        # advance past 'next'
-                        i += 1
+                        vdom_blocks[name] = sub[:]
+                        i += 1  # skip 'next'
                     elif s2 == 'end':
+                        i += 1
                         break
                     else:
                         i += 1
-                # If a VDOM was chosen, return it
-                if chosen is not None:
-                    return buf
-                # No matching vdom; return empty to avoid mis-parse
-                return []
+                # Choose requested VDOM if it has content
+                if want_vdom:
+                    block = vdom_blocks.get(want_vdom)
+                    if block:
+                        return block
+                    # Requested VDOM exists but empty; continue searching later blocks
+                else:
+                    for block in vdom_blocks.values():
+                        if block:
+                            return block
+                continue
             i += 1
         return lines
 
@@ -425,6 +424,25 @@ def compare_old_new(cfg_text: str, old_target: str, new_target: str, service_fil
 
 
 def inspect_host(cfg_text: str, target: str, service_filter: Optional[dict] = None, vdom: Optional[str] = None) -> dict:
+    """Resolve policies impacting ``target`` within an optional VDOM.
+
+    Args:
+        cfg_text: Raw FortiGate configuration text.
+        target: Address object/IP/CIDR to resolve before matching.
+        service_filter: Optional dict with ``proto`` and ``dports`` keys similar
+            to the ASA helpers; values constrain the policy matches.
+        vdom: Name of the virtual domain to parse; ``None`` uses the first VDOM
+            found or the global config when no VDOM sections exist.
+
+    Returns:
+        dict with:
+            ``target_nets``: resolved IP/networks for the target token.
+            ``hits``: flattened policy entries, each carrying the original
+                policy summary in ``raw`` as well as structured fields such as
+                ``srcaddr``/``dstaddr``/``service``.
+            ``aliases``: mapping from resolved addresses to other address names
+                referencing the same literal values.
+    """
     cfg = FTGConfig(cfg_text, vdom=vdom)
     target_nets = cfg.resolve_addr_token(target)
     entries = cfg.flatten_policies()

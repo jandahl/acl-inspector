@@ -106,6 +106,17 @@ class IndexManager:
                 disk["manifest"] = self.disk_cache.read_manifest(self.manifest_name)
             return {"in_memory": in_memory, "disk": disk}
 
+    def flush(self, include_disk: bool = False) -> Dict[str, Any]:
+        summary: Dict[str, Any] = {}
+        with self._lock:
+            summary["in_memory"] = {"cleared": self.search_cache.clear()}
+            if include_disk and self.disk_cache.enabled:
+                keep = [self.manifest_name] if self.manifest_name else []
+                summary["disk"] = {"cleared": self.disk_cache.clear(keep=keep)}
+            else:
+                summary["disk"] = {"cleared": 0}
+        return summary
+
     # ------------------------- suggestions -------------------------
     def suggest(self, index: Dict[str, Any], query: str, mode: str, limit: int) -> List[Dict[str, Any]]:
         q = (query or "").strip()

@@ -26,6 +26,7 @@ class SettingsLoaderTest(unittest.TestCase):
                 loaded.paths.configs["fortigate"],
                 str((base / "configs/fortigate").resolve()),
             )
+            self.assertIn("packet-check", loaded.beta.enabled_modules)
 
     def test_json_overrides_merge_with_defaults(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -54,7 +55,7 @@ class SettingsLoaderTest(unittest.TestCase):
                 str((base / "asa-dir").resolve()),
             )
             self.assertEqual(loaded.features.predictive_search.limit, 25)
-            self.assertIn("packet_probe", loaded.beta.enabled_modules)
+            self.assertIn("packet-probe", loaded.beta.enabled_modules)
             self.assertEqual(
                 loaded.paths.cache_dir,
                 str((base / "cache-dir").resolve()),
@@ -74,7 +75,7 @@ class SettingsLoaderTest(unittest.TestCase):
         self.assertEqual(loaded.paths.configs["asa"], "/data/asa")
         self.assertEqual(loaded.features.predictive_search.limit, 75)
         self.assertTrue(loaded.features.disk_cache.enabled)
-        self.assertEqual(tuple(sorted(loaded.beta.enabled_modules)), ("foo", "packet_probe"))
+        self.assertEqual(tuple(sorted(loaded.beta.enabled_modules)), ("foo", "packet-probe"))
 
     def test_cli_overrides_merge_last(self):
         overrides = {
@@ -88,6 +89,17 @@ class SettingsLoaderTest(unittest.TestCase):
 
         self.assertEqual(loaded.features.predictive_search.mode, "fuzzy")
         self.assertEqual(loaded.paths.cache_dir, "/tmp/cache")
+
+    def test_beta_module_normalisation(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cfg_path = Path(tmpdir) / "settings.json"
+            data = {"beta": {"enabled_modules": ["Packet_Probe", "PACKET-PROBE", "packet-check"]}}
+            with cfg_path.open("w", encoding="utf-8") as handle:
+                json.dump(data, handle)
+
+            loaded = settings_mod.load_settings(cfg_path, env={})
+
+        self.assertEqual(tuple(sorted(loaded.beta.enabled_modules)), ("packet-check", "packet-probe"))
 
 
 if __name__ == "__main__":  # pragma: no cover

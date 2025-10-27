@@ -1,0 +1,487 @@
+# ========== VDOM Creation ==========
+config vdom
+    edit "Alpha"
+    next
+    edit "Bravo"
+    next
+    edit "Charlie"
+    next
+end
+
+# ========== Interface Assignments ==========
+config global
+    config system interface
+        # Alpha
+        edit "lobby"
+            set vdom "Alpha"
+            set ip 10.0.1.1/24
+        next
+        edit "dest1"
+            set vdom "Alpha"
+            set ip 10.1.1.1/24
+        next
+        edit "dest2"
+            set vdom "Alpha"
+            set ip 10.1.2.1/24
+        next
+        edit "dest3"
+            set vdom "Alpha"
+            set ip 10.1.3.1/24
+        next
+        edit "dest4"
+            set vdom "Alpha"
+            set ip 10.1.4.1/24
+        next
+        # Bravo
+        edit "lobby"
+            set vdom "Bravo"
+            set ip 10.0.2.1/24
+        next
+        edit "dest1"
+            set vdom "Bravo"
+            set ip 10.2.1.1/24
+        next
+        edit "dest2"
+            set vdom "Bravo"
+            set ip 10.2.2.1/24
+        next
+        edit "dest3"
+            set vdom "Bravo"
+            set ip 10.2.3.1/24
+        next
+        edit "dest4"
+            set vdom "Bravo"
+            set ip 10.2.4.1/24
+        next
+        # Charlie
+        edit "lobby"
+            set vdom "Charlie"
+            set ip 10.0.3.1/24
+        next
+        edit "dest1"
+            set vdom "Charlie"
+            set ip 10.3.1.1/24
+        next
+        edit "dest2"
+            set vdom "Charlie"
+            set ip 10.3.2.1/24
+        next
+        edit "dest3"
+            set vdom "Charlie"
+            set ip 10.3.3.1/24
+        next
+        edit "dest4"
+            set vdom "Charlie"
+            set ip 10.3.4.1/24
+        next
+    end
+end
+
+# ========== VDOM: ALPHA ==========
+config vdom
+edit "Alpha"
+    # ----- Address Objects -----
+    config firewall address
+        edit "lobby-net"
+            set subnet 10.0.1.0 255.255.255.0
+        next
+        edit "lobby-host1"
+            set subnet 10.0.1.101 255.255.255.255
+        next
+        edit "lobby-host2"
+            set subnet 10.0.1.102 255.255.255.255
+        next
+        edit "dest1-host1"
+            set subnet 10.1.1.101 255.255.255.255
+        next
+        edit "dest1-host2"
+            set subnet 10.1.1.102 255.255.255.255
+        next
+        edit "dest2-host1"
+            set subnet 10.1.2.101 255.255.255.255
+        next
+        edit "dest2-host2"
+            set subnet 10.1.2.102 255.255.255.255
+        next
+        edit "dest3-host1"
+            set subnet 10.1.3.101 255.255.255.255
+        next
+        edit "dest3-host2"
+            set subnet 10.1.3.102 255.255.255.255
+        next
+        edit "dest4-host1"
+            set subnet 10.1.4.101 255.255.255.255
+        next
+        edit "dest4-host2"
+            set subnet 10.1.4.102 255.255.255.255
+        next
+    end
+
+    # ----- Address Groups -----
+    config firewall addrgrp
+        edit "dest1-group"
+            set member "dest1-host1" "dest1-host2"
+        next
+        edit "dest2-group"
+            set member "dest2-host1" "dest2-host2"
+        next
+        edit "dest-all-hosts"
+            set member "dest1-host1" "dest1-host2" "dest2-host1" "dest2-host2" "dest3-host1" "dest3-host2" "dest4-host1" "dest4-host2"
+        next
+    end
+
+    # ----- Custom Services -----
+    config firewall service custom
+        edit "TCP10001"
+            set tcp-portrange 10001
+        next
+        edit "UDP20001"
+            set udp-portrange 20001
+        next
+    end
+
+    # ----- Service Groups -----
+    config firewall service group
+        edit "Web-Services"
+            set member "HTTP" "HTTPS"
+        next
+        edit "Infra-Services"
+            set member "DNS" "NTP" "SNMP"
+        next
+        edit "Custom-Multi"
+            set member "TCP10001" "UDP20001"
+        next
+    end
+
+    # ----- Policies -----
+    config firewall policy
+        edit 1
+            set name "Single-Web"
+            set srcintf "lobby"
+            set dstintf "dest1"
+            set srcaddr "lobby-net"
+            set dstaddr "dest1-host1"
+            set action accept
+            set schedule "always"
+            set service "HTTP"
+            set nat disable
+        next
+
+        edit 2
+            set name "Lobby-Group-Web"
+            set srcintf "lobby"
+            set dstintf "dest1"
+            set srcaddr "lobby-net"
+            set dstaddr "dest1-group"
+            set action accept
+            set schedule "always"
+            set service "Web-Services"
+            set nat disable
+        next
+
+        edit 3
+            set name "Lobby-Group-Infra"
+            set srcintf "lobby"
+            set dstintf "dest2"
+            set srcaddr "lobby-net"
+            set dstaddr "dest2-group"
+            set action accept
+            set schedule "always"
+            set service "Infra-Services"
+            set nat disable
+        next
+
+        edit 4
+            set name "Lobby-Custom"
+            set srcintf "lobby"
+            set dstintf "dest3"
+            set srcaddr "lobby-net"
+            set dstaddr "dest3-host1"
+            set action accept
+            set schedule "always"
+            set service "Custom-Multi"
+            set nat disable
+        next
+
+        edit 5
+            set name "Lobby-All-Hosts"
+            set srcintf "lobby"
+            set dstintf "dest4"
+            set srcaddr "lobby-net"
+            set dstaddr "dest-all-hosts"
+            set action accept
+            set schedule "always"
+            set service "ALL"
+            set nat disable
+        next
+    end
+next
+
+# ========== VDOM: BRAVO ==========
+edit "Bravo"
+    config firewall address
+        edit "lobby-net"
+            set subnet 10.0.2.0 255.255.255.0
+        next
+        edit "lobby-host1"
+            set subnet 10.0.2.101 255.255.255.255
+        next
+        edit "lobby-host2"
+            set subnet 10.0.2.102 255.255.255.255
+        next
+        edit "dest1-host1"
+            set subnet 10.2.1.101 255.255.255.255
+        next
+        edit "dest1-host2"
+            set subnet 10.2.1.102 255.255.255.255
+        next
+        edit "dest2-host1"
+            set subnet 10.2.2.101 255.255.255.255
+        next
+        edit "dest2-host2"
+            set subnet 10.2.2.102 255.255.255.255
+        next
+        edit "dest3-host1"
+            set subnet 10.2.3.101 255.255.255.255
+        next
+        edit "dest3-host2"
+            set subnet 10.2.3.102 255.255.255.255
+        next
+        edit "dest4-host1"
+            set subnet 10.2.4.101 255.255.255.255
+        next
+        edit "dest4-host2"
+            set subnet 10.2.4.102 255.255.255.255
+        next
+    end
+
+    config firewall addrgrp
+        edit "dest1-group"
+            set member "dest1-host1" "dest1-host2"
+        next
+        edit "dest2-group"
+            set member "dest2-host1" "dest2-host2"
+        next
+        edit "dest-all-hosts"
+            set member "dest1-host1" "dest1-host2" "dest2-host1" "dest2-host2" "dest3-host1" "dest3-host2" "dest4-host1" "dest4-host2"
+        next
+    end
+
+    config firewall service custom
+        edit "TCP10001"
+            set tcp-portrange 10001
+        next
+        edit "UDP20001"
+            set udp-portrange 20001
+        next
+    end
+
+    config firewall service group
+        edit "Web-Services"
+            set member "HTTP" "HTTPS"
+        next
+        edit "Infra-Services"
+            set member "DNS" "NTP" "SNMP"
+        next
+        edit "Custom-Multi"
+            set member "TCP10001" "UDP20001"
+        next
+    end
+
+    config firewall policy
+        edit 1
+            set name "Single-Web"
+            set srcintf "lobby"
+            set dstintf "dest1"
+            set srcaddr "lobby-net"
+            set dstaddr "dest1-host1"
+            set action accept
+            set schedule "always"
+            set service "HTTP"
+            set nat disable
+        next
+
+        edit 2
+            set name "Lobby-Group-Web"
+            set srcintf "lobby"
+            set dstintf "dest1"
+            set srcaddr "lobby-net"
+            set dstaddr "dest1-group"
+            set action accept
+            set schedule "always"
+            set service "Web-Services"
+            set nat disable
+        next
+
+        edit 3
+            set name "Lobby-Group-Infra"
+            set srcintf "lobby"
+            set dstintf "dest2"
+            set srcaddr "lobby-net"
+            set dstaddr "dest2-group"
+            set action accept
+            set schedule "always"
+            set service "Infra-Services"
+            set nat disable
+        next
+
+        edit 4
+            set name "Lobby-Custom"
+            set srcintf "lobby"
+            set dstintf "dest3"
+            set srcaddr "lobby-net"
+            set dstaddr "dest3-host1"
+            set action accept
+            set schedule "always"
+            set service "Custom-Multi"
+            set nat disable
+        next
+
+        edit 5
+            set name "Lobby-All-Hosts"
+            set srcintf "lobby"
+            set dstintf "dest4"
+            set srcaddr "lobby-net"
+            set dstaddr "dest-all-hosts"
+            set action accept
+            set schedule "always"
+            set service "ALL"
+            set nat disable
+        next
+    end
+next
+
+# ========== VDOM: CHARLIE ==========
+edit "Charlie"
+    config firewall address
+        edit "lobby-net"
+            set subnet 10.0.3.0 255.255.255.0
+        next
+        edit "lobby-host1"
+            set subnet 10.0.3.101 255.255.255.255
+        next
+        edit "lobby-host2"
+            set subnet 10.0.3.102 255.255.255.255
+        next
+        edit "dest1-host1"
+            set subnet 10.3.1.101 255.255.255.255
+        next
+        edit "dest1-host2"
+            set subnet 10.3.1.102 255.255.255.255
+        next
+        edit "dest2-host1"
+            set subnet 10.3.2.101 255.255.255.255
+        next
+        edit "dest2-host2"
+            set subnet 10.3.2.102 255.255.255.255
+        next
+        edit "dest3-host1"
+            set subnet 10.3.3.101 255.255.255.255
+        next
+        edit "dest3-host2"
+            set subnet 10.3.3.102 255.255.255.255
+        next
+        edit "dest4-host1"
+            set subnet 10.3.4.101 255.255.255.255
+        next
+        edit "dest4-host2"
+            set subnet 10.3.4.102 255.255.255.255
+        next
+    end
+
+    config firewall addrgrp
+        edit "dest1-group"
+            set member "dest1-host1" "dest1-host2"
+        next
+        edit "dest2-group"
+            set member "dest2-host1" "dest2-host2"
+        next
+        edit "dest-all-hosts"
+            set member "dest1-host1" "dest1-host2" "dest2-host1" "dest2-host2" "dest3-host1" "dest3-host2" "dest4-host1" "dest4-host2"
+        next
+    end
+
+    config firewall service custom
+        edit "TCP10001"
+            set tcp-portrange 10001
+        next
+        edit "UDP20001"
+            set udp-portrange 20001
+        next
+    end
+
+    config firewall service group
+        edit "Web-Services"
+            set member "HTTP" "HTTPS"
+        next
+        edit "Infra-Services"
+            set member "DNS" "NTP" "SNMP"
+        next
+        edit "Custom-Multi"
+            set member "TCP10001" "UDP20001"
+        next
+    end
+
+    config firewall policy
+        edit 1
+            set name "Single-Web"
+            set srcintf "lobby"
+            set dstintf "dest1"
+            set srcaddr "lobby-net"
+            set dstaddr "dest1-host1"
+            set action accept
+            set schedule "always"
+            set service "HTTP"
+            set nat disable
+        next
+
+        edit 2
+            set name "Lobby-Group-Web"
+            set srcintf "lobby"
+            set dstintf "dest1"
+            set srcaddr "lobby-net"
+            set dstaddr "dest1-group"
+            set action accept
+            set schedule "always"
+            set service "Web-Services"
+            set nat disable
+        next
+
+        edit 3
+            set name "Lobby-Group-Infra"
+            set srcintf "lobby"
+            set dstintf "dest2"
+            set srcaddr "lobby-net"
+            set dstaddr "dest2-group"
+            set action accept
+            set schedule "always"
+            set service "Infra-Services"
+            set nat disable
+        next
+
+        edit 4
+            set name "Lobby-Custom"
+            set srcintf "lobby"
+            set dstintf "dest3"
+            set srcaddr "lobby-net"
+            set dstaddr "dest3-host1"
+            set action accept
+            set schedule "always"
+            set service "Custom-Multi"
+            set nat disable
+        next
+
+        edit 5
+            set name "Lobby-All-Hosts"
+            set srcintf "lobby"
+            set dstintf "dest4"
+            set srcaddr "lobby-net"
+            set dstaddr "dest-all-hosts"
+            set action accept
+            set schedule "always"
+            set service "ALL"
+            set nat disable
+        next
+    end
+next
+end

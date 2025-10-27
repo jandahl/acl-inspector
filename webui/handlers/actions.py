@@ -23,6 +23,8 @@ def process_run(state: AppState, fields: Mapping[str, List[str]]) -> Tuple[int, 
     cfg_file = get("config")
     proto = get("proto")
     include_any = bool(fields.get("include_any", []))
+    replay_flag = get("history_replay", "0").lower()
+    suppress_history = replay_flag in {"1", "true", "yes", "on"}
     dports_clean: Set[int] = set()
     for dp in fields.get("dport", []):
         dp = dp.strip()
@@ -116,7 +118,7 @@ def process_run(state: AppState, fields: Mapping[str, List[str]]) -> Tuple[int, 
         elif mode == "packet":
             src = get("pkt_src")
             dst = get("pkt_dst")
-            pkt = _packet_check_asa(cfg_text, src, dst, proto or None, dports_clean)
+            pkt = _packet_check_asa(cfg_text, src, dst, proto or None, dports_clean, include_any)
             html_output = _render_packet(cfg_file, pkt)
             tab = "packet"
             history_query = f"{src}->{dst}"
@@ -128,7 +130,7 @@ def process_run(state: AppState, fields: Mapping[str, List[str]]) -> Tuple[int, 
     except Exception as exc:
         return 500, {"error": str(exc)}
 
-    if history_query:
+    if history_query and not suppress_history:
         state.history.record(tab, history_query)
 
     return 200, {"tab": tab, "html": html_output, "meta": meta}
@@ -338,10 +340,10 @@ def _render_packet(cfg_file: str, pkt: dict) -> str:
 
 
 def _packet_check_asa(
-    cfg_text: str, src: str, dst: str, proto: Optional[str], dports: Set[int]
+    cfg_text: str, src: str, dst: str, proto: Optional[str], dports: Set[int], include_any: bool
 ) -> dict:
     try:
-        return asa_parser.path_check(cfg_text, src, dst, proto=proto, dports=dports)
+        return asa_parser.path_check(cfg_text, src, dst, proto=proto, dports=dports, include_any=include_any)
     except Exception as exc:
         return {"error": str(exc), "allowed": False}
 

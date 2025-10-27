@@ -2,7 +2,11 @@
 
 from typing import Optional, Sequence
 
-from . import server
+__version__ = "0.9.0"
+
+from . import server  # noqa: E402  (import after version constant)
+
+__all__ = ["run", "create_app", "__version__"]
 
 
 def run(argv: Optional[Sequence[str]] = None) -> None:

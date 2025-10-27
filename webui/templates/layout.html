@@ -10,6 +10,8 @@
       window.ACL_CONFIG_OPTIONS = $config_options;
       window.ACL_HISTORY_ENABLED = $history_enabled;
       window.ACL_SEARCH_LIMIT = $search_limit;
+      window.ACL_VERSION = "$version";
+      window.ACL_BETA_MODULES = $beta_modules;
     </script>
     <script defer src="/static/app.js"></script>
   </head>
@@ -27,8 +29,9 @@
         <div class="mode-tabs">
           <button type="button" class="tab active" data-tab="rules">Inspect / Compare</button>
           <button type="button" class="tab" data-tab="find">Find host</button>
-          <button type="button" class="tab" data-tab="packet">Packet check</button>
-          <button type="button" class="tab" data-tab="config">Config</button>
+          <button type="button" class="tab" data-tab="packet" data-beta-module="packet-check" data-beta-optional="0">Packet check<span class="badge beta" data-beta-badge="packet-check">Beta</span></button>
+          <button type="button" class="tab" data-tab="packet-probe" data-beta-module="packet-probe" data-beta-optional="1">Packet probe<span class="badge beta" data-beta-badge="packet-probe">Beta</span></button>
+          <button type="button" class="tab" data-tab="config">Config Viewer</button>
           <button type="button" class="tab" data-tab="prefs">Preferences</button>
           <button type="button" class="tab" data-tab="about">About</button>
         </div>
@@ -55,6 +58,7 @@
             </div>
           </fieldset>
           <input type="hidden" name="mode" id="mode" value="inspect">
+          <input type="hidden" name="history_replay" id="history_replay" value="0">
           <div class="search-options global-search">
             <label><input type="checkbox" id="fuzzy" checked> Fuzzy search</label>
           </div>
@@ -76,6 +80,7 @@
             $tab_rules
             $tab_find
             $tab_packet
+            $tab_packet_probe
             $tab_config
             $tab_prefs
             $tab_about
