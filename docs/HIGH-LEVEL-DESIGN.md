@@ -16,9 +16,9 @@ The repository is being refactored into modular packages under `webui/`, with th
 Each vendor parser follows the same coarse stages:
 
 1. **Raw ingest** – split the configuration text into lines and isolate the scope (e.g. VDOM subsection on FortiGate).
-2. **Block parsing** – populate in-memory structures (`ASAConfig`, `FTGConfig`) describing objects, services, policies/ACLs, NAT, etc.
+2. **Block parsing** – populate in-memory structures (`ASAConfig`, `FTGConfig`) describing objects, services, policies/ACLs, NAT, etc. The core implementations now live in `parsers/cisco/asa/parser.py` and `parsers/fortigate/config.py`.
 3. **Flattening** – derive a pure data representation of ACL/policy entries. For ASA this occurs in `ASAConfig.flatten_acl()`, for FortiGate in `FTGConfig.flatten_policies()`. Flattened entries always retain the original text in the `raw` field plus structured fields such as `src`, `dst`, `svc`.
-4. **Resolution helpers** – functions like `inspect_host`, `compare_old_new`, and `path_check` resolve tokens to concrete addresses, filter flattened entries, and return JSON-friendly dictionaries.
+4. **Resolution helpers** – functions like `inspect_host`, `compare_old_new`, and `path_check` resolve tokens to concrete addresses, filter flattened entries, and return JSON-friendly dictionaries. These helpers are split into dedicated modules (`parsers.cisco.asa.inspect`, `parsers.cisco.asa.path`, `parsers.fortigate.inspect`).
 
 ### Public Parser APIs
 
