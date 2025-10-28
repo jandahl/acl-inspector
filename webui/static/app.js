@@ -1,0 +1,1972 @@
+(() => {
+  const THEMES = window.ACL_THEMES || [];
+  const CONFIG_OPTIONS = window.ACL_CONFIG_OPTIONS || { asa: [], fortigate: [] };
+  const HISTORY_ENABLED = window.ACL_HISTORY_ENABLED !== false;
+  const SEARCH_LIMIT = window.ACL_SEARCH_LIMIT || 50;
+
+  const PREF_COOKIE = "acl_theme_pref";
+  const THEME_KEY = "acl_theme";
+  const HL_KEY = "acl_highlight";
+  const HIST_VIS_KEY = "acl_history_visible";
+
+  const PREF_KEYS = {
+    lineNumbers: "pref_line_numbers",
+    wrapResults: "pref_wrap_results",
+    configContext: "pref_config_context",
+    configContextLines: "pref_config_context_lines",
+    configMinChars: "pref_config_min_chars",
+    configRegex: "pref_config_regex",
+    showBeta: "pref_show_beta",
+  };
+
+  const PREF_DEFAULTS = {
+    lineNumbers: false,
+    wrapResults: false,
+    configContext: false,
+    configContextLines: 3,
+    configMinChars: 4,
+    configRegex: false,
+    showBeta: false,
+  };
+
+  let activeTab = "rules";
+  let stateGuard = false;
+  let themePref = {};
+  let prefs = { ...PREF_DEFAULTS };
+  let prefGuard = false;
+  let viewerGuard = false;
+  const BETA_MODULES = new Set(
+    (Array.isArray(window.ACL_BETA_MODULES) ? window.ACL_BETA_MODULES : [])
+      .map((name) => (name === null || name === undefined ? "" : String(name).toLowerCase()))
+      .filter((name) => name)
+  );
+
+  function storageGet(key, fallback) {
+    try {
+      if (typeof window !== "undefined" && "localStorage" in window) {
+        const value = window.localStorage.getItem(key);
+        return value === null || value === undefined ? fallback : value;
+      }
+    } catch (err) {
+      console.warn("storageGet failed", err);
+    }
+    return fallback;
+  }
+
+  function storageSet(key, value) {
+    try {
+      if (typeof window !== "undefined" && "localStorage" in window) {
+        window.localStorage.setItem(key, value);
+      }
+    } catch (err) {
+      console.warn("storageSet failed", err);
+    }
+  }
+
+  function cookieGet(name) {
+    if (typeof document === "undefined") {
+      return null;
+    }
+    const match = document.cookie.match(new RegExp("(?:^|; )" + name + "=([^;]*)"));
+    return match ? decodeURIComponent(match[1]) : null;
+  }
+
+  function cookieSet(name, value) {
+    if (typeof document === "undefined") {
+      return;
+    }
+    const ttl = 60 * 60 * 24 * 365;
+    document.cookie = `${name}=${encodeURIComponent(value)};path=/;max-age=${ttl}`;
+  }
+
+  function parseBool(value, fallback = false) {
+    if (value === null || value === undefined || value === "") {
+      return fallback;
+    }
+    const text = String(value).toLowerCase();
+    if (["1", "true", "yes", "on"].includes(text)) {
+      return true;
+    }
+    if (["0", "false", "no", "off"].includes(text)) {
+      return false;
+    }
+    return fallback;
+  }
+
+  function clamp(value, min, max) {
+    return Math.min(Math.max(value, min), max);
+  }
+
+  function prefStorageKey(key) {
+    return `acl_pref_${key}`;
+  }
+
+  function readBoolPref(key, defaultValue) {
+    const stored = storageGet(prefStorageKey(key), null);
+    if (stored === null) {
+      return defaultValue;
+    }
+    return parseBool(stored, defaultValue);
+  }
+
+  function readNumberPref(key, defaultValue, min, max) {
+    const stored = storageGet(prefStorageKey(key), null);
+    if (stored === null) {
+      return defaultValue;
+    }
+    const parsed = parseInt(stored, 10);
+    if (Number.isNaN(parsed)) {
+      return defaultValue;
+    }
+    return clamp(parsed, min, max);
+  }
+
+  function loadPrefs() {
+    prefs = { ...PREF_DEFAULTS };
+    prefs.lineNumbers = readBoolPref(PREF_KEYS.lineNumbers, PREF_DEFAULTS.lineNumbers);
+    prefs.wrapResults = readBoolPref(PREF_KEYS.wrapResults, PREF_DEFAULTS.wrapResults);
+    prefs.configContext = readBoolPref(PREF_KEYS.configContext, PREF_DEFAULTS.configContext);
+    prefs.configContextLines = readNumberPref(
+      PREF_KEYS.configContextLines,
+      PREF_DEFAULTS.configContextLines,
+      0,
+      20
+    );
+    prefs.configMinChars = readNumberPref(
+      PREF_KEYS.configMinChars,
+      PREF_DEFAULTS.configMinChars,
+      1,
+      20
+    );
+    prefs.configRegex = readBoolPref(PREF_KEYS.configRegex, PREF_DEFAULTS.configRegex);
+    prefs.showBeta = readBoolPref(PREF_KEYS.showBeta, PREF_DEFAULTS.showBeta);
+  }
+
+  function savePreference(key, value) {
+    const storageKey = prefStorageKey(PREF_KEYS[key]);
+    if (!storageKey) {
+      return;
+    }
+    if (typeof value === "boolean") {
+      storageSet(storageKey, value ? "1" : "0");
+    } else {
+      storageSet(storageKey, String(value));
+    }
+  }
+
+  function syncPreferenceControls() {
+    prefGuard = true;
+    try {
+      const ln = document.getElementById("pref_line_numbers");
+      if (ln) {
+        ln.checked = !!prefs.lineNumbers;
+      }
+      const wrap = document.getElementById("pref_wrap_results");
+      if (wrap) {
+        wrap.checked = !!prefs.wrapResults;
+      }
+      const cfgDefault = document.getElementById("pref_config_context_default");
+      if (cfgDefault) {
+        cfgDefault.checked = !!prefs.configContext;
+      }
+      const cfgLines = document.getElementById("pref_config_context_lines");
+      if (cfgLines) {
+        cfgLines.value = prefs.configContextLines;
+      }
+      const cfgMin = document.getElementById("pref_config_min_chars");
+      if (cfgMin) {
+        cfgMin.value = prefs.configMinChars;
+      }
+      const cfgRegex = document.getElementById("pref_config_regex");
+      if (cfgRegex) {
+        cfgRegex.checked = !!prefs.configRegex;
+      }
+      const beta = document.getElementById("pref_show_beta");
+      if (beta) {
+        beta.checked = !!prefs.showBeta;
+      }
+    } finally {
+      prefGuard = false;
+    }
+  }
+
+  function syncConfigControls() {
+    prefGuard = true;
+    try {
+      const contextToggle = document.getElementById("config_filter_context_toggle");
+      if (contextToggle) {
+        contextToggle.checked = !!prefs.configContext;
+      }
+      const contextLines = document.getElementById("config_filter_context_lines");
+      if (contextLines) {
+        contextLines.value = prefs.configContextLines;
+      }
+      const minChars = document.getElementById("config_filter_min_chars");
+      if (minChars) {
+        minChars.value = prefs.configMinChars;
+      }
+      const regexToggle = document.getElementById("config_filter_regex");
+      if (regexToggle) {
+        regexToggle.checked = !!prefs.configRegex;
+      }
+    } finally {
+      prefGuard = false;
+    }
+  }
+
+  function applyPrefs() {
+    document.body.classList.toggle("wrap-results", !!prefs.wrapResults);
+    document.querySelectorAll("pre:not([data-lang])").forEach((pre) => {
+      pre.classList.toggle("wrap", !!prefs.wrapResults);
+    });
+    syncConfigControls();
+    const highlightToggle = document.getElementById("hlToggle");
+    const enableHighlight = highlightToggle ? highlightToggle.checked : true;
+    refreshHighlights(enableHighlight);
+    updateConfigViewer(document.getElementById("config_filter")?.value || "");
+    refreshBetaVisibility();
+  }
+
+  function setPreference(key, value, source) {
+    if (!(key in prefs)) {
+      return;
+    }
+    let next = value;
+    if (typeof prefs[key] === "boolean") {
+      next = !!value;
+    } else {
+      const asNumber = parseInt(value, 10);
+      if (Number.isNaN(asNumber)) {
+        next = prefs[key];
+      } else if (key === "configContextLines") {
+        next = clamp(asNumber, 0, 20);
+      } else if (key === "configMinChars") {
+        next = clamp(asNumber, 1, 20);
+      } else {
+        next = asNumber;
+      }
+    }
+    if (prefs[key] === next) {
+      return;
+    }
+    prefs[key] = next;
+    savePreference(key, next);
+    if (source !== "prefs-ui") {
+      syncPreferenceControls();
+    }
+    if (source !== "config-ui") {
+      syncConfigControls();
+    }
+    applyPrefs();
+  }
+
+  function loadThemePrefs() {
+    try {
+      return JSON.parse(cookieGet(PREF_COOKIE) || "{}") || {};
+    } catch (err) {
+      return {};
+    }
+  }
+
+  function saveThemePrefs() {
+    try {
+      cookieSet(PREF_COOKIE, JSON.stringify(themePref));
+    } catch (err) {
+      console.warn("saveThemePrefs failed", err);
+    }
+  }
+
+  function themeByName(name, kind) {
+    return THEMES.find((t) => t.name === name && (!kind || t.kind === kind));
+  }
+
+  function ensureThemePref() {
+    ["dark", "light"].forEach((kind) => {
+      const available = THEMES.filter((t) => t.kind === kind);
+      if (!available.length) {
+        return;
+      }
+      const current = themePref[kind];
+      if (!current || !themeByName(current, kind)) {
+        themePref[kind] = available[0].name;
+      }
+    });
+  }
+
+  function themeForKind(kind) {
+    ensureThemePref();
+    return themeByName(themePref[kind], kind) || THEMES.find((t) => t.kind === kind) || THEMES[0];
+  }
+
+  function applyThemeVars(theme) {
+    if (!theme || !theme.vars) {
+      return;
+    }
+    const root = document.documentElement;
+    for (const [key, val] of Object.entries(theme.vars)) {
+      root.style.setProperty(`--${key}`, val);
+    }
+  }
+
+  function updateThemePreview(kind) {
+    const target = document.getElementById(kind === "light" ? "preview_light" : "preview_dark");
+    if (!target) {
+      return;
+    }
+    const theme = themeForKind(kind);
+    if (!theme) {
+      return;
+    }
+    target.style.background = theme.vars.bg;
+    target.style.color = theme.vars.text;
+    target.style.borderColor = theme.vars.border;
+    target.textContent = theme.name;
+  }
+
+  function populateThemeSelect(kind) {
+    const select = document.getElementById(kind === "light" ? "theme_light" : "theme_dark");
+    if (!select) {
+      return;
+    }
+    const themes = THEMES.filter((t) => t.kind === kind);
+    select.innerHTML = "";
+    themes.forEach((theme) => {
+      const opt = document.createElement("option");
+      opt.value = theme.name;
+      opt.textContent = theme.name;
+      select.appendChild(opt);
+    });
+    ensureThemePref();
+    if (themePref[kind] && themeByName(themePref[kind], kind)) {
+      select.value = themePref[kind];
+    }
+    select.onchange = (event) => {
+      themePref[kind] = event.target.value;
+      ensureThemePref();
+      saveThemePrefs();
+      applyTheme();
+      updateThemePreview(kind);
+    };
+    updateThemePreview(kind);
+  }
+
+  function populateThemeSelectors() {
+    populateThemeSelect("dark");
+    populateThemeSelect("light");
+  }
+
+  function applyTheme() {
+    const mode = storageGet(THEME_KEY, "dark");
+    const root = document.documentElement;
+    root.dataset.theme = mode;
+    const body = document.body;
+    if (body) {
+      body.classList.remove("theme-dark", "theme-light");
+      body.classList.add(mode === "light" ? "theme-light" : "theme-dark");
+    }
+    const theme = themeForKind(mode === "light" ? "light" : "dark");
+    applyThemeVars(theme);
+    themePref[mode] = theme ? theme.name : themePref[mode];
+    const toggle = document.getElementById("themeToggle");
+    if (toggle) {
+      toggle.checked = mode === "light";
+    }
+    updateThemePreview("dark");
+    updateThemePreview("light");
+  }
+
+  function toggleTheme() {
+    const current = storageGet(THEME_KEY, "dark");
+    const next = current === "dark" ? "light" : "dark";
+    storageSet(THEME_KEY, next);
+    applyTheme();
+  }
+
+  function escapeHtml(text) {
+    return (text || "").replace(/[&<>"']/g, (ch) => {
+      switch (ch) {
+        case "&":
+          return "&amp;";
+        case "<":
+          return "&lt;";
+        case ">":
+          return "&gt;";
+        case '"':
+          return "&quot;";
+        case "'":
+          return "&#39;";
+        default:
+          return ch;
+      }
+    });
+  }
+
+  function highlightAsaLine(text) {
+    let html = escapeHtml(text);
+    html = html.replace(/\b(permit|deny)\b/gi, "<span class='act'>$1</span>");
+    html = html.replace(/\b(tcp|udp|icmp|ip)\b/gi, "<span class='proto'>$1</span>");
+    html = html.replace(
+      /\b(access-list|extended|object-group|object|host|subnet|eq|lt|gt|neq|range|any|any4|any6)\b/gi,
+      "<span class='kw'>$1</span>"
+    );
+    html = html.replace(
+      /\b(\d{1,3}(?:\.\d{1,3}){3})(?:\/(\d{1,2}))?\b/g,
+      (_match, addr, mask) => `<span class='addr'>${addr}${mask ? `/${mask}` : ""}</span>`
+    );
+    html = html.replace(/\b(\d{2,5})\b/g, "<span class='num'>$1</span>");
+    return html;
+  }
+
+  function renderPre(pre, rawText, enableHighlight) {
+    const lang = (pre.dataset.lang || "").toLowerCase();
+    const lines = rawText.split("\n");
+    const numbering = Array.isArray(pre.__lineNumbers) ? pre.__lineNumbers : null;
+    const renderLine = (line) => {
+      if (!enableHighlight) {
+        return escapeHtml(line);
+      }
+      if (lang === "asa") {
+        return highlightAsaLine(line);
+      }
+      return escapeHtml(line);
+    };
+    if (prefs.lineNumbers) {
+      const htmlLines = lines.map((line, idx) => {
+        const labelValue = numbering ? numbering[idx] : idx + 1;
+        const labelText = labelValue === null || labelValue === undefined ? "" : String(labelValue);
+        const safeLabel = labelText ? escapeHtml(labelText) : "&nbsp;";
+        const content = renderLine(line) || "&nbsp;";
+        return `<span class='line'><span class='ln'>${safeLabel}</span><span class='txt'>${content}</span></span>`;
+      });
+      pre.innerHTML = htmlLines.join("");
+    } else if (enableHighlight && lang === "asa") {
+      pre.innerHTML = lines.map((line) => highlightAsaLine(line)).join("\n");
+    } else {
+      pre.textContent = rawText;
+    }
+    pre.classList.toggle("line-numbers", !!prefs.lineNumbers);
+    pre.classList.toggle("wrap", !!prefs.wrapResults);
+  }
+
+  function applyHighlight(pre, enable) {
+    if (!pre.dataset.raw) {
+      pre.dataset.raw = pre.textContent || "";
+    }
+    const raw = pre.dataset.raw || "";
+    renderPre(pre, raw, enable);
+  }
+
+  function refreshHighlights(enable) {
+    document.querySelectorAll("pre[data-lang]").forEach((pre) => {
+      applyHighlight(pre, enable);
+    });
+  }
+
+  function highlightAll(enable) {
+    if (document.body) {
+      document.body.classList.toggle("hl-off", !enable);
+    }
+    refreshHighlights(enable);
+    storageSet(HL_KEY, enable ? "on" : "off");
+  }
+
+  function toggleHighlight() {
+    const checked = document.getElementById("hlToggle")?.checked;
+    highlightAll(!!checked);
+  }
+
+  function populateConfigs() {
+    const asaSelect = document.getElementById("config");
+    const ftgSelect = document.getElementById("config_ftg");
+    if (asaSelect) {
+      asaSelect.innerHTML = CONFIG_OPTIONS.asa
+        .map((name) => `<option value='${name}'>${name}</option>`)
+        .join("");
+    }
+    if (ftgSelect) {
+      ftgSelect.innerHTML = CONFIG_OPTIONS.fortigate
+        .map((name) => `<option value='${name}'>${name}</option>`)
+        .join("");
+    }
+  }
+
+  function toggleVendor() {
+    const vendor = document.getElementById("vendor").value;
+    const asa = document.getElementById("asa_cfg");
+    const ftg = document.getElementById("ftg_cfg");
+    if (asa) {
+      asa.style.display = vendor === "asa" ? "block" : "none";
+    }
+    if (ftg) {
+      ftg.style.display = vendor === "fortigate" ? "block" : "none";
+    }
+    syncConfigViewerControls();
+  }
+
+  function listHistory() {
+    const panel = document.getElementById("history");
+    if (!panel || !HISTORY_ENABLED) {
+      return;
+    }
+    fetch("/api/history")
+      .then((resp) => (resp.ok ? resp.json() : Promise.reject()))
+      .then((data) => {
+        const items = data.entries || [];
+        panel.innerHTML = items
+          .map(
+            (entry) =>
+              `<button class="hist-entry" data-mode="${entry.tab}" data-query="${entry.query}"><span class="hist-desc">${entry.query}</span> <span class="hist-time">${new Date(
+                entry.timestamp * 1000
+              ).toLocaleString()}</span></button>`
+          )
+          .join("");
+        panel.dataset.hasEntries = items.length ? "1" : "0";
+        attachHistoryHandlers();
+        if (storageGet(HIST_VIS_KEY, "off") === "on") {
+          panel.style.display = items.length ? "block" : "none";
+        }
+      })
+      .catch(() => {});
+  }
+
+  function attachHistoryHandlers() {
+    const panel = document.getElementById("history");
+    if (!panel) {
+      return;
+    }
+    panel.querySelectorAll(".hist-entry").forEach((button) => {
+      button.addEventListener("click", () => {
+        const tab = button.dataset.mode || "rules";
+        const query = button.dataset.query || "";
+        restoreFromHistory(tab, query);
+      });
+    });
+  }
+
+  function toggleHistory() {
+    const panel = document.getElementById("history");
+    if (!panel) {
+      return;
+    }
+    const visible = panel.style.display !== "none";
+    panel.style.display = visible ? "none" : "block";
+    storageSet(HIST_VIS_KEY, visible ? "off" : "on");
+    if (!visible) {
+      listHistory();
+    }
+  }
+
+  function betaModuleEnabled(name) {
+    if (!name) {
+      return false;
+    }
+    return BETA_MODULES.has(String(name).toLowerCase());
+  }
+
+  function ensureActiveTabAvailable() {
+    const activeButton = document.querySelector(`.mode-tabs .tab[data-tab='${activeTab}']`);
+    if (activeButton && !activeButton.hidden) {
+      return;
+    }
+    const fallback = document.querySelector(".mode-tabs .tab:not([hidden])");
+    const fallbackTab = fallback ? fallback.dataset.tab : "rules";
+    if (fallbackTab && fallbackTab !== activeTab) {
+      activateTab(fallbackTab, true);
+    }
+  }
+
+  function refreshBetaVisibility() {
+    const showBeta = !!prefs.showBeta;
+    document.querySelectorAll("[data-beta-module]").forEach((node) => {
+      const module = node.dataset.betaModule;
+      if (!module) {
+        return;
+      }
+      const optional = node.dataset.betaOptional === "1";
+      const available = betaModuleEnabled(module);
+      const shouldShow = available && (!optional || showBeta);
+      const wasHidden = node.hidden;
+      node.hidden = !shouldShow;
+      if (node.matches(".mode-tabs .tab")) {
+        node.style.display = shouldShow ? "inline-flex" : "none";
+        if (!shouldShow && node.classList.contains("active")) {
+          node.classList.remove("active");
+        }
+      } else if (node.matches(".tab-panel")) {
+        node.style.display = shouldShow ? "" : "none";
+        if (!shouldShow && node.classList.contains("active")) {
+          node.classList.remove("active");
+        }
+      } else {
+        node.style.display = shouldShow ? "" : "none";
+      }
+      if (wasHidden && shouldShow && node.matches(".tab-panel")) {
+        node.classList.remove("active");
+      }
+    });
+    document.querySelectorAll("[data-beta-badge]").forEach((badge) => {
+      const module = badge.dataset.betaBadge;
+      if (!module) {
+        return;
+      }
+      const host = badge.closest("[data-beta-module]");
+      const optional = host ? host.dataset.betaOptional === "1" : true;
+      const visible = betaModuleEnabled(module) && (!optional || showBeta);
+      badge.hidden = !visible;
+      badge.style.display = visible ? "inline-flex" : "none";
+    });
+    ensureActiveTabAvailable();
+  }
+
+  function mainVendor() {
+    const vendorSelect = document.getElementById("vendor");
+    return (vendorSelect ? vendorSelect.value : "asa").toLowerCase();
+  }
+
+  function getMainConfigSelect(vendor) {
+    if (vendor === "fortigate") {
+      return document.getElementById("config_ftg");
+    }
+    return document.getElementById("config");
+  }
+
+  function getConfigOptions(vendor) {
+    const select = getMainConfigSelect(vendor);
+    if (!select) {
+      return [];
+    }
+    return Array.from(select.options)
+      .filter((opt) => opt.value && !opt.disabled)
+      .map((opt) => opt.value);
+  }
+
+  function populateViewerOptions(vendor) {
+    const viewerSelect = document.getElementById("config_select_tab");
+    if (!viewerSelect) {
+      return;
+    }
+    const options = getConfigOptions(vendor);
+    const mainSelect = getMainConfigSelect(vendor);
+    const current = mainSelect ? mainSelect.value : "";
+    viewerSelect.innerHTML = "";
+    if (!options.length) {
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.textContent = "(no configs found)";
+      opt.disabled = true;
+      viewerSelect.appendChild(opt);
+      viewerSelect.value = "";
+      if (mainSelect) {
+        mainSelect.value = "";
+      }
+      return;
+    }
+    options.forEach((name) => {
+      const opt = document.createElement("option");
+      opt.value = name;
+      opt.textContent = name;
+      viewerSelect.appendChild(opt);
+    });
+    if (current && options.includes(current)) {
+      viewerSelect.value = current;
+    } else {
+      viewerSelect.value = options[0];
+      if (mainSelect) {
+        mainSelect.value = viewerSelect.value;
+      }
+    }
+  }
+
+  function syncConfigViewerControls() {
+    if (viewerGuard) {
+      return;
+    }
+    viewerGuard = true;
+    try {
+      const vendor = mainVendor();
+      const viewerVendor = document.getElementById("config_vendor_tab");
+      if (viewerVendor) {
+        viewerVendor.value = vendor;
+      }
+      populateViewerOptions(vendor);
+    } finally {
+      viewerGuard = false;
+    }
+  }
+
+  function updateRunActions(tab) {
+    document.querySelectorAll(".actions-run").forEach((node) => {
+      const shouldShow = node.dataset.tab === tab && ["rules", "find", "packet", "packet-probe"].includes(tab);
+      node.style.display = shouldShow ? "block" : "none";
+    });
+  }
+
+  function setHistoryReplayFlag(active) {
+    const hidden = document.getElementById("history_replay");
+    if (hidden) {
+      hidden.value = active ? "1" : "0";
+    }
+  }
+
+  function restoreFromHistory(tab, query) {
+    if (!tab) {
+      return;
+    }
+    const normalizedTab = tab || "rules";
+    const cleanQuery = query || "";
+    stateGuard = true;
+    try {
+      if (normalizedTab === "rules") {
+        const isCompare = cleanQuery.includes("->");
+        activateTab("rules", true);
+        setMode(isCompare ? "compare" : "inspect");
+        const inspectField = document.getElementById("inspect");
+        const oldField = document.getElementById("old");
+        const newField = document.getElementById("new");
+        if (inspectField) {
+          inspectField.value = isCompare ? "" : cleanQuery;
+        }
+        const parts = cleanQuery.split("->");
+        if (oldField) {
+          oldField.value = isCompare ? (parts[0] || "") : "";
+        }
+        if (newField) {
+          newField.value = isCompare ? (parts[1] || "") : "";
+        }
+      } else if (normalizedTab === "find") {
+        activateTab("find", true);
+        setMode("find");
+        const findField = document.getElementById("findq");
+        if (findField) {
+          findField.value = cleanQuery;
+        }
+      } else if (normalizedTab === "packet") {
+        activateTab("packet", true);
+        if (activeTab === "packet") {
+          setMode("packet");
+          const [srcVal = "", dstVal = ""] = cleanQuery.split("->");
+          const srcField = document.getElementById("pkt_src");
+          const dstField = document.getElementById("pkt_dst");
+          if (srcField) {
+            srcField.value = srcVal;
+          }
+          if (dstField) {
+            dstField.value = dstVal;
+          }
+        }
+      } else if (normalizedTab === "packet-probe") {
+        activateTab("packet-probe", true);
+        if (activeTab === "packet-probe") {
+          const [srcVal = "", dstVal = ""] = cleanQuery.split("->");
+          const srcField = document.getElementById("probe_src");
+          const dstField = document.getElementById("probe_dst");
+          if (srcField) {
+            srcField.value = srcVal;
+          }
+          if (dstField) {
+            dstField.value = dstVal;
+          }
+        }
+      } else {
+        activateTab(normalizedTab, true);
+      }
+    } finally {
+      stateGuard = false;
+    }
+    saveState();
+    setHistoryReplayFlag(true);
+    triggerRun();
+  }
+
+  function setMode(mode) {
+    const modeInput = document.getElementById("mode");
+    if (modeInput) {
+      modeInput.value = mode;
+    }
+    if (mode === "inspect" || mode === "compare") {
+      const radio = document.querySelector(`input[name='rule_mode'][value='${mode}']`);
+      if (radio && !radio.checked) {
+        radio.checked = true;
+      }
+    }
+    updateRuleModeUI(mode);
+  }
+
+  function updateRuleModeUI(mode) {
+    const inspect = document.getElementById("inspect_fields");
+    const compare = document.getElementById("compare_fields");
+    if (inspect) {
+      inspect.style.display = mode === "inspect" ? "block" : "none";
+    }
+    if (compare) {
+      compare.style.display = mode === "compare" ? "block" : "none";
+    }
+  }
+
+  function activateTab(tab, suppressSave) {
+    let nextTab = tab;
+    const requestedButton = document.querySelector(`.mode-tabs .tab[data-tab='${nextTab}']`);
+    if (!requestedButton || requestedButton.hidden) {
+      nextTab = "rules";
+    }
+    activeTab = nextTab;
+    const panels = document.querySelectorAll(".tab-panel");
+    panels.forEach((panel) => panel.classList.toggle("active", !panel.hidden && panel.id === `tab-${nextTab}`));
+    const buttons = document.querySelectorAll(".mode-tabs .tab");
+    buttons.forEach((btn) => btn.classList.toggle("active", !btn.hidden && btn.dataset.tab === nextTab));
+    const service = document.getElementById("service_filters");
+    const includeAnyLabel = document.getElementById("include_any_label");
+    const cfgSection = document.querySelector(".section-config");
+    const modeInputHidden = document.getElementById("mode");
+    if (cfgSection) {
+      cfgSection.style.display =
+        nextTab === "rules" || nextTab === "packet" || nextTab === "packet-probe" ? "block" : "none";
+    }
+    const searchRow = document.querySelector(".global-search");
+    if (searchRow) {
+      searchRow.style.display = nextTab === "rules" ? "block" : "none";
+    }
+    document.querySelectorAll(".results[data-tab]").forEach((panel) => {
+      const isActive = panel.dataset.tab === nextTab;
+      panel.style.display = isActive ? "block" : "none";
+      panel.classList.toggle("active", isActive);
+    });
+    updateRunActions(nextTab);
+    if (nextTab === "rules") {
+      const selected = document.querySelector("input[name='rule_mode']:checked");
+      const chosen = selected ? selected.value : "inspect";
+      setMode(chosen);
+      if (modeInputHidden) {
+        modeInputHidden.value = chosen;
+      }
+      if (service) {
+        service.style.display = "block";
+      }
+      if (includeAnyLabel) {
+        includeAnyLabel.style.display = "inline-flex";
+      }
+    } else if (nextTab === "find") {
+      setMode("find");
+      if (modeInputHidden) {
+        modeInputHidden.value = "find";
+      }
+      if (service) {
+        service.style.display = "none";
+      }
+      if (includeAnyLabel) {
+        includeAnyLabel.style.display = "none";
+      }
+    } else if (nextTab === "packet") {
+      setMode("packet");
+      if (modeInputHidden) {
+        modeInputHidden.value = "packet";
+      }
+      if (service) {
+        service.style.display = "block";
+      }
+      if (includeAnyLabel) {
+        includeAnyLabel.style.display = "none";
+      }
+    } else if (nextTab === "packet-probe") {
+      if (modeInputHidden) {
+        modeInputHidden.value = "packet-probe";
+      }
+      if (service) {
+        service.style.display = "none";
+      }
+      if (includeAnyLabel) {
+        includeAnyLabel.style.display = "none";
+      }
+    } else {
+      if (service) {
+        service.style.display = "none";
+      }
+      if (includeAnyLabel) {
+        includeAnyLabel.style.display = "none";
+      }
+    }
+    if (nextTab === "config") {
+      loadConfigText();
+    }
+    if (!suppressSave) {
+      saveState();
+    }
+    setTimeout(() => highlightAll((storageGet(HL_KEY, "on") || "on") === "on"), 0);
+  }
+
+  function debounce(fn, ms) {
+    let timer;
+    return (...args) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => fn.apply(this, args), ms);
+    };
+  }
+
+  function currentConfig() {
+    const vendor = document.getElementById("vendor").value;
+    const config = vendor === "asa"
+      ? document.getElementById("config").value
+      : document.getElementById("config_ftg").value;
+    return { vendor, config };
+  }
+
+  function fillDatalist(items) {
+    const dl = document.getElementById("targets");
+    if (!dl) {
+      return;
+    }
+    dl.innerHTML = "";
+    for (const entry of items) {
+      const opt = document.createElement("option");
+      opt.value = entry.value;
+      opt.label = entry.label || entry.value;
+      dl.appendChild(opt);
+    }
+  }
+
+  const fetchSuggest = debounce(async function (event) {
+    if (activeTab !== "rules") {
+      fillDatalist([]);
+      return;
+    }
+    const q = event.target.value;
+    if (!q || q.length < 1) {
+      fillDatalist([]);
+      return;
+    }
+    const { vendor, config } = currentConfig();
+    const mode = document.getElementById("fuzzy").checked ? "fuzzy" : "prefix";
+    try {
+      const resp = await fetch(
+        `/api/objects?vendor=${vendor}&os=${vendor.toUpperCase()}&version=auto&config=${encodeURIComponent(
+          config
+        )}&q=${encodeURIComponent(q)}&mode=${mode}&limit=${SEARCH_LIMIT}`
+      );
+      if (!resp.ok) {
+        return;
+      }
+      const data = await resp.json();
+      fillDatalist(data.items || []);
+    } catch (err) {
+      console.warn("fetchSuggest failed", err);
+    }
+  },
+  150);
+
+  function attachTypeahead() {
+    ["inspect", "old", "new", "pkt_src", "pkt_dst", "findq", "probe_src", "probe_dst"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.addEventListener("input", fetchSuggest);
+      }
+    });
+  }
+
+  function gatherState() {
+    const vendor = document.getElementById("vendor").value;
+    return {
+      tab: activeTab,
+      vendor,
+      config: document.getElementById("config").value,
+      config_ftg: document.getElementById("config_ftg").value,
+      mode: document.getElementById("mode").value,
+      inspect: document.getElementById("inspect").value,
+      old: document.getElementById("old").value,
+      new: document.getElementById("new").value,
+      findq: document.getElementById("findq").value,
+      pkt_src: document.getElementById("pkt_src").value,
+      pkt_dst: document.getElementById("pkt_dst").value,
+      proto: document.querySelector("select[name='proto']").value,
+      dport: document.querySelector("input[name='dport']").value,
+      include_any: document.getElementById("include_any").checked,
+      fuzzy: document.getElementById("fuzzy").checked,
+      probe_src: document.getElementById("probe_src") ? document.getElementById("probe_src").value : "",
+      probe_dst: document.getElementById("probe_dst") ? document.getElementById("probe_dst").value : "",
+      probe_proto: document.getElementById("probe_proto") ? document.getElementById("probe_proto").value : "",
+      probe_dport: document.getElementById("probe_dport") ? document.getElementById("probe_dport").value : "",
+      probe_include_any: document.getElementById("probe_include_any") ? document.getElementById("probe_include_any").checked : false,
+    };
+  }
+
+  function updateUrlFromState(state) {
+    if (typeof window === "undefined" || !window.history || !window.location) {
+      return;
+    }
+    const params = new URLSearchParams();
+    const assign = (key, value) => {
+      if (value === null || value === undefined) {
+        return;
+      }
+      const text = typeof value === "string" ? value.trim() : String(value);
+      if (text) {
+        params.set(key, text);
+      }
+    };
+    assign("tab", state.tab);
+    assign("mode", state.mode);
+    assign("vendor", state.vendor);
+    assign("config", state.config);
+    assign("config_ftg", state.config_ftg);
+    assign("inspect", state.inspect);
+    assign("old", state.old);
+    assign("new", state.new);
+    assign("find", state.findq);
+    assign("pkt_src", state.pkt_src);
+    assign("pkt_dst", state.pkt_dst);
+    assign("proto", state.proto);
+    assign("dport", state.dport);
+    if (state.include_any) {
+      params.set("include_any", "1");
+    }
+    params.set("fuzzy", state.fuzzy ? "1" : "0");
+    assign("probe_src", state.probe_src);
+    assign("probe_dst", state.probe_dst);
+    assign("probe_proto", state.probe_proto);
+    assign("probe_dport", state.probe_dport);
+    if (state.probe_include_any) {
+      params.set("probe_include_any", "1");
+    }
+    const query = params.toString();
+    const url = query ? `${window.location.pathname}?${query}` : window.location.pathname;
+    try {
+      window.history.replaceState({}, "", url);
+    } catch (err) {
+      console.warn("replaceState failed", err);
+    }
+  }
+
+  function parseQueryState() {
+    if (typeof window === "undefined") {
+      return null;
+    }
+    const params = new URLSearchParams(window.location.search || "");
+    if (!Array.from(params.keys()).length) {
+      return null;
+    }
+    const state = {};
+    let hasValue = false;
+    const take = (key, target) => {
+      const value = params.get(key);
+      if (value !== null) {
+        state[target] = value;
+        hasValue = true;
+      }
+    };
+    take("tab", "tab");
+    take("mode", "mode");
+    take("vendor", "vendor");
+    take("config", "config");
+    take("config_ftg", "config_ftg");
+    take("inspect", "inspect");
+    take("old", "old");
+    take("new", "new");
+    take("find", "findq");
+    take("findq", "findq");
+    take("pkt_src", "pkt_src");
+    take("pkt_dst", "pkt_dst");
+    take("proto", "proto");
+    take("dport", "dport");
+    if (params.has("include_any")) {
+      state.include_any = parseBool(params.get("include_any"), false);
+      hasValue = true;
+    }
+    if (params.has("fuzzy")) {
+      state.fuzzy = parseBool(params.get("fuzzy"), true);
+      hasValue = true;
+    }
+    take("probe_src", "probe_src");
+    take("probe_dst", "probe_dst");
+    take("probe_proto", "probe_proto");
+    take("probe_dport", "probe_dport");
+    if (params.has("probe_include_any")) {
+      state.probe_include_any = parseBool(params.get("probe_include_any"), false);
+      hasValue = true;
+    }
+    return hasValue ? state : null;
+  }
+
+  function applyState(payload) {
+    if (!payload) {
+      return false;
+    }
+    stateGuard = true;
+    try {
+      if (payload.vendor) {
+        const vendorSelect = document.getElementById("vendor");
+        if (vendorSelect) {
+          vendorSelect.value = payload.vendor;
+        }
+      }
+      toggleVendor();
+      const assign = (id, value) => {
+        const elem = document.getElementById(id);
+        if (elem && value !== undefined) {
+          elem.value = value;
+        }
+      };
+      assign("config", payload.config);
+      assign("config_ftg", payload.config_ftg);
+      assign("inspect", payload.inspect);
+      assign("old", payload.old);
+      assign("new", payload.new);
+      assign("findq", payload.findq);
+      assign("pkt_src", payload.pkt_src);
+      assign("pkt_dst", payload.pkt_dst);
+      assign("probe_src", payload.probe_src);
+      assign("probe_dst", payload.probe_dst);
+      assign("probe_proto", payload.probe_proto);
+      assign("probe_dport", payload.probe_dport);
+      const protoSelect = document.querySelector("select[name='proto']");
+      if (protoSelect && payload.proto !== undefined) {
+        protoSelect.value = payload.proto;
+      }
+      const dportInput = document.querySelector("input[name='dport']");
+      if (dportInput && payload.dport !== undefined) {
+        dportInput.value = payload.dport;
+      }
+      const includeAny = document.getElementById("include_any");
+      if (includeAny && payload.include_any !== undefined) {
+        includeAny.checked = !!payload.include_any;
+      }
+      const probeIncludeAny = document.getElementById("probe_include_any");
+      if (probeIncludeAny && payload.probe_include_any !== undefined) {
+        probeIncludeAny.checked = !!payload.probe_include_any;
+      }
+      const fuzzyToggle = document.getElementById("fuzzy");
+      if (fuzzyToggle && payload.fuzzy !== undefined) {
+        fuzzyToggle.checked = !!payload.fuzzy;
+      }
+      syncConfigViewerControls();
+    } finally {
+      stateGuard = false;
+    }
+    if (payload.tab) {
+      activateTab(payload.tab, true);
+    }
+    if (payload.mode) {
+      setMode(payload.mode);
+    }
+    return true;
+  }
+
+  function shouldAutoRun(state) {
+    if (!state || !state.tab) {
+      return false;
+    }
+    const tabButton = document.querySelector(`.mode-tabs .tab[data-tab='${state.tab}']`);
+    if (!tabButton || tabButton.hidden) {
+      return false;
+    }
+    if (state.tab === "rules") {
+      if (state.mode === "compare") {
+        return Boolean((state.old || "").trim() && (state.new || "").trim());
+      }
+      return Boolean((state.inspect || "").trim());
+    }
+    if (state.tab === "find") {
+      return Boolean((state.findq || "").trim());
+    }
+    if (state.tab === "packet") {
+      return Boolean((state.pkt_src || "").trim() && (state.pkt_dst || "").trim());
+    }
+    if (state.tab === "packet-probe") {
+      return Boolean((state.probe_src || "").trim() && (state.probe_dst || "").trim());
+    }
+    return false;
+  }
+
+  function saveState() {
+    if (stateGuard) {
+      return;
+    }
+    const payload = gatherState();
+    storageSet("acl_state", JSON.stringify(payload));
+    updateUrlFromState(payload);
+  }
+
+  function loadState() {
+    const queryState = parseQueryState();
+    if (queryState && applyState(queryState)) {
+      return queryState;
+    }
+    let payload = null;
+    try {
+      payload = JSON.parse(storageGet("acl_state", "{}"));
+    } catch (err) {
+      payload = null;
+    }
+    if (payload && Object.keys(payload).length) {
+      applyState(payload);
+    }
+    return null;
+  }
+
+  let currentConfigText = "";
+
+  function setConfigLoading(active) {
+    const indicator = document.getElementById("config_loading");
+    if (!indicator) {
+      return;
+    }
+    indicator.classList.toggle("active", !!active);
+  }
+
+  function updateConfigViewer(filterText) {
+    const viewer = document.getElementById("config_text");
+    if (!viewer) {
+      return;
+    }
+    const notice = document.getElementById("config_filter_notice");
+    const filterRaw = (filterText || "").trim();
+    const regexToggle = document.getElementById("config_filter_regex");
+    const useRegex = !!(regexToggle && regexToggle.checked);
+    const filterLower = filterRaw.toLowerCase();
+    const minChars = Math.max(1, prefs.configMinChars || 1);
+    const allLines = currentConfigText ? currentConfigText.split("\n") : [];
+    let displayLines = allLines;
+    let numbering = null;
+    let message = "";
+    let regexObj = null;
+    if (useRegex && filterRaw) {
+      try {
+        regexObj = new RegExp(filterRaw, "i");
+      } catch (err) {
+        displayLines = ["[invalid regex]"];
+        numbering = [null];
+        message = `Invalid regex: ${err.message || err}`;
+        const outputText = displayLines.join("\n");
+        viewer.textContent = outputText;
+        viewer.dataset.raw = outputText;
+        viewer.__lineNumbers = numbering;
+        const nameDisplay = document.getElementById("config_name_display");
+        if (nameDisplay) {
+          const { config } = currentConfig();
+          nameDisplay.textContent = config || "n/a";
+        }
+        if (notice) {
+          notice.textContent = message;
+        }
+        const hlToggleErr = document.getElementById("hlToggle");
+        const highlightEnabledErr = hlToggleErr
+          ? hlToggleErr.checked
+          : (storageGet(HL_KEY, "on") || "on") === "on";
+        refreshHighlights(highlightEnabledErr);
+        return;
+      }
+    }
+    if (!currentConfigText) {
+      displayLines = [];
+      numbering = null;
+    } else if (!filterRaw) {
+      numbering = null;
+    } else if (!useRegex && filterRaw.length < minChars) {
+      const remaining = minChars - filterRaw.length;
+      message = `Type ${remaining} more character${remaining === 1 ? "" : "s"} to filter (min ${minChars}).`;
+      if (notice) {
+        notice.textContent = message;
+      }
+      if ((viewer.dataset.raw || "") === currentConfigText) {
+        const hlToggleShort = document.getElementById("hlToggle");
+        const highlightEnabledShort = hlToggleShort
+          ? hlToggleShort.checked
+          : (storageGet(HL_KEY, "on") || "on") === "on";
+        refreshHighlights(highlightEnabledShort);
+        return;
+      }
+      numbering = null;
+    } else {
+      const matches = [];
+      for (let idx = 0; idx < allLines.length; idx += 1) {
+        const line = allLines[idx];
+        const match = useRegex ? (regexObj ? regexObj.test(line) : false) : line.toLowerCase().includes(filterLower);
+        if (match) {
+          matches.push(idx);
+        }
+      }
+      if (!matches.length) {
+        displayLines = ["[no matches]"];
+        numbering = [null];
+        message = "No matches found.";
+      } else {
+        const keep = new Set();
+        if (prefs.configContext) {
+          const span = prefs.configContextLines || 0;
+          matches.forEach((idx) => {
+            const start = Math.max(0, idx - span);
+            const end = Math.min(allLines.length - 1, idx + span);
+            for (let i = start; i <= end; i += 1) {
+              keep.add(i);
+            }
+          });
+        } else {
+          matches.forEach((idx) => keep.add(idx));
+        }
+        const sorted = Array.from(keep).sort((a, b) => a - b);
+        const outLines = [];
+        const outNumbers = [];
+        let prev = -2;
+        sorted.forEach((idx) => {
+          if (outLines.length && idx - prev > 1) {
+            outLines.push("…");
+            outNumbers.push(null);
+          }
+          outLines.push(allLines[idx]);
+          outNumbers.push(idx + 1);
+          prev = idx;
+        });
+        displayLines = outLines;
+        numbering = outNumbers;
+      }
+    }
+    const outputText = displayLines.length ? displayLines.join("\n") : "";
+    viewer.textContent = outputText;
+    viewer.dataset.raw = outputText;
+    if (numbering) {
+      viewer.__lineNumbers = numbering;
+    } else {
+      delete viewer.__lineNumbers;
+    }
+    const nameDisplay = document.getElementById("config_name_display");
+    if (nameDisplay) {
+      const { config } = currentConfig();
+      nameDisplay.textContent = config || "n/a";
+    }
+    if (notice) {
+      notice.textContent = message;
+    }
+    const hlToggle = document.getElementById("hlToggle");
+    const highlightEnabled = hlToggle ? hlToggle.checked : (storageGet(HL_KEY, "on") || "on") === "on";
+    refreshHighlights(highlightEnabled);
+  }
+
+  function loadConfigText() {
+    const { vendor, config } = currentConfig();
+    const viewer = document.getElementById("config_text");
+    if (!viewer) {
+      return;
+    }
+    if (!config) {
+      currentConfigText = "";
+      updateConfigViewer(document.getElementById("config_filter")?.value || "");
+      setConfigLoading(false);
+      return;
+    }
+    setConfigLoading(true);
+    fetch(`/api/config?vendor=${vendor}&config=${encodeURIComponent(config)}`)
+      .then((resp) => (resp.ok ? resp.json() : Promise.reject()))
+      .then((data) => {
+        currentConfigText = (data.text || "").replace(/\r\n?/g, "\n");
+        updateConfigViewer(document.getElementById("config_filter")?.value || "");
+      })
+      .catch(() => {
+        currentConfigText = "";
+        updateConfigViewer("");
+      })
+      .finally(() => {
+        setConfigLoading(false);
+      });
+  }
+
+  function setRunResults(tab, htmlContent, meta) {
+    let targetTab = tab || "rules";
+    const tabButton = document.querySelector(`.mode-tabs .tab[data-tab='${targetTab}']`);
+    if (!tabButton || tabButton.hidden) {
+      targetTab = "rules";
+    }
+    let container = document.querySelector(`.results[data-tab='${targetTab}']`);
+    if (!container && targetTab !== "rules") {
+      targetTab = "rules";
+      container = document.querySelector(".results[data-tab='rules']");
+    }
+    if (container) {
+      container.innerHTML = htmlContent || "";
+    }
+    activateTab(targetTab, true);
+    const highlightToggle = document.getElementById("hlToggle");
+    const enable = highlightToggle ? highlightToggle.checked : true;
+    highlightAll(enable);
+    document.querySelectorAll("pre:not([data-lang])").forEach((pre) => {
+      pre.classList.toggle("wrap", !!prefs.wrapResults);
+    });
+    if (meta) {
+      if (meta.mode) {
+        const modeInput = document.getElementById("mode");
+        if (modeInput) {
+          modeInput.value = meta.mode;
+        }
+        const radio = document.querySelector(`input[name='rule_mode'][value='${meta.mode}']`);
+        if (radio) {
+          radio.checked = true;
+        }
+        updateRuleModeUI(meta.mode);
+      }
+      if (meta.mode === "inspect" && typeof meta.query === "string") {
+        const inspectField = document.getElementById("inspect");
+        if (inspectField && !inspectField.value) {
+          inspectField.value = meta.query;
+        }
+      }
+      if (meta.mode === "compare" && typeof meta.query === "string") {
+        const parts = meta.query.split("->");
+        const oldField = document.getElementById("old");
+        const newField = document.getElementById("new");
+        if (oldField && !oldField.value && parts[0]) {
+          oldField.value = parts[0];
+        }
+        if (newField && !newField.value && parts[1]) {
+          newField.value = parts[1];
+        }
+      }
+      if (meta.mode === "find" && typeof meta.query === "string") {
+        const findField = document.getElementById("findq");
+        if (findField && !findField.value) {
+          findField.value = meta.query;
+        }
+      }
+      if (meta.mode === "packet" && typeof meta.query === "string") {
+        const [srcVal = "", dstVal = ""] = meta.query.split("->");
+        const srcField = document.getElementById("pkt_src");
+        const dstField = document.getElementById("pkt_dst");
+        if (srcField && !srcField.value) {
+          srcField.value = srcVal;
+        }
+        if (dstField && !dstField.value) {
+          dstField.value = dstVal;
+        }
+      }
+    }
+  }
+
+  function probeResultsContainer() {
+    return document.querySelector(".results[data-tab='packet-probe']");
+  }
+
+  function setProbeResults(htmlContent) {
+    const container = probeResultsContainer();
+    if (container) {
+      container.innerHTML = htmlContent;
+    }
+    const highlightToggle = document.getElementById("hlToggle");
+    const enable = highlightToggle ? highlightToggle.checked : true;
+    highlightAll(enable);
+    document.querySelectorAll("pre:not([data-lang])").forEach((pre) => {
+      pre.classList.toggle("wrap", !!prefs.wrapResults);
+    });
+  }
+
+  function renderProbeResult(configName, payload) {
+    if (!payload || typeof payload !== "object") {
+      return `<div class="section"><p style="color:red">No data returned.</p></div>`;
+    }
+    const result = payload.result || {};
+    const allowed = result.allowed ? "ALLOWED" : "BLOCKED";
+    const nat = result.nat || {};
+    const acl = result.acl || {};
+    const context = result.context || {};
+    const resolved = result.resolved || {};
+    const input = result.input || {};
+    const natLines = [];
+    if (nat.applied) {
+      const rule = nat.rule || {};
+      natLines.push(`Rule: ${rule.raw ? escapeHtml(rule.raw) : "(unknown)"}`);
+      const tx = nat.translations || {};
+      if (tx.src) {
+        natLines.push(`Source: ${escapeHtml(String(tx.src.before || ""))} -> ${escapeHtml(String(tx.src.after || ""))}`);
+        if (tx.src.note) {
+          natLines.push(`  note: ${escapeHtml(String(tx.src.note))}`);
+        }
+      }
+      if (tx.dst) {
+        natLines.push(`Destination: ${escapeHtml(String(tx.dst.before || ""))} -> ${escapeHtml(String(tx.dst.after || ""))}`);
+        if (tx.dst.note) {
+          natLines.push(`  note: ${escapeHtml(String(tx.dst.note))}`);
+        }
+      }
+    } else {
+      natLines.push("No NAT rule matched.");
+    }
+    const matches = (acl.matches || []).slice(0, 200).map((match) => {
+      const raw = escapeHtml(match.raw || "");
+      const summary = escapeHtml(match.summary || "");
+      return `  ${raw}\n   -> ${summary}`;
+    });
+    const aclText = matches.length ? matches.join("\n") : "  (no ACL matches)";
+    const candidateLines = (context.acl_candidates || []).map((cand) => {
+      const iface = cand.interface || cand.display_interface || "(unknown)";
+      const direction = cand.direction || cand.display_direction || "";
+      return `  ${escapeHtml(String(iface))}${direction ? ` (${escapeHtml(String(direction))})` : ""}`;
+    });
+    const candidateBlock = candidateLines.length
+      ? `<div class='diff diff-aliases'><h3>ACL Candidate Bindings</h3><pre>${candidateLines.join("\n")}</pre></div>`
+      : "";
+    const jsonPretty = escapeHtml(JSON.stringify(result, null, 2));
+    return `
+<div class='results results-probe' data-tab='packet-probe'>
+  <div class='section'><h2>${escapeHtml(configName || "")}</h2><h3>Packet Probe</h3>
+  <p>Status: ${allowed}</p>
+  <p>Input: src=${escapeHtml(String(input.src || ""))} dst=${escapeHtml(String(input.dst || ""))} proto=${escapeHtml(String(input.proto || 'any'))} dports=${escapeHtml(String((input.dports || []).join(', ') || 'any'))}</p>
+  <p>Resolved: src=${escapeHtml(String(resolved.src || ""))} -> ${escapeHtml(String(resolved.post_nat_src || ""))} | dst=${escapeHtml(String(resolved.dst || ""))} -> ${escapeHtml(String(resolved.post_nat_dst || ""))}</p></div>
+  <div class='diff diff-added'><h3>NAT Evaluation</h3><pre>${natLines.join("\n")}\n</pre></div>
+  ${candidateBlock}
+  <div class='diff diff-raw'><h3>ACL Matches</h3><pre data-lang='asa'>${aclText}</pre></div>
+  <div class='diff diff-json'><h3>Raw Result</h3><pre>${jsonPretty}</pre></div>
+</div>
+`;
+  }
+
+  async function runPacketProbe(formData) {
+    const container = probeResultsContainer();
+    if (!container) {
+      return;
+    }
+    container.innerHTML = "<div class='section'><p>Running packet probe…</p></div>";
+    const { vendor, config } = currentConfig();
+    if (!config) {
+      setProbeResults("<div class='section'><p style='color:red'>Select a config before running the probe.</p></div>");
+      return;
+    }
+    const payload = {
+      vendor,
+      config,
+      src: String(formData.get("probe_src") || "").trim(),
+      dst: String(formData.get("probe_dst") || "").trim(),
+      proto: String(formData.get("probe_proto") || "").trim(),
+      dports: [],
+      include_any: document.getElementById("probe_include_any")?.checked || false,
+    };
+    const dportRaw = String(formData.get("probe_dport") || "").trim();
+    if (dportRaw) {
+      payload.dports = dportRaw.split(",").map((part) => part.trim()).filter((part) => part);
+    }
+    if (!payload.src || !payload.dst) {
+      setProbeResults("<div class='section'><p style='color:red'>Source and destination are required.</p></div>");
+      return;
+    }
+    try {
+      const resp = await fetch("/api/probe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await resp.json();
+      if (!resp.ok || data.error) {
+        const err = (data && data.error) || `Probe failed (HTTP ${resp.status})`;
+        setProbeResults(`<div class='section'><p style='color:red'>${escapeHtml(String(err))}</p></div>`);
+        return;
+      }
+      setProbeResults(renderProbeResult(data.config || config, data));
+    } catch (err) {
+      setProbeResults(`<div class='section'><p style='color:red'>Probe request failed: ${escapeHtml(String(err))}</p></div>`);
+    }
+  }
+
+  function updateDebugStatus(message, isError = false) {
+    const statusElem = document.getElementById("debug_status");
+    if (!statusElem) {
+      return;
+    }
+    statusElem.textContent = message;
+    statusElem.style.color = isError ? "#ff7b72" : "var(--sub)";
+  }
+
+  async function flushServerCache(includeDisk = true) {
+    updateDebugStatus("Flushing server caches…");
+    try {
+      const resp = await fetch("/api/cache/flush", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ disk: includeDisk }),
+      });
+      const data = await resp.json();
+      if (!resp.ok || data.error) {
+        updateDebugStatus((data && data.error) || `Flush failed (HTTP ${resp.status})`, true);
+        return;
+      }
+      updateDebugStatus("Server caches flushed.");
+      listHistory();
+    } catch (err) {
+      updateDebugStatus(`Flush failed: ${err}`, true);
+    }
+  }
+
+  function clearClientCache() {
+    updateDebugStatus("Clearing browser cache…");
+    try {
+      if (typeof window !== "undefined" && window.localStorage) {
+        const storage = window.localStorage;
+        const removeKeys = [];
+        for (let i = 0; i < storage.length; i += 1) {
+          const key = storage.key(i);
+          if (!key) {
+            continue;
+          }
+          if (key === THEME_KEY || key === HL_KEY || key.startsWith("acl_")) {
+            removeKeys.push(key);
+          }
+        }
+        removeKeys.forEach((key) => {
+          try {
+            storage.removeItem(key);
+          } catch (err) {
+            console.warn("Failed to remove key", key, err);
+          }
+        });
+      }
+      if (typeof document !== "undefined") {
+        document.cookie = `${PREF_COOKIE}=;path=/;max-age=0`;
+      }
+      updateDebugStatus("Browser cache cleared. Reloading…");
+      setTimeout(() => window.location.reload(), 750);
+    } catch (err) {
+      updateDebugStatus(`Clear failed: ${err}`, true);
+    }
+  }
+
+  async function submitForm(event) {
+    if (event && typeof event.preventDefault === "function") {
+      event.preventDefault();
+    }
+    const form = (event && event.target) ? event.target : document.forms[0];
+    if (!form) {
+      return;
+    }
+    const formData = new FormData(form);
+    const modeValue = formData.get("mode");
+    if (modeValue === "packet-probe") {
+      try {
+        await runPacketProbe(formData);
+        saveState();
+        listHistory();
+      } finally {
+        setHistoryReplayFlag(false);
+      }
+      return;
+    }
+    const params = new URLSearchParams();
+    formData.forEach((value, key) => {
+      params.append(key, value);
+    });
+    try {
+      const resp = await fetch("/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: params.toString(),
+      });
+      const data = await resp.json();
+      if (!resp.ok || data.error) {
+        setRunResults("rules", `<div class="section"><p style="color:red">${(data && data.error) || "Failed to run"}</p></div>`);
+        return;
+      }
+      setRunResults(data.tab || "rules", data.html || "", data.meta || null);
+      saveState();
+      listHistory();
+    } catch (err) {
+      setRunResults("rules", `<div class="section"><p style="color:red">Request failed: ${err}</p></div>`);
+    } finally {
+      setHistoryReplayFlag(false);
+    }
+  }
+
+  function triggerRun() {
+    const form = document.forms[0];
+    if (!form) {
+      setHistoryReplayFlag(false);
+      return;
+    }
+    submitForm({ target: form });
+  }
+
+  function refreshMeta() {
+    const { vendor, config } = currentConfig();
+    const metaSpan = document.getElementById("meta");
+    if (!config || !metaSpan) {
+      return;
+    }
+    fetch(`/api/meta?vendor=${vendor}&config=${encodeURIComponent(config)}`)
+      .then((resp) => (resp.ok ? resp.json() : Promise.reject()))
+      .then((data) => {
+        metaSpan.textContent = data.version ? `${data.os} ${data.version}` : data.os || vendor.toUpperCase();
+      })
+      .catch(() => {
+        metaSpan.textContent = "";
+      });
+  }
+
+  function ensureHistoryVisibility() {
+    if (!HISTORY_ENABLED) {
+      return;
+    }
+    const vis = storageGet(HIST_VIS_KEY, "off") === "on";
+    const panel = document.getElementById("history");
+    if (panel) {
+      panel.style.display = vis ? "block" : "none";
+    }
+    if (vis) {
+      listHistory();
+    }
+  }
+
+  function init() {
+    themePref = loadThemePrefs();
+    loadPrefs();
+    populateConfigs();
+    syncConfigViewerControls();
+    const configVendorTab = document.getElementById("config_vendor_tab");
+    if (configVendorTab) {
+      configVendorTab.addEventListener("change", () => {
+        const vendor = (configVendorTab.value || "asa").toLowerCase();
+        const vendorSelect = document.getElementById("vendor");
+        if (vendorSelect && vendorSelect.value !== vendor) {
+          vendorSelect.value = vendor;
+        }
+        toggleVendor();
+        loadConfigText();
+        refreshMeta();
+        saveState();
+      });
+    }
+    const configSelectTab = document.getElementById("config_select_tab");
+    if (configSelectTab) {
+      configSelectTab.addEventListener("change", () => {
+        const vendor =
+          (document.getElementById("config_vendor_tab")?.value || mainVendor()).toLowerCase();
+        const vendorSelect = document.getElementById("vendor");
+        if (vendorSelect && vendorSelect.value !== vendor) {
+          vendorSelect.value = vendor;
+          toggleVendor();
+        }
+        const mainSelect = getMainConfigSelect(vendor);
+        if (mainSelect && mainSelect.value !== configSelectTab.value) {
+          mainSelect.value = configSelectTab.value;
+        }
+        loadConfigText();
+        refreshMeta();
+        saveState();
+      });
+    }
+    ["config", "config_ftg"].forEach((id) => {
+      const select = document.getElementById(id);
+      if (select) {
+        select.addEventListener("change", () => {
+          syncConfigViewerControls();
+          loadConfigText();
+          refreshMeta();
+        });
+      }
+    });
+    const configFilter = document.getElementById("config_filter");
+    if (configFilter) {
+      const updateConfig = () => updateConfigViewer(configFilter.value);
+      const debouncedUpdateConfig = debounce(updateConfig, 120);
+      configFilter.addEventListener("input", debouncedUpdateConfig);
+      configFilter.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          updateConfig();
+        }
+      });
+    }
+    updateConfigViewer("");
+    toggleVendor();
+    loadConfigText();
+    populateThemeSelectors();
+    applyTheme();
+    syncPreferenceControls();
+    syncConfigControls();
+    const highlightDefault = (storageGet(HL_KEY, "on") || "on") === "on";
+    const hlToggleInitial = document.getElementById("hlToggle");
+    if (hlToggleInitial) {
+      hlToggleInitial.checked = highlightDefault;
+    }
+    highlightAll(highlightDefault);
+    applyPrefs();
+    attachTypeahead();
+    const queryState = loadState();
+    syncConfigViewerControls();
+    loadConfigText();
+    refreshMeta();
+    ensureHistoryVisibility();
+    activateTab(activeTab, true);
+    if (queryState && shouldAutoRun(queryState)) {
+      triggerRun();
+    }
+
+    const themeToggle = document.getElementById("themeToggle");
+    if (themeToggle) {
+      themeToggle.addEventListener("change", toggleTheme);
+    }
+    const hlToggle = document.getElementById("hlToggle");
+    if (hlToggle) {
+      hlToggle.addEventListener("change", toggleHighlight);
+    }
+    const histToggle = document.getElementById("histToggle");
+    if (histToggle) {
+      histToggle.addEventListener("click", toggleHistory);
+      histToggle.style.display = HISTORY_ENABLED ? "inline-flex" : "none";
+    }
+    document.getElementById("vendor").addEventListener("change", () => {
+      toggleVendor();
+      loadConfigText();
+      refreshMeta();
+      saveState();
+    });
+    document.querySelectorAll("input[name='rule_mode']").forEach((radio) => {
+      radio.addEventListener("change", (event) => {
+        setMode(event.target.value);
+        saveState();
+      });
+    });
+    document.querySelectorAll(".mode-tabs .tab").forEach((tab) => {
+      tab.addEventListener("click", () => activateTab(tab.dataset.tab));
+    });
+    document.forms[0].addEventListener("change", saveState);
+    document.forms[0].addEventListener("input", saveState);
+    document.forms[0].addEventListener("submit", submitForm);
+
+    const prefLineNumbers = document.getElementById("pref_line_numbers");
+    if (prefLineNumbers) {
+      prefLineNumbers.addEventListener("change", (event) => {
+        if (prefGuard) {
+          return;
+        }
+        setPreference("lineNumbers", event.target.checked, "prefs-ui");
+      });
+    }
+    const prefWrapResults = document.getElementById("pref_wrap_results");
+    if (prefWrapResults) {
+      prefWrapResults.addEventListener("change", (event) => {
+        if (prefGuard) {
+          return;
+        }
+        setPreference("wrapResults", event.target.checked, "prefs-ui");
+      });
+    }
+    const prefConfigContextDefault = document.getElementById("pref_config_context_default");
+    if (prefConfigContextDefault) {
+      prefConfigContextDefault.addEventListener("change", (event) => {
+        if (prefGuard) {
+          return;
+        }
+        setPreference("configContext", event.target.checked, "prefs-ui");
+      });
+    }
+    const prefConfigContextLines = document.getElementById("pref_config_context_lines");
+    if (prefConfigContextLines) {
+      prefConfigContextLines.addEventListener("change", (event) => {
+        if (prefGuard) {
+          return;
+        }
+        setPreference("configContextLines", event.target.value, "prefs-ui");
+      });
+    }
+    const prefConfigMinChars = document.getElementById("pref_config_min_chars");
+    if (prefConfigMinChars) {
+      prefConfigMinChars.addEventListener("change", (event) => {
+        if (prefGuard) {
+          return;
+        }
+        setPreference("configMinChars", event.target.value, "prefs-ui");
+      });
+    }
+    const prefConfigRegex = document.getElementById("pref_config_regex");
+    if (prefConfigRegex) {
+      prefConfigRegex.addEventListener("change", (event) => {
+        if (prefGuard) {
+          return;
+        }
+        setPreference("configRegex", event.target.checked, "prefs-ui");
+        updateConfigViewer(document.getElementById("config_filter")?.value || "");
+      });
+    }
+    const prefShowBeta = document.getElementById("pref_show_beta");
+    if (prefShowBeta) {
+      prefShowBeta.addEventListener("change", (event) => {
+        if (prefGuard) {
+          return;
+        }
+        setPreference("showBeta", event.target.checked, "prefs-ui");
+      });
+    }
+    const configContextToggle = document.getElementById("config_filter_context_toggle");
+    if (configContextToggle) {
+      configContextToggle.addEventListener("change", (event) => {
+        if (prefGuard) {
+          return;
+        }
+        setPreference("configContext", event.target.checked, "config-ui");
+      });
+    }
+    const configContextLines = document.getElementById("config_filter_context_lines");
+    if (configContextLines) {
+      configContextLines.addEventListener("change", (event) => {
+        if (prefGuard) {
+          return;
+        }
+        setPreference("configContextLines", event.target.value, "config-ui");
+      });
+    }
+    const configMinChars = document.getElementById("config_filter_min_chars");
+    if (configMinChars) {
+      configMinChars.addEventListener("change", (event) => {
+        if (prefGuard) {
+          return;
+        }
+        setPreference("configMinChars", event.target.value, "config-ui");
+      });
+    }
+    const configRegexToggle = document.getElementById("config_filter_regex");
+    if (configRegexToggle) {
+      configRegexToggle.addEventListener("change", (event) => {
+        if (prefGuard) {
+          return;
+        }
+        setPreference("configRegex", event.target.checked, "config-ui");
+        updateConfigViewer(document.getElementById("config_filter")?.value || "");
+      });
+    }
+
+    loadConfigText();
+
+    window.addEventListener("popstate", () => {
+      const state = parseQueryState();
+      if (state && applyState(state)) {
+        const snapshot = gatherState();
+        storageSet("acl_state", JSON.stringify(snapshot));
+        activateTab(activeTab, true);
+        refreshMeta();
+        if (activeTab === "config") {
+          loadConfigText();
+        }
+        if (shouldAutoRun(state)) {
+          triggerRun();
+        }
+        return;
+      }
+      const fallbackState = loadState();
+      activateTab(activeTab, true);
+      refreshMeta();
+      if (activeTab === "config") {
+        loadConfigText();
+      }
+      const snapshot = fallbackState || gatherState();
+      if (shouldAutoRun(snapshot)) {
+        triggerRun();
+      }
+    });
+
+    const debugFlush = document.getElementById("debug_flush_server");
+    if (debugFlush) {
+      debugFlush.addEventListener("click", () => flushServerCache(true));
+    }
+    const debugClear = document.getElementById("debug_clear_client");
+    if (debugClear) {
+      debugClear.addEventListener("click", clearClientCache);
+    }
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
+})();

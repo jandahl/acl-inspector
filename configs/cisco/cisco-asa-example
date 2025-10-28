@@ -1,0 +1,239 @@
+!
+!--- Interfaces for ALPHA
+interface GigabitEthernet0/1
+ nameif alpha_lobby
+ security-level 100
+ ip address 10.0.1.1 255.255.255.0
+!
+interface GigabitEthernet0/2
+ nameif alpha_dest1
+ security-level 50
+ ip address 10.1.1.1 255.255.255.0
+!
+interface GigabitEthernet0/3
+ nameif alpha_dest2
+ security-level 50
+ ip address 10.1.2.1 255.255.255.0
+!
+interface GigabitEthernet0/4
+ nameif alpha_dest3
+ security-level 50
+ ip address 10.1.3.1 255.255.255.0
+!
+interface GigabitEthernet0/5
+ nameif alpha_dest4
+ security-level 50
+ ip address 10.1.4.1 255.255.255.0
+!
+!--- Interfaces for BRAVO
+interface GigabitEthernet0/6
+ nameif bravo_lobby
+ security-level 100
+ ip address 10.0.2.1 255.255.255.0
+!
+interface GigabitEthernet0/7
+ nameif bravo_dest1
+ security-level 50
+ ip address 10.2.1.1 255.255.255.0
+!
+interface GigabitEthernet0/8
+ nameif bravo_dest2
+ security-level 50
+ ip address 10.2.2.1 255.255.255.0
+!
+interface GigabitEthernet0/9
+ nameif bravo_dest3
+ security-level 50
+ ip address 10.2.3.1 255.255.255.0
+!
+interface GigabitEthernet0/10
+ nameif bravo_dest4
+ security-level 50
+ ip address 10.2.4.1 255.255.255.0
+!
+!--- Interfaces for CHARLIE
+interface GigabitEthernet0/11
+ nameif charlie_lobby
+ security-level 100
+ ip address 10.0.3.1 255.255.255.0
+!
+interface GigabitEthernet0/12
+ nameif charlie_dest1
+ security-level 50
+ ip address 10.3.1.1 255.255.255.0
+!
+interface GigabitEthernet0/13
+ nameif charlie_dest2
+ security-level 50
+ ip address 10.3.2.1 255.255.255.0
+!
+interface GigabitEthernet0/14
+ nameif charlie_dest3
+ security-level 50
+ ip address 10.3.3.1 255.255.255.0
+!
+interface GigabitEthernet0/15
+ nameif charlie_dest4
+ security-level 50
+ ip address 10.3.4.1 255.255.255.0
+!
+!
+!--- Network OBJECTS
+object network alpha_lobby_net
+ subnet 10.0.1.0 255.255.255.0
+object network alpha_lobby_host1
+ host 10.0.1.101
+object network alpha_lobby_host2
+ host 10.0.1.102
+object network alpha_dest1_host1
+ host 10.1.1.101
+object network alpha_dest1_host2
+ host 10.1.1.102
+object network alpha_dest2_host1
+ host 10.1.2.101
+object network alpha_dest2_host2
+ host 10.1.2.102
+object network alpha_dest3_host1
+ host 10.1.3.101
+object network alpha_dest3_host2
+ host 10.1.3.102
+object network alpha_dest4_host1
+ host 10.1.4.101
+object network alpha_dest4_host2
+ host 10.1.4.102
+!
+object network bravo_lobby_net
+ subnet 10.0.2.0 255.255.255.0
+object network bravo_lobby_host1
+ host 10.0.2.101
+object network bravo_lobby_host2
+ host 10.0.2.102
+object network bravo_dest1_host1
+ host 10.2.1.101
+object network bravo_dest1_host2
+ host 10.2.1.102
+object network bravo_dest2_host1
+ host 10.2.2.101
+object network bravo_dest2_host2
+ host 10.2.2.102
+object network bravo_dest3_host1
+ host 10.2.3.101
+object network bravo_dest3_host2
+ host 10.2.3.102
+object network bravo_dest4_host1
+ host 10.2.4.101
+object network bravo_dest4_host2
+ host 10.2.4.102
+!
+object network charlie_lobby_net
+ subnet 10.0.3.0 255.255.255.0
+object network charlie_lobby_host1
+ host 10.0.3.101
+object network charlie_lobby_host2
+ host 10.0.3.102
+object network charlie_dest1_host1
+ host 10.3.1.101
+object network charlie_dest1_host2
+ host 10.3.1.102
+object network charlie_dest2_host1
+ host 10.3.2.101
+object network charlie_dest2_host2
+ host 10.3.2.102
+object network charlie_dest3_host1
+ host 10.3.3.101
+object network charlie_dest3_host2
+ host 10.3.3.102
+object network charlie_dest4_host1
+ host 10.3.4.101
+object network charlie_dest4_host2
+ host 10.3.4.102
+!
+!--- ADDRESS GROUPS (OBJECT-GROUP for destination hosts)
+object-group network alpha_dest1_grp
+ network-object object alpha_dest1_host1
+ network-object object alpha_dest1_host2
+object-group network alpha_dest2_grp
+ network-object object alpha_dest2_host1
+ network-object object alpha_dest2_host2
+object-group network alpha_destgrp_all
+ network-object object alpha_dest1_host1
+ network-object object alpha_dest1_host2
+ network-object object alpha_dest2_host1
+ network-object object alpha_dest2_host2
+ network-object object alpha_dest3_host1
+ network-object object alpha_dest3_host2
+ network-object object alpha_dest4_host1
+ network-object object alpha_dest4_host2
+!
+object-group network bravo_dest1_grp
+ network-object object bravo_dest1_host1
+ network-object object bravo_dest1_host2
+object-group network bravo_dest2_grp
+ network-object object bravo_dest2_host1
+ network-object object bravo_dest2_host2
+object-group network bravo_destgrp_all
+ network-object object bravo_dest1_host1
+ network-object object bravo_dest1_host2
+ network-object object bravo_dest2_host1
+ network-object object bravo_dest2_host2
+ network-object object bravo_dest3_host1
+ network-object object bravo_dest3_host2
+ network-object object bravo_dest4_host1
+ network-object object bravo_dest4_host2
+!
+object-group network charlie_dest1_grp
+ network-object object charlie_dest1_host1
+ network-object object charlie_dest1_host2
+object-group network charlie_dest2_grp
+ network-object object charlie_dest2_host1
+ network-object object charlie_dest2_host2
+object-group network charlie_destgrp_all
+ network-object object charlie_dest1_host1
+ network-object object charlie_dest1_host2
+ network-object object charlie_dest2_host1
+ network-object object charlie_dest2_host2
+ network-object object charlie_dest3_host1
+ network-object object charlie_dest3_host2
+ network-object object charlie_dest4_host1
+ network-object object charlie_dest4_host2
+!
+!--- SERVICE OBJECTS AND GROUPS
+object-group service Web-Services tcp
+  service-object eq 80
+  service-object eq 443
+object-group service Infra-Services tcp
+  service-object eq 53
+  service-object eq 123
+  service-object eq 161
+object-group service Custom-Multi tcp
+  service-object eq 10001
+object-group service Custom-Multi-UDP udp
+  service-object eq 20001
+!
+!--- ACLs for ALPHA (apply to alpha_lobby inbound, as in FortiGate rules)
+access-list alpha_lobby_access extended permit tcp object alpha_lobby_net object alpha_dest1_host1 eq 80
+access-list alpha_lobby_access extended permit tcp object alpha_lobby_net object-group alpha_dest1_grp object-group Web-Services
+access-list alpha_lobby_access extended permit tcp object alpha_lobby_net object-group alpha_dest2_grp object-group Infra-Services
+access-list alpha_lobby_access extended permit tcp object alpha_lobby_net object alpha_dest3_host1 eq 10001
+access-list alpha_lobby_access extended permit udp object alpha_lobby_net object alpha_dest3_host1 eq 20001
+access-list alpha_lobby_access extended permit ip object alpha_lobby_net object-group alpha_destgrp_all
+access-group alpha_lobby_access in interface alpha_lobby
+!
+!--- ACLs for BRAVO (apply to bravo_lobby inbound)
+access-list bravo_lobby_access extended permit tcp object bravo_lobby_net object bravo_dest1_host1 eq 80
+access-list bravo_lobby_access extended permit tcp object bravo_lobby_net object-group bravo_dest1_grp object-group Web-Services
+access-list bravo_lobby_access extended permit tcp object bravo_lobby_net object-group bravo_dest2_grp object-group Infra-Services
+access-list bravo_lobby_access extended permit tcp object bravo_lobby_net object bravo_dest3_host1 eq 10001
+access-list bravo_lobby_access extended permit udp object bravo_lobby_net object bravo_dest3_host1 eq 20001
+access-list bravo_lobby_access extended permit ip object bravo_lobby_net object-group bravo_destgrp_all
+access-group bravo_lobby_access in interface bravo_lobby
+!
+!--- ACLs for CHARLIE (apply to charlie_lobby inbound)
+access-list charlie_lobby_access extended permit tcp object charlie_lobby_net object charlie_dest1_host1 eq 80
+access-list charlie_lobby_access extended permit tcp object charlie_lobby_net object-group charlie_dest1_grp object-group Web-Services
+access-list charlie_lobby_access extended permit tcp object charlie_lobby_net object-group charlie_dest2_grp object-group Infra-Services
+access-list charlie_lobby_access extended permit tcp object charlie_lobby_net object charlie_dest3_host1 eq 10001
+access-list charlie_lobby_access extended permit udp object charlie_lobby_net object charlie_dest3_host1 eq 20001
+access-list charlie_lobby_access extended permit ip object charlie_lobby_net object-group charlie_destgrp_all
+access-group charlie_lobby_access in interface charlie_lobby
+!

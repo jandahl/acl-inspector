@@ -1,0 +1,29 @@
+<section id="tab-rules" class="tab-panel active">
+  <fieldset class="section section-mode-rules">
+    <legend>Rule Mode</legend>
+    <div class="radio-group">
+      <label><input type="radio" name="rule_mode" value="inspect" checked> Inspect</label>
+      <label><input type="radio" name="rule_mode" value="compare"> Compare</label>
+    </div>
+  </fieldset>
+  <fieldset class="section section-targets">
+    <legend>Targets</legend>
+    <div id="inspect_fields">
+      <label>Object / host:</label>
+      <input type="text" name="inspect" id="inspect" list="targets" placeholder="Search object or host" autocomplete="off">
+    </div>
+    <div id="compare_fields" style="display:none">
+      <label>Old object:</label>
+      <input type="text" name="old" id="old" list="targets" placeholder="Original object" autocomplete="off">
+      <label>New object:</label>
+      <input type="text" name="new" id="new" list="targets" placeholder="Replacement object" autocomplete="off">
+    </div>
+  </fieldset>
+  <div class="actions actions-run" data-tab="rules">
+    <button type="submit">Run</button>
+  </div>
+  <fieldset class="section section-results">
+    <legend>Results</legend>
+    <div class="results" data-tab="rules"></div>
+  </fieldset>
+</section>

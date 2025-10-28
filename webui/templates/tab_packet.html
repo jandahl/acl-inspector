@@ -1,0 +1,16 @@
+<section id="tab-packet" class="tab-panel" data-beta-module="packet-check" data-beta-optional="0">
+  <fieldset class="section section-packet">
+    <legend>Packet check <span class="badge beta" data-beta-badge="packet-check">Beta</span></legend>
+    <label>Source:</label>
+    <input type="text" name="pkt_src" id="pkt_src" list="targets" placeholder="Source object / host" autocomplete="off">
+    <label>Destination:</label>
+    <input type="text" name="pkt_dst" id="pkt_dst" list="targets" placeholder="Destination object / host" autocomplete="off">
+  </fieldset>
+  <div class="actions actions-run" data-tab="packet">
+    <button type="submit">Run</button>
+  </div>
+  <fieldset class="section section-results">
+    <legend>Results</legend>
+    <div class="results" data-tab="packet"></div>
+  </fieldset>
+</section>

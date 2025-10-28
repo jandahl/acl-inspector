@@ -1,0 +1,204 @@
+"""API handlers for the modular web UI."""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
+
+from parsers.cisco import asa as asa_parser
+from ..state import AppState
+
+
+class APIError(Exception):
+    """Raised when API handling fails."""
+
+
+def _resolve_config(state: AppState, vendor: str, filename: str) -> Optional[Path]:
+    vendor = (vendor or "").lower()
+    root = state.settings.paths.configs.get(vendor)
+    if not root or not filename:
+        return None
+    path = Path(root) / filename
+    if not path.is_file():
+        return None
+    return path
+
+
+def _extract_meta(vendor: str, text: str) -> Dict[str, str]:
+    vendor = (vendor or "").lower()
+    if vendor == "asa":
+        import re
+
+        for pattern in [
+            r"ASA\s+Version\s+([^\s]+)",
+            r"Adaptive Security Appliance Software\s+Version\s+([^\s]+)",
+        ]:
+            match = re.search(pattern, text, flags=re.IGNORECASE)
+            if match:
+                return {"vendor": "asa", "os": "ASA", "version": match.group(1)}
+        return {"vendor": "asa", "os": "ASA", "version": "unknown"}
+    if vendor == "fortigate":
+        return {"vendor": "fortigate", "os": "FortiOS", "version": "unknown"}
+    return {"vendor": vendor, "os": vendor.upper(), "version": "unknown"}
+
+
+def objects(
+    state: AppState,
+    *,
+    vendor: str,
+    os_tag: str,
+    version: str,
+    filename: str,
+    query: str,
+    mode: str,
+    limit: int,
+) -> Tuple[int, Dict[str, Any]]:
+    path = _resolve_config(state, vendor, filename)
+    if not path:
+        return 400, {"items": [], "error": "invalid_config"}
+
+    entry = state.index_manager.get_index(vendor, os_tag, version, str(path))
+    items = state.index_manager.suggest(entry.index, query, mode, limit)
+    return 200, {"items": items}
+
+
+def meta(state: AppState, *, vendor: str, filename: str) -> Tuple[int, Dict[str, Any]]:
+    path = _resolve_config(state, vendor, filename)
+    if not path:
+        return 400, {"error": "invalid_config"}
+    try:
+        text = path.read_text(encoding="utf-8")
+    except Exception as exc:  # pragma: no cover - filesystem errors
+        return 500, {"error": f"read_failed: {exc}"}
+    return 200, _extract_meta(vendor, text)
+
+
+def config_text(state: AppState, *, vendor: str, filename: str) -> Tuple[int, Dict[str, Any]]:
+    path = _resolve_config(state, vendor, filename)
+    if not path:
+        return 400, {"error": "invalid_config"}
+    try:
+        text = path.read_text(encoding="utf-8")
+    except Exception as exc:  # pragma: no cover - filesystem errors
+        return 500, {"error": f"read_failed: {exc}"}
+    return 200, {"vendor": vendor, "config": filename, "text": text}
+
+
+def aliases(
+    state: AppState,
+    *,
+    vendor: str,
+    filename: str,
+    target: str,
+) -> Tuple[int, Dict[str, Any]]:
+    path = _resolve_config(state, vendor, filename)
+    if not path or not target:
+        return 200, {"aliases": {}}
+    if vendor.lower() != "asa":
+        return 200, {"aliases": {}}
+    try:
+        text = path.read_text(encoding="utf-8")
+    except Exception as exc:  # pragma: no cover - filesystem errors
+        return 500, {"error": f"read_failed: {exc}"}
+    cfg = asa_parser.ASAConfig(text)
+    nets = cfg.resolve_network(target)
+    aliases_map = cfg.find_alias_objects(target, nets)
+    serialized = {str(net): sorted(list(names)) for net, names in aliases_map.items()}
+    return 200, {"aliases": serialized}
+
+
+def index_status(state: AppState) -> Tuple[int, Dict[str, Any]]:
+    payload = state.index_manager.status()
+    payload["history"] = state.history.snapshot()
+    return 200, payload
+
+
+def history(state: AppState) -> Tuple[int, Dict[str, Any]]:
+    return 200, state.history.snapshot()
+
+
+def config_listing(state: AppState, *, vendor: str) -> Dict[str, str]:
+    vendor = (vendor or "").lower()
+    root = state.settings.paths.configs.get(vendor)
+    if not root:
+        return {}
+    try:
+        return {
+            name: os.path.join(root, name)
+            for name in sorted(
+                entry
+                for entry in os.listdir(root)
+                if not entry.startswith(".") and os.path.isfile(os.path.join(root, entry))
+            )
+        }
+    except Exception:
+        return {}
+
+
+def flush_caches(state: AppState, include_disk: bool = False) -> Tuple[int, Dict[str, Any]]:
+    summary = state.flush_caches(include_disk=include_disk)
+    return 200, {"status": "ok", **summary}
+
+
+def _parse_ports(values: Sequence[Any]) -> Set[int]:
+    ports: Set[int] = set()
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, int):
+            ports.add(value)
+            continue
+        text = str(value).strip()
+        if not text:
+            continue
+        for part in text.split(","):
+            item = part.strip()
+            if not item:
+                continue
+            try:
+                ports.add(int(item))
+            except Exception:
+                continue
+    return ports
+
+
+def packet_probe(
+    state: AppState,
+    *,
+    vendor: str,
+    filename: str,
+    src: str,
+    dst: str,
+    proto: Optional[str],
+    dports: Sequence[Any],
+    include_any: bool,
+) -> Tuple[int, Dict[str, Any]]:
+    vendor_lower = (vendor or "").lower()
+    path = _resolve_config(state, vendor_lower, filename)
+    if not path:
+        return 400, {"error": "invalid_config"}
+    if vendor_lower != "asa":
+        return 400, {"error": "vendor_not_supported"}
+    src = (src or "").strip()
+    dst = (dst or "").strip()
+    if not src or not dst:
+        return 400, {"error": "missing_endpoints"}
+    try:
+        text = path.read_text(encoding="utf-8")
+    except Exception as exc:  # pragma: no cover - filesystem errors
+        return 500, {"error": f"read_failed: {exc}"}
+    ports = _parse_ports(dports)
+    try:
+        result = asa_parser.path_check(
+            text,
+            src,
+            dst,
+            proto=proto if proto else None,
+            dports=ports,
+            include_any=include_any,
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        return 500, {"error": str(exc)}
+    state.history.record("packet-probe", f"{src}->{dst}")
+    return 200, {"vendor": vendor_lower, "config": filename, "result": result}

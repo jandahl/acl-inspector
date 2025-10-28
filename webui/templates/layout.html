@@ -1,0 +1,94 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>ACL Inspector</title>
+    <link rel="stylesheet" href="/static/app.css">
+    <link rel="stylesheet" href="/static/themes.css">
+    <script>
+      window.ACL_THEMES = $themes_json;
+      window.ACL_CONFIG_OPTIONS = $config_options;
+      window.ACL_HISTORY_ENABLED = $history_enabled;
+      window.ACL_SEARCH_LIMIT = $search_limit;
+      window.ACL_VERSION = "$version";
+      window.ACL_BETA_MODULES = $beta_modules;
+    </script>
+    <script defer src="/static/app.js"></script>
+  </head>
+  <body class="theme-dark">
+    <div class="app">
+      <div class="toolbar">
+        <h2>ACL Inspector</h2>
+        <div class="toolbar-controls">
+          <label class="theme-switch"><input type="checkbox" id="themeToggle"> Light mode</label>
+          <label class="hl-switch"><input type="checkbox" id="hlToggle"> Highlight output</label>
+          <button type="button" id="histToggle" class="history-toggle">History</button>
+        </div>
+      </div>
+      <div class="tab-shell">
+        <div class="mode-tabs">
+          <button type="button" class="tab active" data-tab="rules">Inspect / Compare</button>
+          <button type="button" class="tab" data-tab="find">Find host</button>
+          <button type="button" class="tab" data-tab="packet" data-beta-module="packet-check" data-beta-optional="0">Packet check<span class="badge beta" data-beta-badge="packet-check">Beta</span></button>
+          <button type="button" class="tab" data-tab="packet-probe" data-beta-module="packet-probe" data-beta-optional="1">Packet probe<span class="badge beta" data-beta-badge="packet-probe">Beta</span></button>
+          <button type="button" class="tab" data-tab="config">Config Viewer</button>
+          <button type="button" class="tab" data-tab="prefs">Preferences</button>
+          <button type="button" class="tab" data-tab="about">About</button>
+        </div>
+        <form class="form" method="POST" action="/run">
+          <fieldset class="section section-config">
+            <legend>Config</legend>
+            <label>Vendor:</label>
+            <select name="vendor" id="vendor">
+              <option value="asa" selected>ASA</option>
+              <option value="fortigate">FortiGate</option>
+            </select>
+            <span id="meta" class="meta"></span><br>
+            <div id="asa_cfg">
+              <label>ASA Config:</label>
+              <select name="config" id="config">
+                $asa_options
+              </select>
+            </div>
+            <div id="ftg_cfg" style="display:none">
+              <label>FortiGate Config:</label>
+              <select name="config" id="config_ftg">
+                $fortigate_options
+              </select>
+            </div>
+          </fieldset>
+          <input type="hidden" name="mode" id="mode" value="inspect">
+          <input type="hidden" name="history_replay" id="history_replay" value="0">
+          <div class="search-options global-search">
+            <label><input type="checkbox" id="fuzzy" checked> Fuzzy search</label>
+          </div>
+          <fieldset class="section section-service" id="service_filters">
+            <legend>Service Filter</legend>
+            <label>Protocol:</label>
+            <select name="proto">
+              <option value="">Any</option>
+              <option value="tcp">TCP</option>
+              <option value="udp">UDP</option>
+              <option value="icmp">ICMP</option>
+              <option value="ip">IP</option>
+            </select>
+            <label>Destination ports (comma separated):</label>
+            <input type="text" name="dport" placeholder="443,1433">
+            <label id="include_any_label"><input type="checkbox" name="include_any" id="include_any"> Include rules with 'any' <span class="tip" title="By default, rules with any src/dst are skipped to reduce noise. Check to include them.">?</span></label>
+          </fieldset>
+          <div class="tab-panels">
+            $tab_rules
+            $tab_find
+            $tab_packet
+            $tab_packet_probe
+            $tab_config
+            $tab_prefs
+            $tab_about
+          </div>
+        </form>
+      </div>
+      <aside id="history" class="history" style="display:none"></aside>
+    </div>
+    <datalist id="targets"></datalist>
+  </body>
+</html>

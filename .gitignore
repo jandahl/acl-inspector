@@ -1,0 +1,7 @@
+idz-inf-ctx
+__pycache__
+.pyc_cache
+configs/cisco/idz-inf-ctx
+.pycache
+themes/
+*.DS_Store

@@ -1,0 +1,44 @@
+<section id="tab-prefs" class="tab-panel">
+  <fieldset class="section section-prefs">
+    <legend>Preferences</legend>
+    <div class="theme-control">
+      <label for="theme_dark">Dark theme:</label>
+      <select id="theme_dark"></select>
+      <span class="theme-preview" id="preview_dark"></span>
+    </div>
+    <div class="theme-control">
+      <label for="theme_light">Light theme:</label>
+      <select id="theme_light"></select>
+      <span class="theme-preview" id="preview_light"></span>
+    </div>
+    <p class="pref-note">Theme choices are remembered locally so your dark/light toggle keeps the look you pick.</p>
+    <div class="pref-toggle">
+      <label><input type="checkbox" id="pref_line_numbers"> Show line numbers in results</label>
+    </div>
+    <div class="pref-toggle">
+      <label><input type="checkbox" id="pref_wrap_results"> Soft-wrap long lines</label>
+    </div>
+    <div class="pref-toggle">
+      <label><input type="checkbox" id="pref_config_context_default"> Include context around config matches by default</label>
+    </div>
+    <div class="pref-toggle">
+      <label><input type="checkbox" id="pref_config_regex"> Use regex mode by default in config filter</label>
+    </div>
+    <div class="pref-inline">
+      <label>Default config filter min characters:<input type="number" id="pref_config_min_chars" min="1" max="20"></label>
+      <label>Default context lines:<input type="number" id="pref_config_context_lines" min="0" max="20"></label>
+    </div>
+    <div class="pref-toggle">
+      <label><input type="checkbox" id="pref_show_beta"> Show beta modules</label>
+    </div>
+    <p class="pref-note">Config viewer controls use these defaults and persist locally on this device.</p>
+  </fieldset>
+  <fieldset class="section section-debug">
+    <legend>Debug</legend>
+    <div class="debug-actions">
+      <button type="button" id="debug_flush_server">Flush server caches</button>
+      <button type="button" id="debug_clear_client">Reset browser cache</button>
+    </div>
+    <p class="pref-note" id="debug_status"></p>
+  </fieldset>
+</section>
