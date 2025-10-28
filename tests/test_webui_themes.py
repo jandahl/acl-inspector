@@ -15,6 +15,13 @@ class ThemeLoaderTest(unittest.TestCase):
         for default in DEFAULT_THEMES:
             self.assertIn(default["name"], names)
 
+    def test_empty_directory_still_returns_defaults(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            themes = load_themes(tmpdir)
+            names = {t["name"] for t in themes}
+            for default in DEFAULT_THEMES:
+                self.assertIn(default["name"], names)
+
     def test_load_iterm_theme_round_trip(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             data = {
