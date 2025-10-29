@@ -1,17 +1,6 @@
 <section id="tab-prefs" class="tab-panel">
   <fieldset class="section section-prefs">
     <legend>Preferences</legend>
-    <div class="theme-control">
-      <label for="theme_dark">Dark theme:</label>
-      <select id="theme_dark"></select>
-      <span class="theme-preview" id="preview_dark"></span>
-    </div>
-    <div class="theme-control">
-      <label for="theme_light">Light theme:</label>
-      <select id="theme_light"></select>
-      <span class="theme-preview" id="preview_light"></span>
-    </div>
-    <p class="pref-note">Theme choices are remembered locally so your dark/light toggle keeps the look you pick.</p>
     <div class="pref-toggle">
       <label><input type="checkbox" id="pref_line_numbers"> Show line numbers in results</label>
     </div>
@@ -28,10 +17,69 @@
       <label>Default config filter min characters:<input type="number" id="pref_config_min_chars" min="1" max="20"></label>
       <label>Default context lines:<input type="number" id="pref_config_context_lines" min="0" max="20"></label>
     </div>
-    <div class="pref-toggle">
+    <p class="pref-note">Config viewer controls use these defaults and persist locally on this device.</p>
+  </fieldset>
+  <fieldset class="section section-layout">
+    <legend>Layout &amp; Presentation</legend>
+    <div class="theme-grid">
+      <div class="theme-form">
+        <div class="theme-control">
+          <label for="theme_dark">Dark theme:</label>
+          <select id="theme_dark"></select>
+        </div>
+        <div class="theme-control">
+          <label for="theme_light">Light theme:</label>
+          <select id="theme_light"></select>
+        </div>
+        <p class="pref-note">Theme choices are remembered per-device and sync with the header toggle.</p>
+        <div class="pref-inline">
+          <label for="pref_font_body">Normal font:</label>
+          <select id="pref_font_body">
+            <option value="auto">System default</option>
+            <option value="inter">Inter</option>
+            <option value="atkinson">Atkinson Hyperlegible</option>
+            <option value="roboto">Roboto</option>
+            <option value="source">Source Sans 3</option>
+          </select>
+        </div>
+        <div class="pref-inline">
+          <label for="pref_font_mono">Monospace font:</label>
+          <select id="pref_font_mono">
+            <option value="auto">System default</option>
+            <option value="jetbrains">JetBrains Mono</option>
+            <option value="fira">Fira Code</option>
+            <option value="ibmplex">IBM Plex Mono</option>
+            <option value="inconsolata">Inconsolata</option>
+          </select>
+        </div>
+        <div class="pref-inline pref-slider">
+          <label for="pref_font_scale">Font size</label>
+          <input type="range" id="pref_font_scale" min="80" max="130" step="5" value="100">
+          <span class="pref-metric" id="pref_font_scale_value">100%</span>
+        </div>
+        <div class="pref-inline pref-slider">
+          <label for="pref_layout_width">App width</label>
+          <input type="range" id="pref_layout_width" min="70" max="150" step="5" value="100">
+          <span class="pref-metric" id="pref_layout_width_value">100%</span>
+        </div>
+      </div>
+      <div class="theme-preview-wide" aria-hidden="true">
+        <div class="theme-preview-split theme-preview-light" id="preview_light_panel">
+          <h4>Light • <span class="preview-tag">Default</span></h4>
+          <p class="preview-body">Readable interface text adapts to your chosen family.</p>
+          <div class="preview-mono"><code>permit tcp object OBJ_WEB object OBJ_APP eq 443</code></div>
+        </div>
+        <div class="theme-preview-split theme-preview-dark" id="preview_dark_panel">
+          <h4>Dark • <span class="preview-tag">Default</span></h4>
+          <p class="preview-body">Contrast stays sharp after scaling.</p>
+          <div class="preview-mono"><code>deny ip any host 192.0.2.10</code></div>
+        </div>
+      </div>
+    </div>
+    <div class="pref-inline">
       <label><input type="checkbox" id="pref_show_beta"> Show beta modules</label>
     </div>
-    <p class="pref-note">Config viewer controls use these defaults and persist locally on this device.</p>
+    <p class="pref-note">Sizing sliders adjust the automatically detected baseline while keeping access to beta tabs optional.</p>
   </fieldset>
   <fieldset class="section section-debug">
     <legend>Debug</legend>

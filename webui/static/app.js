@@ -17,6 +17,10 @@
     configMinChars: "pref_config_min_chars",
     configRegex: "pref_config_regex",
     showBeta: "pref_show_beta",
+    fontBody: "pref_font_body",
+    fontMono: "pref_font_mono",
+    fontScale: "pref_font_scale",
+    layoutWidth: "pref_layout_width",
   };
 
   const PREF_DEFAULTS = {
@@ -27,7 +31,59 @@
     configMinChars: 4,
     configRegex: false,
     showBeta: false,
+    fontBody: "auto",
+    fontMono: "auto",
+    fontScale: 100,
+    layoutWidth: 100,
   };
+
+  const BODY_FONT_OPTIONS = {
+    auto: "system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,'Helvetica Neue',sans-serif",
+    inter: "'Inter','Helvetica Neue',Arial,sans-serif",
+    atkinson: "'Atkinson Hyperlegible','Helvetica Neue',Arial,sans-serif",
+    roboto: "'Roboto','Helvetica Neue',Arial,sans-serif",
+    source: "'Source Sans 3','Helvetica Neue',Arial,sans-serif",
+  };
+
+  const MONO_FONT_OPTIONS = {
+    auto: "'SFMono-Regular',Menlo,Consolas,'Liberation Mono',monospace",
+    jetbrains: "'JetBrains Mono','Fira Code','SFMono-Regular',Consolas,monospace",
+    fira: "'Fira Code','SFMono-Regular',Consolas,monospace",
+    ibmplex: "'IBM Plex Mono','SFMono-Regular',Consolas,monospace",
+    inconsolata: "'Inconsolata','SFMono-Regular',Consolas,monospace",
+  };
+
+  function computeAutoLayout() {
+    const viewport = Math.max(window.innerWidth || 0, (window.screen && window.screen.width) || 0, 0);
+    const dpr = window.devicePixelRatio || 1;
+    let width = 900;
+    if (viewport >= 2400) {
+      width = 1280;
+    } else if (viewport >= 2000) {
+      width = 1160;
+    } else if (viewport >= 1680) {
+      width = 1040;
+    } else if (viewport <= 1120) {
+      width = 780;
+    }
+    let scale = 1.0;
+    if (viewport >= 2000) {
+      scale += 0.08;
+    } else if (viewport >= 1600) {
+      scale += 0.05;
+    } else if (viewport <= 1120) {
+      scale -= 0.05;
+    }
+    if (dpr >= 1.5) {
+      scale += 0.05;
+    } else if (dpr <= 1) {
+      scale -= 0.02;
+    }
+    scale = clamp(scale, 0.85, 1.25);
+    return { width, scale };
+  }
+
+  let autoLayout = computeAutoLayout();
 
   let activeTab = "rules";
   let stateGuard = false;
@@ -121,6 +177,18 @@
     return clamp(parsed, min, max);
   }
 
+  function readStringPref(key, defaultValue, allowed) {
+    const stored = storageGet(prefStorageKey(key), null);
+    if (stored === null || stored === "") {
+      return defaultValue;
+    }
+    const value = String(stored);
+    if (Array.isArray(allowed) && allowed.length > 0) {
+      return allowed.includes(value) ? value : defaultValue;
+    }
+    return value;
+  }
+
   function loadPrefs() {
     prefs = { ...PREF_DEFAULTS };
     prefs.lineNumbers = readBoolPref(PREF_KEYS.lineNumbers, PREF_DEFAULTS.lineNumbers);
@@ -140,6 +208,18 @@
     );
     prefs.configRegex = readBoolPref(PREF_KEYS.configRegex, PREF_DEFAULTS.configRegex);
     prefs.showBeta = readBoolPref(PREF_KEYS.showBeta, PREF_DEFAULTS.showBeta);
+    prefs.fontBody = readStringPref(
+      PREF_KEYS.fontBody,
+      PREF_DEFAULTS.fontBody,
+      Object.keys(BODY_FONT_OPTIONS)
+    );
+    prefs.fontMono = readStringPref(
+      PREF_KEYS.fontMono,
+      PREF_DEFAULTS.fontMono,
+      Object.keys(MONO_FONT_OPTIONS)
+    );
+    prefs.fontScale = readNumberPref(PREF_KEYS.fontScale, PREF_DEFAULTS.fontScale, 70, 150);
+    prefs.layoutWidth = readNumberPref(PREF_KEYS.layoutWidth, PREF_DEFAULTS.layoutWidth, 60, 160);
   }
 
   function savePreference(key, value) {
@@ -185,6 +265,22 @@
       if (beta) {
         beta.checked = !!prefs.showBeta;
       }
+      const fontBody = document.getElementById("pref_font_body");
+      if (fontBody) {
+        fontBody.value = prefs.fontBody;
+      }
+      const fontMono = document.getElementById("pref_font_mono");
+      if (fontMono) {
+        fontMono.value = prefs.fontMono;
+      }
+      const fontScale = document.getElementById("pref_font_scale");
+      if (fontScale) {
+        fontScale.value = prefs.fontScale;
+      }
+      const layoutWidth = document.getElementById("pref_layout_width");
+      if (layoutWidth) {
+        layoutWidth.value = prefs.layoutWidth;
+      }
     } finally {
       prefGuard = false;
     }
@@ -214,6 +310,51 @@
     }
   }
 
+  function resolveFont(option, library, fallback) {
+    if (!option) {
+      return fallback;
+    }
+    const key = option in library ? option : option.toLowerCase();
+    return library[key] || fallback;
+  }
+
+  function updateLayoutMetrics() {
+    const scaleLabel = document.getElementById("pref_font_scale_value");
+    if (scaleLabel) {
+      scaleLabel.textContent = `${clamp(prefs.fontScale, 70, 150)}%`;
+    }
+    const widthLabel = document.getElementById("pref_layout_width_value");
+    if (widthLabel) {
+      widthLabel.textContent = `${clamp(prefs.layoutWidth, 60, 160)}%`;
+    }
+  }
+
+  function applyLayoutPrefs() {
+    const root = document.documentElement;
+    const fontScale = clamp(prefs.fontScale || 100, 70, 150) / 100;
+    const widthScale = clamp(prefs.layoutWidth || 100, 60, 160) / 100;
+    const computedScale = +(autoLayout.scale * fontScale).toFixed(3);
+    const computedWidth = Math.round(autoLayout.width * widthScale);
+    root.style.setProperty("--font-scale", computedScale);
+    root.style.setProperty("--content-width", `${computedWidth}px`);
+    const bodyFont = resolveFont(prefs.fontBody, BODY_FONT_OPTIONS, BODY_FONT_OPTIONS.auto);
+    const monoFont = resolveFont(prefs.fontMono, MONO_FONT_OPTIONS, MONO_FONT_OPTIONS.auto);
+    root.style.setProperty("--font-body", bodyFont);
+    root.style.setProperty("--font-mono", monoFont);
+    updateLayoutMetrics();
+  }
+
+  function refreshAutoLayout(force = false) {
+    const next = computeAutoLayout();
+    const widthDelta = Math.abs(next.width - autoLayout.width);
+    const scaleDelta = Math.abs(next.scale - autoLayout.scale);
+    if (!force && widthDelta < 8 && scaleDelta < 0.01) {
+      return;
+    }
+    autoLayout = next;
+    applyLayoutPrefs();
+  }
+
   function applyPrefs() {
     document.body.classList.toggle("wrap-results", !!prefs.wrapResults);
     document.querySelectorAll("pre:not([data-lang])").forEach((pre) => {
@@ -225,6 +366,7 @@
     refreshHighlights(enableHighlight);
     updateConfigViewer(document.getElementById("config_filter")?.value || "");
     refreshBetaVisibility();
+    applyLayoutPrefs();
   }
 
   function setPreference(key, value, source) {
@@ -232,18 +374,32 @@
       return;
     }
     let next = value;
-    if (typeof prefs[key] === "boolean") {
+    const current = prefs[key];
+    if (typeof current === "boolean") {
       next = !!value;
-    } else {
+    } else if (typeof current === "number") {
       const asNumber = parseInt(value, 10);
       if (Number.isNaN(asNumber)) {
-        next = prefs[key];
+        next = current;
       } else if (key === "configContextLines") {
         next = clamp(asNumber, 0, 20);
       } else if (key === "configMinChars") {
         next = clamp(asNumber, 1, 20);
+      } else if (key === "fontScale") {
+        next = clamp(asNumber, 70, 150);
+      } else if (key === "layoutWidth") {
+        next = clamp(asNumber, 60, 160);
       } else {
         next = asNumber;
+      }
+    } else if (typeof current === "string") {
+      const cleaned = String(value || "").trim().toLowerCase();
+      if (key === "fontBody") {
+        next = cleaned && BODY_FONT_OPTIONS[cleaned] ? cleaned : "auto";
+      } else if (key === "fontMono") {
+        next = cleaned && MONO_FONT_OPTIONS[cleaned] ? cleaned : "auto";
+      } else {
+        next = cleaned || current;
       }
     }
     if (prefs[key] === next) {
@@ -309,18 +465,27 @@
   }
 
   function updateThemePreview(kind) {
-    const target = document.getElementById(kind === "light" ? "preview_light" : "preview_dark");
-    if (!target) {
+    const panel = document.getElementById(kind === "light" ? "preview_light_panel" : "preview_dark_panel");
+    if (!panel) {
       return;
     }
     const theme = themeForKind(kind);
-    if (!theme) {
+    if (!theme || !theme.vars) {
       return;
     }
-    target.style.background = theme.vars.bg;
-    target.style.color = theme.vars.text;
-    target.style.borderColor = theme.vars.border;
-    target.textContent = theme.name;
+    panel.style.setProperty("--preview-bg", theme.vars.bg || "");
+    panel.style.setProperty("--preview-text", theme.vars.text || "");
+    const accent = theme.vars.accent || theme.vars.link || theme.vars.border || "rgba(122,162,247,0.4)";
+    const mono = panel.querySelector(".preview-mono");
+    if (mono) {
+      mono.style.borderColor = accent;
+      mono.style.background = kind === "light" ? "rgba(15,15,15,0.08)" : "rgba(255,255,255,0.14)";
+      mono.style.color = theme.vars.text || "";
+    }
+    const tag = panel.querySelector(".preview-tag");
+    if (tag) {
+      tag.textContent = theme.name;
+    }
   }
 
   function populateThemeSelect(kind) {
@@ -1709,6 +1874,7 @@
   function init() {
     themePref = loadThemePrefs();
     loadPrefs();
+    refreshAutoLayout(true);
     populateConfigs();
     syncConfigViewerControls();
     const configVendorTab = document.getElementById("config_vendor_tab");
@@ -1887,6 +2053,42 @@
         setPreference("showBeta", event.target.checked, "prefs-ui");
       });
     }
+    const prefFontBody = document.getElementById("pref_font_body");
+    if (prefFontBody) {
+      prefFontBody.addEventListener("change", (event) => {
+        if (prefGuard) {
+          return;
+        }
+        setPreference("fontBody", event.target.value, "prefs-ui");
+      });
+    }
+    const prefFontMono = document.getElementById("pref_font_mono");
+    if (prefFontMono) {
+      prefFontMono.addEventListener("change", (event) => {
+        if (prefGuard) {
+          return;
+        }
+        setPreference("fontMono", event.target.value, "prefs-ui");
+      });
+    }
+    const prefFontScale = document.getElementById("pref_font_scale");
+    if (prefFontScale) {
+      prefFontScale.addEventListener("input", (event) => {
+        if (prefGuard) {
+          return;
+        }
+        setPreference("fontScale", event.target.value, "prefs-ui");
+      });
+    }
+    const prefLayoutWidth = document.getElementById("pref_layout_width");
+    if (prefLayoutWidth) {
+      prefLayoutWidth.addEventListener("input", (event) => {
+        if (prefGuard) {
+          return;
+        }
+        setPreference("layoutWidth", event.target.value, "prefs-ui");
+      });
+    }
     const configContextToggle = document.getElementById("config_filter_context_toggle");
     if (configContextToggle) {
       configContextToggle.addEventListener("change", (event) => {
@@ -1926,6 +2128,9 @@
     }
 
     loadConfigText();
+
+    const resizeHandler = debounce(() => refreshAutoLayout(false), 200);
+    window.addEventListener("resize", resizeHandler);
 
     window.addEventListener("popstate", () => {
       const state = parseQueryState();
