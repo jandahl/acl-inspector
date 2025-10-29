@@ -45,7 +45,7 @@ Tests
 -----
 - Use the standard library `unittest`
 - Place new tests under `tests/` and prefer `python3 -m unittest discover -s tests`
-- Do not modify the legacy `test_ASA-ACL-inspector.py`; it targets an older version and may not pass
+- Do not modify the legacy `legacy/test_ASA-ACL-inspector.py`; it targets an older version and may not pass
 
 Future abstractions and goals
 -----------------------------

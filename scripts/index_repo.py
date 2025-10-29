@@ -13,7 +13,7 @@ import hashlib
 import json
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Iterable, Optional, Tuple
 
 from parsers.cisco import asa as asa_parser
@@ -25,6 +25,11 @@ DEFAULT_SUPPORTED_VENDORS = ('asa', 'fortigate')
 
 def _hash_path(path: str) -> str:
     return hashlib.sha1(os.path.realpath(path).encode('utf-8')).hexdigest()
+
+
+def _utc_now_iso_z() -> str:
+    stamp = datetime.now(timezone.utc).isoformat()
+    return stamp[:-6] + 'Z' if stamp.endswith("+00:00") else stamp
 
 
 def _detect_vendor(text: str, filename: str = '') -> Tuple[str, int, str]:
@@ -141,7 +146,7 @@ def index_repo(root: str, cache_dir: str, *, vendors: Optional[Iterable[str]] = 
                 continue
     manifest_payload = {
         'root': os.path.realpath(root),
-        'generated_at': datetime.utcnow().isoformat() + 'Z',
+        'generated_at': _utc_now_iso_z(),
         'count': count,
         'errors': errors,
         'vendor_counts': vendor_counts,

@@ -121,7 +121,7 @@ access-list OUT extended permit tcp object OBJ_HOST object OBJ_WEB eq 443
         self._select_config(page)
         page.click("button[data-tab='find']")
         page.fill("input#findq", query)
-        page.wait_for_selector("datalist#targets")  # ensure datalist exists
+        page.wait_for_selector("datalist#targets option")  # ensure suggestions populated
         page.click("div.actions-run[data-tab='find'] button[type=submit]")
         page.wait_for_selector("div.results pre")
 
@@ -194,6 +194,28 @@ access-list OUT extended permit tcp object OBJ_HOST object OBJ_WEB eq 443
         )
         self.assertEqual(page.url, start_url)
 
+    def test_result_box_width_within_container(self):
+        page = self._new_page()
+        self._run_find(page)
+        page.wait_for_selector("div.results[data-tab='find'] .result-box")
+        dims = page.evaluate(
+            """() => {
+            const box = document.querySelector("div.results[data-tab='find'] .result-box");
+            if (!box) {
+                return null;
+            }
+            const parent = box.parentElement;
+            const boxRect = box.getBoundingClientRect();
+            const parentRect = parent ? parent.getBoundingClientRect() : { width: 0 };
+            return { boxWidth: boxRect.width, parentWidth: parentRect.width };
+        }"""
+        )
+        self.assertIsNotNone(dims)
+        self.assertGreater(dims["boxWidth"], 0)
+        self.assertGreater(dims["parentWidth"], 0)
+        # Allow for sub-pixel rounding differences (hence the small epsilon).
+        self.assertLessEqual(dims["boxWidth"], dims["parentWidth"] + 1.0)
+
     def test_inspect_run_shows_results_without_tab_switch(self):
         page = self._new_page()
         self._goto_root(page)
@@ -256,6 +278,11 @@ access-list OUT extended permit tcp object OBJ_HOST object OBJ_WEB eq 443
         self.assertIn("inspect=OBJ_HOST", share_url)
         new_page = self._new_page()
         new_page.goto(share_url, wait_until="networkidle")
+        new_page.wait_for_selector("select#config")
+        new_page.wait_for_function(
+            "expected => document.querySelector('select#config')?.value === expected",
+            arg=self._config_name,
+        )
         new_page.wait_for_function(
             "() => document.querySelector(\"div.results[data-tab='rules']\") && document.querySelector(\"div.results[data-tab='rules']\").textContent.includes('OBJ_HOST')"
         )
