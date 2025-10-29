@@ -3,9 +3,9 @@
     <legend>Packet probe <span class="badge beta" data-beta-badge="packet-probe">Beta</span></legend>
     <p>Run the experimental flow probe to inspect flattened ACL decisions and NAT context.</p>
     <label>Source:</label>
-    <input type="text" id="probe_src" name="probe_src" list="targets" placeholder="Source object / host" autocomplete="off">
+    <input type="text" id="probe_src" name="probe_src" list="targets" placeholder="Source object / host" autocomplete="off" class="mono-input">
     <label>Destination:</label>
-    <input type="text" id="probe_dst" name="probe_dst" list="targets" placeholder="Destination object / host" autocomplete="off">
+    <input type="text" id="probe_dst" name="probe_dst" list="targets" placeholder="Destination object / host" autocomplete="off" class="mono-input">
     <label>Protocol:</label>
     <select id="probe_proto" name="probe_proto">
       <option value="">Any</option>
@@ -15,7 +15,7 @@
       <option value="ip">IP</option>
     </select>
     <label>Destination ports (comma separated):</label>
-    <input type="text" id="probe_dport" name="probe_dport" placeholder="443,3389">
+    <input type="text" id="probe_dport" name="probe_dport" placeholder="443,3389" class="mono-input">
     <label><input type="checkbox" id="probe_include_any"> Include rules with 'any'</label>
   </fieldset>
   <div class="actions actions-run" data-tab="packet-probe">
