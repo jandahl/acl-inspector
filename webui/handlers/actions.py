@@ -5,11 +5,13 @@ from __future__ import annotations
 import html
 import ipaddress
 import os
+from collections import defaultdict
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Set, Tuple, Union
 
 from parsers.cisco import asa as asa_parser
 
 from ..state import AppState
+from utils.config import clean_config_text
 
 
 def process_run(state: AppState, fields: Mapping[str, List[str]]) -> Tuple[int, Dict[str, Any]]:
@@ -23,6 +25,7 @@ def process_run(state: AppState, fields: Mapping[str, List[str]]) -> Tuple[int, 
     cfg_file = get("config")
     proto = get("proto")
     include_any = bool(fields.get("include_any", []))
+    find_verbose = bool(fields.get("find_verbose", []))
     replay_flag = get("history_replay", "0").lower()
     suppress_history = replay_flag in {"1", "true", "yes", "on"}
     dports_clean: Set[int] = set()
@@ -46,7 +49,7 @@ def process_run(state: AppState, fields: Mapping[str, List[str]]) -> Tuple[int, 
         return 400, {"error": "Invalid or missing config file"}
     try:
         with open(path, "r", encoding="utf-8") as handle:
-            cfg_text = handle.read()
+            cfg_text = clean_config_text(handle.read())
     except Exception as exc:  # pragma: no cover - filesystem failures
         return 500, {"error": f"Failed to read: {exc}"}
 
@@ -110,10 +113,11 @@ def process_run(state: AppState, fields: Mapping[str, List[str]]) -> Tuple[int, 
         elif mode == "find":
             target = get("findq")
             results = _find_host(state, target)
-            html_output = _render_find(target, results)
+            html_output = _render_find(target, results, find_verbose)
             tab = "find"
             history_query = target
             meta["query"] = target
+            meta["verbose"] = bool(find_verbose)
 
         elif mode == "packet":
             src = get("pkt_src")
@@ -134,6 +138,20 @@ def process_run(state: AppState, fields: Mapping[str, List[str]]) -> Tuple[int, 
         state.history.record(tab, history_query)
 
     return 200, {"tab": tab, "html": html_output, "meta": meta}
+
+
+def _escape_text(value: str) -> str:
+    return html.escape(html.unescape(value or ""))
+
+
+def _format_list(values: Iterable[str], limit: Optional[int] = None) -> str:
+    seq = [str(v) for v in values if v]
+    if not seq:
+        return "-"
+    if limit is not None and len(seq) > limit:
+        head = ", ".join(seq[:limit])
+        return f"{head} (+{len(seq) - limit} more)"
+    return ", ".join(seq)
 
 
 def _fmt(rule: dict) -> str:
@@ -188,14 +206,14 @@ def _render_report(target: str, report: dict, cfg_file: str) -> str:
         )
     return f"""
 <div class='results results-rules' data-tab='rules'>
-  <div class='section'><h2>{html.escape(cfg_file)}</h2><h3>Inspection Report for {html.escape(target)}</h3>
-  <p>Resolved to: {', '.join(html.escape(str(net)) for net in report.get('target_nets', []))}</p>
+  <div class='section'><h2>{_escape_text(cfg_file)}</h2><h3>Inspection Report for {_escape_text(target)}</h3>
+  <p>Resolved to: {', '.join(_escape_text(str(net)) for net in report.get('target_nets', []))}</p>
   <p>Found {len(report.get('hits', []))} matching ACL entries.</p></div>
   {alias_html}
   <div class='diff diff-raw'><h3>Matched Rules (Raw)</h3>
-  <pre data-lang='asa'>{html.escape(lines_raw)}</pre></div>
+  <pre data-lang='asa'>{_escape_text(lines_raw)}</pre></div>
   <div class='diff diff-flattened'><h3>Matched Rules (Flattened)</h3>
-  <pre data-lang='asa'>{html.escape(lines_flat)}</pre></div>
+  <pre data-lang='asa'>{_escape_text(lines_flat)}</pre></div>
 </div>
 """
 
@@ -234,42 +252,61 @@ def _render_diff(
 
     return f"""
 <div class='results results-rules' data-tab='rules'>
-  <div class='section'><h2>{html.escape(cfg_file)}</h2><h3>Comparison</h3>
-  <p>Old target: {html.escape(old)}</p>
-  <p>New target: {html.escape(new)}</p>
+  <div class='section'><h2>{_escape_text(cfg_file)}</h2><h3>Comparison</h3>
+  <p>Old target: {_escape_text(old)}</p>
+  <p>New target: {_escape_text(new)}</p>
   <p>Old hits: {len(diff.get('old_hits', []))} &nbsp; New hits: {len(diff.get('new_hits', []))}</p>
   </div>
   {alias_section}
   <div class='diff diff-added'><h3>New-only Rules</h3>
-  <pre data-lang='asa'>{html.escape(added or '  (none)')}</pre></div>
+  <pre data-lang='asa'>{_escape_text(added or '  (none)')}</pre></div>
   <div class='diff diff-removed'><h3>Old-only Rules</h3>
-  <pre data-lang='asa'>{html.escape(removed or '  (none)')}</pre></div>
+  <pre data-lang='asa'>{_escape_text(removed or '  (none)')}</pre></div>
 </div>
 """
 
 
-def _render_find(target: str, results: List[dict]) -> str:
-    if not results:
+def _render_find(target: str, results: List[dict], verbose: bool) -> str:
+    filtered = [res for res in results if verbose or res.get("has_detail")]
+    if not filtered:
         return """
 <div class='results results-find' data-tab='find'>
   <div class='section'><h3>No results</h3></div>
 </div>
 """
-    blocks = []
-    for result in results[:50]:
-        lines = [
-            f"File: {result['file']} ({result['vendor']})",
-            f"Objects: {', '.join(result['objects']) or '-'}",
-            f"Literals: {', '.join(result['literals']) or '-'}",
-            f"Interfaces: {', '.join(result['interfaces']) or '-'}",
-        ]
-        if result.get("text_hit"):
-            lines.append("  (config text contains query)")
+
+    limit = None if verbose else 6
+    blocks: List[str] = []
+    for result in filtered[:50]:
+        file_label = _escape_text(result["file"])
+        vendor_label = _escape_text(result["vendor"].upper())
+        header = f"File: {file_label} ({vendor_label})"
+        if result.get("best"):
+            header += " <span class='badge owner'>Likely owner</span>"
+        lines: List[str] = [header]
+        if result.get("direct"):
+            lines.append(_escape_text("Direct object match"))
+        if result.get("objects"):
+            lines.append(_escape_text("Objects: " + _format_list(result["objects"], limit)))
+        if result.get("groups"):
+            lines.append(_escape_text("Groups: " + _format_list(result["groups"], limit)))
+        if result.get("interfaces"):
+            lines.append(_escape_text("Interfaces: " + _format_list(result["interfaces"], limit)))
+        if verbose:
+            if result.get("literals"):
+                lines.append(_escape_text("Literals: " + _format_list(result["literals"], None)))
+            lines.append(_escape_text(f"Score: {result['score']}"))
+            if result.get("text_hit") and not result.get("has_detail"):
+                lines.append(_escape_text("Config text contains query"))
+        else:
+            if result.get("text_hit") and not result.get("has_detail"):
+                lines.append(_escape_text("Config text contains query"))
         blocks.append("\n".join(lines))
+
     return (
         "<div class='results results-find' data-tab='find'><div class='section'><h3>Find Host Results</h3>"
-        "<pre data-lang='asa'>"
-        + html.escape("\n\n".join(blocks))
+        "<pre>"
+        + "\n\n".join(blocks)
         + "</pre></div></div>"
     )
 
@@ -278,8 +315,8 @@ def _render_packet(cfg_file: str, pkt: dict) -> str:
     if pkt.get("error"):
         return (
             "<div class='results results-packet' data-tab='packet'>"
-            f"<div class='section'><h2>{html.escape(cfg_file)}</h2><h3>Packet Check</h3>"
-            f"<p style='color:red'>Error: {html.escape(pkt.get('error'))}</p></div></div>"
+            f"<div class='section'><h2>{_escape_text(cfg_file)}</h2><h3>Packet Check</h3>"
+            f"<p style='color:red'>Error: {_escape_text(pkt.get('error'))}</p></div></div>"
         )
     status = "ALLOWED" if pkt.get("allowed") else "BLOCKED"
     inp = pkt.get("input", {})
@@ -320,21 +357,21 @@ def _render_packet(cfg_file: str, pkt: dict) -> str:
         cand_text = "\n".join(cand_lines)
         candidate_block = (
             "  <div class='diff diff-aliases'><h3>ACL Candidate Bindings</h3>\n"
-            f"  <pre>{html.escape(cand_text)}</pre></div>\n"
+            f"  <pre>{_escape_text(cand_text)}</pre></div>\n"
         )
     return (
         "<div class='results results-packet' data-tab='packet'>\n"
-        f"  <div class='section'><h2>{html.escape(cfg_file)}</h2><h3>Packet Check</h3>\n"
-        f"  <p>Status: {status} (NAT direction: {html.escape(str(nat.get('direction') or 'n/a'))})</p>\n"
-        f"  <p>Input: src={html.escape(inp.get('src', ''))} dst={html.escape(inp.get('dst', ''))} "
-        f"proto={html.escape(inp.get('proto') or 'any')} dports={html.escape(str(inp.get('dports') or 'any'))}</p>\n"
-        f"  <p>Resolved: src={html.escape(str(resolved.get('src')))} -> {html.escape(str(resolved.get('post_nat_src')))} | "
-        f"dst={html.escape(str(resolved.get('dst')))} -> {html.escape(str(resolved.get('post_nat_dst')))}</p></div>\n"
+        f"  <div class='section'><h2>{_escape_text(cfg_file)}</h2><h3>Packet Check</h3>\n"
+        f"  <p>Status: {status} (NAT direction: {_escape_text(str(nat.get('direction') or 'n/a'))})</p>\n"
+        f"  <p>Input: src={_escape_text(inp.get('src', ''))} dst={_escape_text(inp.get('dst', ''))} "
+        f"proto={_escape_text(inp.get('proto') or 'any')} dports={_escape_text(str(inp.get('dports') or 'any'))}</p>\n"
+        f"  <p>Resolved: src={_escape_text(str(resolved.get('src')))} -> {_escape_text(str(resolved.get('post_nat_src')))} | "
+        f"dst={_escape_text(str(resolved.get('dst')))} -> {_escape_text(str(resolved.get('post_nat_dst')))}</p></div>\n"
         "  <div class='diff diff-added'><h3>NAT Evaluation</h3>\n"
-        f"  <pre>{html.escape(nat_block)}</pre></div>\n"
+        f"  <pre>{_escape_text(nat_block)}</pre></div>\n"
         f"{candidate_block}"
         "  <div class='diff diff-raw'><h3>ACL Matches</h3>\n"
-        f"  <pre data-lang='asa'>{html.escape(content)}</pre></div>\n"
+        f"  <pre data-lang='asa'>{_escape_text(content)}</pre></div>\n"
         "</div>\n"
     )
 
@@ -411,6 +448,7 @@ def _find_host(state: AppState, target: str) -> List[dict]:
     results: List[dict] = []
     for entry in data:
         cfg = entry["cfg"]
+        group_membership = entry.get("group_membership", {})
         text_lower = entry["text"].lower()
         matched_objects: Set[str] = set()
         matched_literals: Set[str] = set()
@@ -484,9 +522,16 @@ def _find_host(state: AppState, target: str) -> List[dict]:
         if text_hit:
             score = max(score, 1)
 
-        if not (matched_objects or matched_literals or text_hit):
+        matched_groups: Set[str] = set()
+        for name in matched_objects:
+            matched_groups.update(group_membership.get(name.lower(), set()))
+        for literal in matched_literals:
+            matched_groups.update(group_membership.get(literal.lower(), set()))
+
+        if not (matched_objects or matched_literals or matched_groups or text_hit):
             continue
 
+        has_detail = bool(matched_objects or matched_groups or interface_hits)
         results.append(
             {
                 "vendor": entry["vendor"],
@@ -494,9 +539,11 @@ def _find_host(state: AppState, target: str) -> List[dict]:
                 "objects": sorted(matched_objects),
                 "literals": sorted(matched_literals),
                 "interfaces": sorted(interface_hits),
+                "groups": sorted(matched_groups),
                 "text_hit": text_hit,
                 "score": score,
                 "direct": direct_object,
+                "has_detail": has_detail,
             }
         )
 
@@ -504,9 +551,46 @@ def _find_host(state: AppState, target: str) -> List[dict]:
         return []
 
     results.sort(key=lambda res: (-res["score"], -len(res["interfaces"]), -len(res["objects"]), res["file"]))
-    if results and results[0]["score"] > 0:
-        results[0]["best"] = True
+    if results:
+        top_score = results[0]["score"]
+        if top_score > 0:
+            for res in results:
+                if res["score"] == top_score:
+                    res["best"] = True
+                else:
+                    break
     return results
+
+
+def _build_group_membership(cfg) -> Dict[str, Set[str]]:
+    membership: Dict[str, Set[str]] = defaultdict(set)
+
+    def add_member(key: Union[str, ipaddress.IPv4Address, ipaddress.IPv4Network], groups: Set[str]) -> None:
+        membership[str(key).lower()].update(groups)
+
+    def visit(group: str, ancestors: Set[str]) -> None:
+        group = str(group)
+        if group.lower() in ancestors:
+            return
+        current = set(ancestors)
+        current.add(group)
+        membership[group.lower()].update(current)
+        members = cfg.network_object_groups.get(group, [])
+        for member in members:
+            if isinstance(member, dict):
+                if "object" in member:
+                    add_member(member["object"], current)
+                elif "group-object" in member:
+                    child = str(member["group-object"])
+                    add_member(child, current)
+                    visit(child, current)
+            elif isinstance(member, (ipaddress.IPv4Address, ipaddress.IPv4Network)):
+                add_member(member, current)
+
+    for group_name in cfg.network_object_groups.keys():
+        visit(group_name, set())
+
+    return membership
 
 
 def _load_asa_configs(state: AppState) -> List[dict]:
@@ -526,12 +610,21 @@ def _load_asa_configs(state: AppState) -> List[dict]:
         path = os.path.join(dirpath, name)
         try:
             with open(path, "r", encoding="utf-8") as handle:
-                text = handle.read()
+                text = clean_config_text(handle.read())
         except Exception:
             continue
         try:
             cfg = asa_parser.ASAConfig(text)
         except Exception:
             continue
-        items.append({"vendor": "asa", "file": name, "path": path, "text": text, "cfg": cfg})
+        items.append(
+            {
+                "vendor": "asa",
+                "file": name,
+                "path": path,
+                "text": text,
+                "cfg": cfg,
+                "group_membership": _build_group_membership(cfg),
+            }
+        )
     return items

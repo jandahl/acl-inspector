@@ -12,6 +12,7 @@
       window.ACL_SEARCH_LIMIT = $search_limit;
       window.ACL_VERSION = "$version";
       window.ACL_BETA_MODULES = $beta_modules;
+      window.ACL_THEME_PREVIEW_SPEED = $theme_preview_speed;
     </script>
     <script defer src="/static/app.js"></script>
   </head>
@@ -29,7 +30,7 @@
         <div class="mode-tabs">
           <button type="button" class="tab active" data-tab="rules">Inspect / Compare</button>
           <button type="button" class="tab" data-tab="find">Find host</button>
-          <button type="button" class="tab" data-tab="packet" data-beta-module="packet-check" data-beta-optional="0">Packet check<span class="badge beta" data-beta-badge="packet-check">Beta</span></button>
+          <button type="button" class="tab" data-tab="packet" data-beta-module="packet-check" data-beta-optional="1">Packet check<span class="badge beta" data-beta-badge="packet-check">Beta</span></button>
           <button type="button" class="tab" data-tab="packet-probe" data-beta-module="packet-probe" data-beta-optional="1">Packet probe<span class="badge beta" data-beta-badge="packet-probe">Beta</span></button>
           <button type="button" class="tab" data-tab="config">Config Viewer</button>
           <button type="button" class="tab" data-tab="prefs">Preferences</button>

@@ -18,6 +18,7 @@ import json
 from xml.etree.ElementTree import Element, SubElement, tostring
 
 from parsers.cisco import asa as cisco_asa
+from utils.config import clean_config_text
 from parsers.fortigate import fortigate as fortigate_parser
 
 
@@ -205,7 +206,7 @@ def main() -> None:
         for fpath in files:
             try:
                 with open(fpath, 'r') as f:
-                    text = f.read()
+                    text = clean_config_text(f.read())
                 if args.vendor == 'asa':
                     cfg = cisco_asa.ASAConfig(text)
                     objects = []
@@ -250,7 +251,7 @@ def main() -> None:
 
     try:
         with open(args.config, 'r') as f:
-            cfg_text = f.read()
+            cfg_text = clean_config_text(f.read())
     except FileNotFoundError:
         print(f"Error: Config file not found at {args.config}", file=sys.stderr)
         sys.exit(1)

@@ -40,6 +40,7 @@ def _render_home(state: AppState) -> str:
         "fortigate_options": _options_for_vendor(state, "fortigate"),
         "cwd": os.getcwd(),
         "version": WEBUI_VERSION,
+        "theme_preview_speed": str(state.settings.ui.theme_preview_speed),
     }
     partial_map = {
         "tab_rules": "tab_rules.html",
