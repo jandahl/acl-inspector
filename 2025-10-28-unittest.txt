@@ -1,0 +1,291 @@
+test_duplicate_host_objects (test_aliases.TestAliases.test_duplicate_host_objects) ... ok
+test_no_aliases_for_unique_host (test_aliases.TestAliases.test_no_aliases_for_unique_host) ... ok
+test_lobby_net_dns_and_ntp (test_examples_cross_vendor.TestExamplesCrossVendor.test_lobby_net_dns_and_ntp) ... ok
+test_lobby_net_http_and_https (test_examples_cross_vendor.TestExamplesCrossVendor.test_lobby_net_http_and_https) ... ok
+test_find_host_by_ip (test_find_host.TestFindHost.test_find_host_by_ip) ... ok
+test_find_host_matches_across_files (test_find_host.TestFindHost.test_find_host_matches_across_files) ... ok
+test_basic_highlight (test_highlight.TestHighlight.test_basic_highlight) ... ok
+test_ignore_any_default (test_ignore_any.TestIgnoreAny.test_ignore_any_default) ... ok
+test_include_any_flag (test_ignore_any.TestIgnoreAny.test_include_any_flag) ... ok
+test_disk_status_with_manifest (test_index_status.TestIndexStatus.test_disk_status_with_manifest) ... ok
+test_in_memory_keys_cap (test_index_status.TestIndexStatus.test_in_memory_keys_cap) ... ok
+test_no_cache_dir (test_index_status.TestIndexStatus.test_no_cache_dir) ... ok
+test_asa_to_ir_device (test_ir_schema.TestIRSchema.test_asa_to_ir_device) ... ok
+test_interfaces_acl_bindings_and_nat (test_nat_parse.TestNatParse.test_interfaces_acl_bindings_and_nat) ... ok
+test_normalized_nat_rules (test_nat_parsing.TestASANATParsing.test_normalized_nat_rules) ... ok
+test_cisco_package_exports (test_parser_packages.ParserPackageExportTest.test_cisco_package_exports) ... ok
+test_fortigate_package_exports (test_parser_packages.ParserPackageExportTest.test_fortigate_package_exports) ... ok
+test_path_inbound_static (test_path_check.TestPathCheck.test_path_inbound_static) ... ok
+test_path_permit_with_nat (test_path_check.TestPathCheck.test_path_permit_with_nat) ... ok
+test_prewarm_builds_index_for_all_configs (test_prewarm.TestPrewarm.test_prewarm_builds_index_for_all_configs) ... ok
+test_index_repo (test_repo_index.TestRepoIndex.test_index_repo) ... ok
+test_fuzzy (test_search_modes.TestSearchModes.test_fuzzy) ... ok
+test_prefix (test_search_modes.TestSearchModes.test_prefix) ... ok
+test_substring (test_search_modes.TestSearchModes.test_substring) ... ok
+test_eq_port_matching (test_services.TestServices.test_eq_port_matching) ... ok
+test_service_group_proto_position (test_services.TestServices.test_service_group_proto_position) ... ok
+test_find_host_results_and_suggestions (test_ui_playwright.TestWebUIWithPlaywright.test_find_host_results_and_suggestions) ... ERROR
+test_history_entry_replays_search (test_ui_playwright.TestWebUIWithPlaywright.test_history_entry_replays_search) ... ERROR
+test_inspect_run_shows_results_without_tab_switch (test_ui_playwright.TestWebUIWithPlaywright.test_inspect_run_shows_results_without_tab_switch) ... ok
+test_result_box_width_within_container (test_ui_playwright.TestWebUIWithPlaywright.test_result_box_width_within_container) ... ERROR
+test_shareable_link_restores_state (test_ui_playwright.TestWebUIWithPlaywright.test_shareable_link_restores_state) ... FAIL
+test_state_persists_in_local_storage (test_ui_playwright.TestWebUIWithPlaywright.test_state_persists_in_local_storage) ... ERROR
+test_tab_switch_and_run_updates_results (test_ui_playwright.TestWebUIWithPlaywright.test_tab_switch_and_run_updates_results) ... ok
+test_theme_and_highlight_toggle (test_ui_playwright.TestWebUIWithPlaywright.test_theme_and_highlight_toggle) ... ERROR
+test_build_index_asa (test_web_helpers.TestWebHelpers.test_build_index_asa) ... ok
+test_extract_meta_asa (test_web_helpers.TestWebHelpers.test_extract_meta_asa) ... ok
+test_storage_helpers_present (test_web_storage.TestWebStorageFallback.test_storage_helpers_present) ... ok
+test_history_replay_suppresses_record (test_webui_actions.ActionHandlersTest.test_history_replay_suppresses_record) ... ok
+test_missing_config (test_webui_actions.ActionHandlersTest.test_missing_config) ... ok
+test_process_inspect (test_webui_actions.ActionHandlersTest.test_process_inspect) ... ok
+test_aliases (test_webui_handlers.APIHandlersTest.test_aliases) ... ok
+test_flush_caches (test_webui_handlers.APIHandlersTest.test_flush_caches) ... ok
+test_index_status (test_webui_handlers.APIHandlersTest.test_index_status) ... ok
+test_meta_and_config (test_webui_handlers.APIHandlersTest.test_meta_and_config) ... ok
+test_objects_endpoint_success (test_webui_handlers.APIHandlersTest.test_objects_endpoint_success) ... ok
+test_objects_invalid_config (test_webui_handlers.APIHandlersTest.test_objects_invalid_config) ... ok
+test_packet_probe (test_webui_handlers.APIHandlersTest.test_packet_probe) ... ok
+test_packet_probe_invalid_vendor (test_webui_handlers.APIHandlersTest.test_packet_probe_invalid_vendor) ... ok
+test_render_home_template (test_webui_handlers.APIHandlersTest.test_render_home_template) ... ok
+test_builds_and_caches_indexes (test_webui_indexer.IndexManagerTest.test_builds_and_caches_indexes) ... ok
+test_objects_route (test_webui_router.RouterTest.test_objects_route) ... ok
+test_unknown_route (test_webui_router.RouterTest.test_unknown_route) ... ok
+test_beta_module_normalisation (test_webui_settings.SettingsLoaderTest.test_beta_module_normalisation) ... ok
+test_cli_overrides_merge_last (test_webui_settings.SettingsLoaderTest.test_cli_overrides_merge_last) ... ok
+test_defaults_when_file_missing (test_webui_settings.SettingsLoaderTest.test_defaults_when_file_missing) ... ok
+test_environment_overrides (test_webui_settings.SettingsLoaderTest.test_environment_overrides) ... ok
+test_json_overrides_merge_with_defaults (test_webui_settings.SettingsLoaderTest.test_json_overrides_merge_with_defaults) ... ok
+test_app_state_creation (test_webui_state.AppStateTest.test_app_state_creation) ... ok
+test_disk_cache_disabled (test_webui_state.DiskCacheTest.test_disk_cache_disabled) ... ok
+test_disk_cache_round_trip (test_webui_state.DiskCacheTest.test_disk_cache_round_trip) ... ok
+test_history_disabled_noop (test_webui_state.HistoryTrackerTest.test_history_disabled_noop) ... ok
+test_history_records_when_enabled (test_webui_state.HistoryTrackerTest.test_history_records_when_enabled) ... ok
+test_status_reports_keys (test_webui_state.SearchIndexTest.test_status_reports_keys) ... ok
+test_builtin_themes_present_when_directory_missing (test_webui_themes.ThemeLoaderTest.test_builtin_themes_present_when_directory_missing) ... ok
+test_empty_directory_still_returns_defaults (test_webui_themes.ThemeLoaderTest.test_empty_directory_still_returns_defaults) ... ok
+test_load_iterm_theme_round_trip (test_webui_themes.ThemeLoaderTest.test_load_iterm_theme_round_trip) ... ok
+
+======================================================================
+ERROR: test_find_host_results_and_suggestions (test_ui_playwright.TestWebUIWithPlaywright.test_find_host_results_and_suggestions)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/code/ScandLines/scand-ops/ASA-ACL-inspector/tests/test_ui_playwright.py", line 134, in test_find_host_results_and_suggestions
+    page.wait_for_selector("datalist#targets option")
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/code/ScandLines/scand-ops/ASA-ACL-inspector/.venv/lib/python3.14/site-packages/playwright/sync_api/_generated.py", line 8182, in wait_for_selector
+    self._sync(
+    ~~~~~~~~~~^
+        self._impl_obj.wait_for_selector(
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            selector=selector, timeout=timeout, state=state, strict=strict
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        )
+        ^
+    )
+    ^
+  File "/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/code/ScandLines/scand-ops/ASA-ACL-inspector/.venv/lib/python3.14/site-packages/playwright/_impl/_sync_base.py", line 115, in _sync
+    return task.result()
+           ~~~~~~~~~~~^^
+  File "/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/code/ScandLines/scand-ops/ASA-ACL-inspector/.venv/lib/python3.14/site-packages/playwright/_impl/_page.py", line 423, in wait_for_selector
+    return await self._main_frame.wait_for_selector(**locals_to_params(locals()))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/code/ScandLines/scand-ops/ASA-ACL-inspector/.venv/lib/python3.14/site-packages/playwright/_impl/_frame.py", line 369, in wait_for_selector
+    await self._channel.send(
+        "waitForSelector", self._timeout, locals_to_params(locals())
+    )
+  File "/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/code/ScandLines/scand-ops/ASA-ACL-inspector/.venv/lib/python3.14/site-packages/playwright/_impl/_connection.py", line 69, in send
+    return await self._connection.wrap_api_call(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/code/ScandLines/scand-ops/ASA-ACL-inspector/.venv/lib/python3.14/site-packages/playwright/_impl/_connection.py", line 558, in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+playwright._impl._errors.TimeoutError: Page.wait_for_selector: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator("datalist#targets option") to be visible
+
+
+======================================================================
+ERROR: test_history_entry_replays_search (test_ui_playwright.TestWebUIWithPlaywright.test_history_entry_replays_search)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/code/ScandLines/scand-ops/ASA-ACL-inspector/tests/test_ui_playwright.py", line 263, in test_history_entry_replays_search
+    target.click()
+    ~~~~~~~~~~~~^^
+  File "/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/code/ScandLines/scand-ops/ASA-ACL-inspector/.venv/lib/python3.14/site-packages/playwright/sync_api/_generated.py", line 2142, in click
+    self._sync(
+    ~~~~~~~~~~^
+        self._impl_obj.click(
+        ^^^^^^^^^^^^^^^^^^^^^
+    ...<9 lines>...
+        )
+        ^
+    )
+    ^
+  File "/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/code/ScandLines/scand-ops/ASA-ACL-inspector/.venv/lib/python3.14/site-packages/playwright/_impl/_sync_base.py", line 115, in _sync
+    return task.result()
+           ~~~~~~~~~~~^^
+  File "/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/code/ScandLines/scand-ops/ASA-ACL-inspector/.venv/lib/python3.14/site-packages/playwright/_impl/_element_handle.py", line 142, in click
+    await self._channel.send(
+        "click", self._frame._timeout, locals_to_params(locals())
+    )
+  File "/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/code/ScandLines/scand-ops/ASA-ACL-inspector/.venv/lib/python3.14/site-packages/playwright/_impl/_connection.py", line 69, in send
+    return await self._connection.wrap_api_call(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/code/ScandLines/scand-ops/ASA-ACL-inspector/.venv/lib/python3.14/site-packages/playwright/_impl/_connection.py", line 558, in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+playwright._impl._errors.Error: ElementHandle.click: Element is not attached to the DOM
+Call log:
+  - attempting click action
+    - waiting for element to be visible, enabled and stable
+
+
+======================================================================
+ERROR: test_result_box_width_within_container (test_ui_playwright.TestWebUIWithPlaywright.test_result_box_width_within_container)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/code/ScandLines/scand-ops/ASA-ACL-inspector/tests/test_ui_playwright.py", line 199, in test_result_box_width_within_container
+    self._run_find(page)
+    ~~~~~~~~~~~~~~^^^^^^
+  File "/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/code/ScandLines/scand-ops/ASA-ACL-inspector/tests/test_ui_playwright.py", line 124, in _run_find
+    page.wait_for_selector("datalist#targets option")  # ensure suggestions populated
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/code/ScandLines/scand-ops/ASA-ACL-inspector/.venv/lib/python3.14/site-packages/playwright/sync_api/_generated.py", line 8182, in wait_for_selector
+    self._sync(
+    ~~~~~~~~~~^
+        self._impl_obj.wait_for_selector(
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            selector=selector, timeout=timeout, state=state, strict=strict
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        )
+        ^
+    )
+    ^
+  File "/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/code/ScandLines/scand-ops/ASA-ACL-inspector/.venv/lib/python3.14/site-packages/playwright/_impl/_sync_base.py", line 115, in _sync
+    return task.result()
+           ~~~~~~~~~~~^^
+  File "/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/code/ScandLines/scand-ops/ASA-ACL-inspector/.venv/lib/python3.14/site-packages/playwright/_impl/_page.py", line 423, in wait_for_selector
+    return await self._main_frame.wait_for_selector(**locals_to_params(locals()))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/code/ScandLines/scand-ops/ASA-ACL-inspector/.venv/lib/python3.14/site-packages/playwright/_impl/_frame.py", line 369, in wait_for_selector
+    await self._channel.send(
+        "waitForSelector", self._timeout, locals_to_params(locals())
+    )
+  File "/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/code/ScandLines/scand-ops/ASA-ACL-inspector/.venv/lib/python3.14/site-packages/playwright/_impl/_connection.py", line 69, in send
+    return await self._connection.wrap_api_call(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/code/ScandLines/scand-ops/ASA-ACL-inspector/.venv/lib/python3.14/site-packages/playwright/_impl/_connection.py", line 558, in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+playwright._impl._errors.TimeoutError: Page.wait_for_selector: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator("datalist#targets option") to be visible
+
+
+======================================================================
+ERROR: test_state_persists_in_local_storage (test_ui_playwright.TestWebUIWithPlaywright.test_state_persists_in_local_storage)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/code/ScandLines/scand-ops/ASA-ACL-inspector/tests/test_ui_playwright.py", line 172, in test_state_persists_in_local_storage
+    self._run_find(page)
+    ~~~~~~~~~~~~~~^^^^^^
+  File "/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/code/ScandLines/scand-ops/ASA-ACL-inspector/tests/test_ui_playwright.py", line 124, in _run_find
+    page.wait_for_selector("datalist#targets option")  # ensure suggestions populated
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/code/ScandLines/scand-ops/ASA-ACL-inspector/.venv/lib/python3.14/site-packages/playwright/sync_api/_generated.py", line 8182, in wait_for_selector
+    self._sync(
+    ~~~~~~~~~~^
+        self._impl_obj.wait_for_selector(
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            selector=selector, timeout=timeout, state=state, strict=strict
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        )
+        ^
+    )
+    ^
+  File "/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/code/ScandLines/scand-ops/ASA-ACL-inspector/.venv/lib/python3.14/site-packages/playwright/_impl/_sync_base.py", line 115, in _sync
+    return task.result()
+           ~~~~~~~~~~~^^
+  File "/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/code/ScandLines/scand-ops/ASA-ACL-inspector/.venv/lib/python3.14/site-packages/playwright/_impl/_page.py", line 423, in wait_for_selector
+    return await self._main_frame.wait_for_selector(**locals_to_params(locals()))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/code/ScandLines/scand-ops/ASA-ACL-inspector/.venv/lib/python3.14/site-packages/playwright/_impl/_frame.py", line 369, in wait_for_selector
+    await self._channel.send(
+        "waitForSelector", self._timeout, locals_to_params(locals())
+    )
+  File "/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/code/ScandLines/scand-ops/ASA-ACL-inspector/.venv/lib/python3.14/site-packages/playwright/_impl/_connection.py", line 69, in send
+    return await self._connection.wrap_api_call(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/code/ScandLines/scand-ops/ASA-ACL-inspector/.venv/lib/python3.14/site-packages/playwright/_impl/_connection.py", line 558, in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+playwright._impl._errors.TimeoutError: Page.wait_for_selector: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator("datalist#targets option") to be visible
+
+
+======================================================================
+ERROR: test_theme_and_highlight_toggle (test_ui_playwright.TestWebUIWithPlaywright.test_theme_and_highlight_toggle)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/code/ScandLines/scand-ops/ASA-ACL-inspector/tests/test_ui_playwright.py", line 144, in test_theme_and_highlight_toggle
+    self._run_find(page)
+    ~~~~~~~~~~~~~~^^^^^^
+  File "/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/code/ScandLines/scand-ops/ASA-ACL-inspector/tests/test_ui_playwright.py", line 124, in _run_find
+    page.wait_for_selector("datalist#targets option")  # ensure suggestions populated
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/code/ScandLines/scand-ops/ASA-ACL-inspector/.venv/lib/python3.14/site-packages/playwright/sync_api/_generated.py", line 8182, in wait_for_selector
+    self._sync(
+    ~~~~~~~~~~^
+        self._impl_obj.wait_for_selector(
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            selector=selector, timeout=timeout, state=state, strict=strict
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        )
+        ^
+    )
+    ^
+  File "/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/code/ScandLines/scand-ops/ASA-ACL-inspector/.venv/lib/python3.14/site-packages/playwright/_impl/_sync_base.py", line 115, in _sync
+    return task.result()
+           ~~~~~~~~~~~^^
+  File "/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/code/ScandLines/scand-ops/ASA-ACL-inspector/.venv/lib/python3.14/site-packages/playwright/_impl/_page.py", line 423, in wait_for_selector
+    return await self._main_frame.wait_for_selector(**locals_to_params(locals()))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/code/ScandLines/scand-ops/ASA-ACL-inspector/.venv/lib/python3.14/site-packages/playwright/_impl/_frame.py", line 369, in wait_for_selector
+    await self._channel.send(
+        "waitForSelector", self._timeout, locals_to_params(locals())
+    )
+  File "/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/code/ScandLines/scand-ops/ASA-ACL-inspector/.venv/lib/python3.14/site-packages/playwright/_impl/_connection.py", line 69, in send
+    return await self._connection.wrap_api_call(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/code/ScandLines/scand-ops/ASA-ACL-inspector/.venv/lib/python3.14/site-packages/playwright/_impl/_connection.py", line 558, in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+playwright._impl._errors.TimeoutError: Page.wait_for_selector: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator("datalist#targets option") to be visible
+
+
+======================================================================
+FAIL: test_shareable_link_restores_state (test_ui_playwright.TestWebUIWithPlaywright.test_shareable_link_restores_state)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/code/ScandLines/scand-ops/ASA-ACL-inspector/tests/test_ui_playwright.py", line 290, in test_shareable_link_restores_state
+    self.assertEqual(config_value, self._config_name)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: None != 'asa_ui.conf'
+
+----------------------------------------------------------------------
+Ran 66 tests in 128.091s
+
+FAILED (failures=1, errors=5)

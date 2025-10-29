@@ -228,8 +228,10 @@ Testing
 - Web UI smoke tests (headless Playwright):
   `make web-e2e`
   (requires `pip install playwright` and `playwright install chromium`)
+- Capture reference UI screenshots:
+  `python3 scripts/capture_playwright_shots.py [--output <dir>]`
 
-- A legacy test file (`test_ASA-ACL-inspector.py`) exists; it targets an older version and may not pass. Prefer the tests under `tests/`.
+- A legacy test file (`legacy/test_ASA-ACL-inspector.py`) exists; it targets an older version and may not pass. Prefer the tests under `tests/`.
 
 Development
 -----------
