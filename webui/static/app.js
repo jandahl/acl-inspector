@@ -3,6 +3,11 @@
   const CONFIG_OPTIONS = window.ACL_CONFIG_OPTIONS || { asa: [], fortigate: [] };
   const HISTORY_ENABLED = window.ACL_HISTORY_ENABLED !== false;
   const SEARCH_LIMIT = window.ACL_SEARCH_LIMIT || 50;
+  let previewSpeed = Number(window.ACL_THEME_PREVIEW_SPEED || 12);
+  if (!Number.isFinite(previewSpeed) || previewSpeed <= 0) {
+    previewSpeed = 12;
+  }
+  const THEME_PREVIEW_SPEED = previewSpeed;
 
   const PREF_COOKIE = "acl_theme_pref";
   const THEME_KEY = "acl_theme";
@@ -30,7 +35,7 @@
     configContextLines: 3,
     configMinChars: 4,
     configRegex: false,
-    showBeta: false,
+    showBeta: true,
     fontBody: "auto",
     fontMono: "auto",
     fontScale: 100,
@@ -318,14 +323,22 @@
     return library[key] || fallback;
   }
 
-  function updateLayoutMetrics() {
+  function updateLayoutMetrics(tempScale, tempWidth) {
     const scaleLabel = document.getElementById("pref_font_scale_value");
     if (scaleLabel) {
-      scaleLabel.textContent = `${clamp(prefs.fontScale, 70, 150)}%`;
+      const value =
+        tempScale !== undefined && tempScale !== null
+          ? clamp(Number(tempScale), 70, 150)
+          : clamp(prefs.fontScale, 70, 150);
+      scaleLabel.textContent = `${value}%`;
     }
     const widthLabel = document.getElementById("pref_layout_width_value");
     if (widthLabel) {
-      widthLabel.textContent = `${clamp(prefs.layoutWidth, 60, 160)}%`;
+      const value =
+        tempWidth !== undefined && tempWidth !== null
+          ? clamp(Number(tempWidth), 60, 160)
+          : clamp(prefs.layoutWidth, 60, 160);
+      widthLabel.textContent = `${value}%`;
     }
   }
 
@@ -367,6 +380,105 @@
     updateConfigViewer(document.getElementById("config_filter")?.value || "");
     refreshBetaVisibility();
     applyLayoutPrefs();
+  }
+
+  function clearResultsForTab(tab) {
+    if (!tab) {
+      return;
+    }
+    document.querySelectorAll(`.results[data-tab='${tab}']`).forEach((panel) => {
+      panel.innerHTML = "";
+    });
+  }
+
+  function clearTab(tab) {
+    if (!tab) {
+      return;
+    }
+    switch (tab) {
+      case "rules": {
+        const inspectField = document.getElementById("inspect");
+        if (inspectField) {
+          inspectField.value = "";
+        }
+        const oldField = document.getElementById("old");
+        if (oldField) {
+          oldField.value = "";
+        }
+        const newField = document.getElementById("new");
+        if (newField) {
+          newField.value = "";
+        }
+        const dportField = document.querySelector("input[name='dport']");
+        if (dportField) {
+          dportField.value = "";
+        }
+        const protoSelect = document.querySelector("select[name='proto']");
+        if (protoSelect) {
+          protoSelect.value = "";
+        }
+        const includeAny = document.getElementById("include_any");
+        if (includeAny) {
+          includeAny.checked = false;
+        }
+        const historyReplay = document.getElementById("history_replay");
+        if (historyReplay) {
+          historyReplay.value = "0";
+        }
+        setMode("inspect");
+        break;
+      }
+      case "find": {
+        const findField = document.getElementById("findq");
+        if (findField) {
+          findField.value = "";
+        }
+        const verboseToggle = document.getElementById("find_verbose");
+        if (verboseToggle) {
+          verboseToggle.checked = false;
+        }
+        break;
+      }
+      case "packet": {
+        const pktSrc = document.getElementById("pkt_src");
+        if (pktSrc) {
+          pktSrc.value = "";
+        }
+        const pktDst = document.getElementById("pkt_dst");
+        if (pktDst) {
+          pktDst.value = "";
+        }
+        break;
+      }
+      case "packet-probe": {
+        const probeSrc = document.getElementById("probe_src");
+        if (probeSrc) {
+          probeSrc.value = "";
+        }
+        const probeDst = document.getElementById("probe_dst");
+        if (probeDst) {
+          probeDst.value = "";
+        }
+        const probeProto = document.getElementById("probe_proto");
+        if (probeProto) {
+          probeProto.value = "";
+        }
+        const probeDport = document.getElementById("probe_dport");
+        if (probeDport) {
+          probeDport.value = "";
+        }
+        const probeIncludeAny = document.getElementById("probe_include_any");
+        if (probeIncludeAny) {
+          probeIncludeAny.checked = false;
+        }
+        break;
+      }
+      default:
+        break;
+    }
+    clearResultsForTab(tab);
+    setHistoryReplayFlag(false);
+    saveState();
   }
 
   function setPreference(key, value, source) {
@@ -464,28 +576,32 @@
     }
   }
 
-  function updateThemePreview(kind) {
-    const panel = document.getElementById(kind === "light" ? "preview_light_panel" : "preview_dark_panel");
-    if (!panel) {
+  function updateThemePreviewBox() {
+    const box = document.getElementById("theme_preview_box");
+    if (!box) {
       return;
     }
-    const theme = themeForKind(kind);
-    if (!theme || !theme.vars) {
-      return;
+    const lightTheme = themeForKind("light");
+    const darkTheme = themeForKind("dark");
+    box.style.setProperty("--preview-speed", `${THEME_PREVIEW_SPEED}s`);
+    if (lightTheme && lightTheme.vars) {
+      box.style.setProperty("--preview-light", lightTheme.vars.bg || "#f6f8fa");
     }
-    panel.style.setProperty("--preview-bg", theme.vars.bg || "");
-    panel.style.setProperty("--preview-text", theme.vars.text || "");
-    const accent = theme.vars.accent || theme.vars.link || theme.vars.border || "rgba(122,162,247,0.4)";
-    const mono = panel.querySelector(".preview-mono");
-    if (mono) {
-      mono.style.borderColor = accent;
-      mono.style.background = kind === "light" ? "rgba(15,15,15,0.08)" : "rgba(255,255,255,0.14)";
-      mono.style.color = theme.vars.text || "";
+    if (darkTheme && darkTheme.vars) {
+      box.style.setProperty("--preview-dark", darkTheme.vars.bg || "#0e1116");
     }
-    const tag = panel.querySelector(".preview-tag");
-    if (tag) {
-      tag.textContent = theme.name;
+    const lightName = document.getElementById("preview_light_name");
+    if (lightName) {
+      lightName.textContent = lightTheme ? lightTheme.name : "Default";
     }
+    const darkName = document.getElementById("preview_dark_name");
+    if (darkName) {
+      darkName.textContent = darkTheme ? darkTheme.name : "Default";
+    }
+  }
+
+  function updateThemePreview(_kind) {
+    updateThemePreviewBox();
   }
 
   function populateThemeSelect(kind) {
@@ -536,8 +652,7 @@
     if (toggle) {
       toggle.checked = mode === "light";
     }
-    updateThemePreview("dark");
-    updateThemePreview("light");
+    updateThemePreviewBox();
   }
 
   function toggleTheme() {
@@ -1139,6 +1254,7 @@
       old: document.getElementById("old").value,
       new: document.getElementById("new").value,
       findq: document.getElementById("findq").value,
+      find_verbose: document.getElementById("find_verbose") ? document.getElementById("find_verbose").checked : false,
       pkt_src: document.getElementById("pkt_src").value,
       pkt_dst: document.getElementById("pkt_dst").value,
       proto: document.querySelector("select[name='proto']").value,
@@ -1176,6 +1292,9 @@
     assign("old", state.old);
     assign("new", state.new);
     assign("find", state.findq);
+    if (state.find_verbose) {
+      params.set("find_verbose", "1");
+    }
     assign("pkt_src", state.pkt_src);
     assign("pkt_dst", state.pkt_dst);
     assign("proto", state.proto);
@@ -1227,6 +1346,10 @@
     take("new", "new");
     take("find", "findq");
     take("findq", "findq");
+    if (params.has("find_verbose")) {
+      state.find_verbose = parseBool(params.get("find_verbose"), false);
+      hasValue = true;
+    }
     take("pkt_src", "pkt_src");
     take("pkt_dst", "pkt_dst");
     take("proto", "proto");
@@ -1275,6 +1398,12 @@
       assign("old", payload.old);
       assign("new", payload.new);
       assign("findq", payload.findq);
+      if (payload.find_verbose !== undefined) {
+        const verboseToggle = document.getElementById("find_verbose");
+        if (verboseToggle) {
+          verboseToggle.checked = !!payload.find_verbose;
+        }
+      }
       assign("pkt_src", payload.pkt_src);
       assign("pkt_dst", payload.pkt_dst);
       assign("probe_src", payload.probe_src);
@@ -2077,6 +2206,12 @@
         if (prefGuard) {
           return;
         }
+        updateLayoutMetrics(event.target.value, undefined);
+      });
+      prefFontScale.addEventListener("change", (event) => {
+        if (prefGuard) {
+          return;
+        }
         setPreference("fontScale", event.target.value, "prefs-ui");
       });
     }
@@ -2086,9 +2221,18 @@
         if (prefGuard) {
           return;
         }
+        updateLayoutMetrics(undefined, event.target.value);
+      });
+      prefLayoutWidth.addEventListener("change", (event) => {
+        if (prefGuard) {
+          return;
+        }
         setPreference("layoutWidth", event.target.value, "prefs-ui");
       });
     }
+    document.querySelectorAll("button[data-clear-tab]").forEach((btn) => {
+      btn.addEventListener("click", () => clearTab(btn.dataset.clearTab || ""));
+    });
     const configContextToggle = document.getElementById("config_filter_context_toggle");
     if (configContextToggle) {
       configContextToggle.addEventListener("change", (event) => {

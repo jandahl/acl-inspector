@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from parsers.cisco import asa as asa_parser
 from ..state import AppState
+from utils.config import clean_config_text
 
 
 class APIError(Exception):
@@ -68,7 +69,7 @@ def meta(state: AppState, *, vendor: str, filename: str) -> Tuple[int, Dict[str,
     if not path:
         return 400, {"error": "invalid_config"}
     try:
-        text = path.read_text(encoding="utf-8")
+        text = clean_config_text(path.read_text(encoding="utf-8"))
     except Exception as exc:  # pragma: no cover - filesystem errors
         return 500, {"error": f"read_failed: {exc}"}
     return 200, _extract_meta(vendor, text)
@@ -79,7 +80,7 @@ def config_text(state: AppState, *, vendor: str, filename: str) -> Tuple[int, Di
     if not path:
         return 400, {"error": "invalid_config"}
     try:
-        text = path.read_text(encoding="utf-8")
+        text = clean_config_text(path.read_text(encoding="utf-8"))
     except Exception as exc:  # pragma: no cover - filesystem errors
         return 500, {"error": f"read_failed: {exc}"}
     return 200, {"vendor": vendor, "config": filename, "text": text}
@@ -98,7 +99,7 @@ def aliases(
     if vendor.lower() != "asa":
         return 200, {"aliases": {}}
     try:
-        text = path.read_text(encoding="utf-8")
+        text = clean_config_text(path.read_text(encoding="utf-8"))
     except Exception as exc:  # pragma: no cover - filesystem errors
         return 500, {"error": f"read_failed: {exc}"}
     cfg = asa_parser.ASAConfig(text)
@@ -185,7 +186,7 @@ def packet_probe(
     if not src or not dst:
         return 400, {"error": "missing_endpoints"}
     try:
-        text = path.read_text(encoding="utf-8")
+        text = clean_config_text(path.read_text(encoding="utf-8"))
     except Exception as exc:  # pragma: no cover - filesystem errors
         return 500, {"error": f"read_failed: {exc}"}
     ports = _parse_ports(dports)

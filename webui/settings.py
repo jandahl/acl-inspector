@@ -57,11 +57,17 @@ class BetaSettings:
 
 
 @dataclass(frozen=True)
+class UISettings:
+    theme_preview_speed: float = 12.0
+
+
+@dataclass(frozen=True)
 class Settings:
     server: ServerSettings = field(default_factory=ServerSettings)
     paths: PathsSettings = field(default_factory=PathsSettings)
     features: FeatureSettings = field(default_factory=FeatureSettings)
     beta: BetaSettings = field(default_factory=BetaSettings)
+    ui: UISettings = field(default_factory=UISettings)
 
 
 class SettingsError(Exception):
@@ -131,6 +137,9 @@ def _default_dict() -> Dict[str, Any]:
         "beta": {
             "enabled_modules": ["packet-check"],
             "config": {},
+        },
+        "ui": {
+            "theme_preview_speed": 12.0,
         },
     }
 
@@ -272,6 +281,14 @@ def _build_settings(config: Mapping[str, Any], settings_path: Path) -> Settings:
         config=dict(beta_conf.get("config", {})),
     )
 
+    ui_conf = config.get("ui", {})
+    try:
+        preview_speed = float(ui_conf.get("theme_preview_speed", 12.0))
+    except (TypeError, ValueError):
+        preview_speed = 12.0
+    preview_speed = max(0.5, min(preview_speed, 60.0))
+    ui = UISettings(theme_preview_speed=preview_speed)
+
     # Resolve any relative paths relative to base_dir.
     paths = PathsSettings(
         configs={vendor: str((base_dir / Path(rel)).resolve()) for vendor, rel in paths.configs.items()},
@@ -286,4 +303,4 @@ def _build_settings(config: Mapping[str, Any], settings_path: Path) -> Settings:
         settings_file=str(settings_path),
     )
 
-    return Settings(server=server, paths=paths, features=features, beta=beta)
+    return Settings(server=server, paths=paths, features=features, beta=beta, ui=ui)

@@ -248,6 +248,7 @@ Future goals
 - Pluggable parser architecture to support additional vendors
 - Site-to-site VPN parsing/evaluation (tunnels, crypto maps/policies)
 - Dockerization: containerize CLI and web UI; simple Nginx front-end to serve the web UI and reverse proxy to a WSGI app (or keep stdlib HTTPServer for simplicity). Provide read-only mount for `configs/` and export reports.
+- Web UI tab autodiscovery so production and beta tabs can be surfaced dynamically from dedicated modules
 
 Architecture (Pluggable Parsers)
 --------------------------------

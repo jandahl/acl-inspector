@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from . import asa as asa_adapter
 from . import fortigate as fortigate_adapter
+from utils.config import clean_config_text
 
 
 @dataclass
@@ -76,7 +77,7 @@ class IndexManager:
                     return entry
 
             with open(path, "r", encoding="utf-8") as handle:
-                text = handle.read()
+                text = clean_config_text(handle.read())
             index = self._build_index(vendor, text)
             entry = IndexEntry(
                 key=key,
