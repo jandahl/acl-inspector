@@ -128,9 +128,13 @@ def to_ip_network(ip: str, mask: Optional[str] = None) -> Union[ipaddress.IPv4Ad
 class ASAConfig:
     def __init__(self, text: str) -> None:
         self.lines = [line.rstrip() for line in text.splitlines()]
-        self.network_objects: Dict[str, Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]]] = {}
-        self.network_object_groups: Dict[str, List[Union[dict, ipaddress.IPv4Address, ipaddress.IPv4Network]]] = {}
-        self.acls: Dict[str, List[str]] = defaultdict(list)
+        self.network_objects: Dict[
+            str, Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network, str]]
+        ] = {}
+        self.network_object_groups: Dict[
+            str, List[Union[dict, ipaddress.IPv4Address, ipaddress.IPv4Network, str]]
+        ] = {}
+        self.acls: Dict[str, List[Tuple[str, int]]] = defaultdict(list)
         # Interfaces, ACL bindings, and NAT rules (initial subset)
         self.interfaces: Dict[str, dict] = {}
         self.acl_bindings: Dict[str, Dict[str, Optional[str]]] = {}
@@ -427,16 +431,22 @@ class ASAConfig:
             m = re_object.match(line)
             if m:
                 name = m.group('name')
-                nets: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]] = set()
+                nets: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network, str]] = set()
                 i += 1
                 while i < L and self.lines[i].startswith(' '):
                     lm = re_object_network_host.match(self.lines[i])
                     if lm:
-                        nets.add(to_ip_network(lm.group('ip')))
+                        try:
+                            nets.add(to_ip_network(lm.group('ip')))
+                        except ValueError:
+                            nets.add(lm.group('ip').strip())
                     else:
                         lm2 = re_object_network_subnet.match(self.lines[i])
                         if lm2:
-                            nets.add(to_ip_network(lm2.group('ip'), lm2.group('mask')))
+                            try:
+                                nets.add(to_ip_network(lm2.group('ip'), lm2.group('mask')))
+                            except ValueError:
+                                nets.add(self.lines[i].strip())
                         else:
                             # Auto NAT (object NAT) inside object network block
                             mnat = re.match(r"^\s*nat\s*\((?P<src_if>[^,]+),(?P<dst_if>[^\)]+)\)\s+(?P<rest>.+)$", self.lines[i], re.IGNORECASE)
@@ -476,9 +486,15 @@ class ASAConfig:
                         m_subnet = re_group_network_subnet.match(ln)
                         m_group = re_group_network_groupobj.match(ln)
                         if m_host:
-                            members.append(to_ip_network(m_host.group('ip')))
+                            try:
+                                members.append(to_ip_network(m_host.group('ip')))
+                            except ValueError:
+                                members.append(m_host.group('ip').strip())
                         elif m_subnet:
-                            members.append(to_ip_network(m_subnet.group('ip'), m_subnet.group('mask')))
+                            try:
+                                members.append(to_ip_network(m_subnet.group('ip'), m_subnet.group('mask')))
+                            except ValueError:
+                                members.append(ln.strip())
                         elif m_obj:
                             members.append({'object': m_obj.group('name')})
                         elif m_group:
@@ -513,7 +529,7 @@ class ASAConfig:
 
             macl = re_acl.match(line)
             if macl:
-                self.acls[macl.group('name')].append(line)
+                self.acls[macl.group('name')].append((line, i + 1))
                 i += 1
                 continue
             # Manual NAT (common forms)
@@ -871,8 +887,8 @@ class ASAConfig:
 
     def flatten_acl(self) -> List[dict]:
         entries: List[dict] = []
-        for acl_name, lines in self.acls.items():
-            for ln in lines:
+        for acl_name, entries_with_line in self.acls.items():
+            for ln, lineno in entries_with_line:
                 m = re_acl.match(ln)
                 if not m:
                     continue
@@ -902,6 +918,7 @@ class ASAConfig:
                     'svc': {**entry_svc, **svc_tail},
                     'binding': binding,
                     'raw': ln.strip(),
+                    'line': lineno,
                 })
         return entries
 

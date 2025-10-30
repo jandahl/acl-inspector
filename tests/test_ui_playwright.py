@@ -216,6 +216,116 @@ access-list OUT extended permit tcp object OBJ_HOST object OBJ_WEB eq 443
         # Allow for sub-pixel rounding differences (hence the small epsilon).
         self.assertLessEqual(dims["boxWidth"], dims["parentWidth"] + 1.0)
 
+    def test_inspect_results_line_numbers_and_wrap(self):
+        page = self._new_page()
+        self._goto_root(page)
+        self._select_config(page)
+        page.fill("input#inspect", "OBJ_HOST")
+        page.click("div.actions-run[data-tab='rules'] button[type=submit]")
+        page.wait_for_selector("div.results[data-tab='rules'] .diff-raw pre")
+        page.wait_for_function(
+            "() => document.querySelectorAll(\"div.results[data-tab='rules'] .diff-raw pre.line-numbers .ln\").length > 0"
+        )
+        line_numbers_present = page.evaluate(
+            "() => Array.from(document.querySelectorAll(\"div.results[data-tab='rules'] .diff-raw pre .ln\"))"
+            ".some((node) => /^\\d+$/.test((node.textContent || '').trim()))"
+        )
+        self.assertTrue(line_numbers_present)
+        wrap_all = page.evaluate(
+            "() => Array.from(document.querySelectorAll(\"div.results[data-tab='rules'] pre\"))"
+            ".every((node) => node.classList.contains('wrap'))"
+        )
+        self.assertTrue(wrap_all)
+        raw_text = page.text_content("div.results[data-tab='rules'] .diff-raw pre")
+        self.assertIn("[", raw_text or "")
+        self.assertIn("]", raw_text or "")
+
+    def test_theme_preview_respects_preferences(self):
+        page = self._new_page()
+        self._goto_root(page)
+        self._select_config(page)
+        page.click("button[data-tab='prefs']")
+        page.wait_for_function(
+            "() => document.querySelector('#tab-prefs')?.classList.contains('active')"
+        )
+        page.select_option("#pref_font_body", "serif")
+        page.select_option("#pref_font_mono", "courier")
+        page.wait_for_function(
+            "() => { const box = document.getElementById('theme_preview_box');"
+            " if (!box) { return false; }"
+            " const bodyStack = box.style.getPropertyValue('--preview-body-font');"
+            " const monoStack = box.style.getPropertyValue('--preview-mono-font');"
+            " return bodyStack.includes('Georgia') && monoStack.includes('Courier New'); }"
+        )
+        light_options = page.evaluate(
+            "() => { const select = document.getElementById('theme_light');"
+            " return select ? Array.from(select.options).map((opt) => opt.value) : []; }"
+        )
+        self.assertTrue(light_options)
+        target_light = light_options[-1]
+        page.select_option("#theme_light", target_light)
+        page.wait_for_function(
+            "expected => document.getElementById('preview_light_name')?.textContent?.trim() === expected",
+            target_light,
+        )
+        light_ok = page.evaluate(
+            "(expected) => {"
+            " const box = document.getElementById('theme_preview_box');"
+            " if (!box) { return false; }"
+            " const applied = box.style.getPropertyValue('--preview-light');"
+            " if (!applied) { return false; }"
+            " const theme = (window.ACL_THEMES || []).find((t) => t.name === expected);"
+            " if (!theme || !theme.vars || !theme.vars.bg) { return true; }"
+            " return applied.trim().toLowerCase() === String(theme.vars.bg || '').toLowerCase();"
+            "}",
+            target_light,
+        )
+        self.assertTrue(light_ok)
+
+    def test_clear_button_positioning(self):
+        page = self._new_page()
+        self._goto_root(page)
+        self._select_config(page)
+        page.wait_for_selector("#tab-rules")
+        first_child_rules = page.evaluate(
+            "() => document.getElementById('tab-rules')?.firstElementChild?.classList.contains('tab-controls') || false"
+        )
+        self.assertTrue(first_child_rules)
+        rules_position_ok = page.evaluate(
+            "() => {"
+            " const panel = document.getElementById('tab-rules');"
+            " if (!panel) { return false; }"
+            " const controls = panel.querySelector('.tab-controls');"
+            " const firstFieldset = panel.querySelector('fieldset');"
+            " if (!controls || !firstFieldset) { return false; }"
+            " const cRect = controls.getBoundingClientRect();"
+            " const fRect = firstFieldset.getBoundingClientRect();"
+            " return cRect.bottom <= fRect.top;"
+            "}"
+        )
+        self.assertTrue(rules_position_ok)
+        page.click("button[data-tab='packet']")
+        page.wait_for_function(
+            "() => document.getElementById('tab-packet')?.classList.contains('active')"
+        )
+        first_child_packet = page.evaluate(
+            "() => document.getElementById('tab-packet')?.firstElementChild?.classList.contains('tab-controls') || false"
+        )
+        self.assertTrue(first_child_packet)
+        packet_position_ok = page.evaluate(
+            "() => {"
+            " const panel = document.getElementById('tab-packet');"
+            " if (!panel) { return false; }"
+            " const controls = panel.querySelector('.tab-controls');"
+            " const firstFieldset = panel.querySelector('fieldset');"
+            " if (!controls || !firstFieldset) { return false; }"
+            " const cRect = controls.getBoundingClientRect();"
+            " const fRect = firstFieldset.getBoundingClientRect();"
+            " return cRect.bottom <= fRect.top;"
+            "}"
+        )
+        self.assertTrue(packet_position_ok)
+
     def test_inspect_run_shows_results_without_tab_switch(self):
         page = self._new_page()
         self._goto_root(page)
