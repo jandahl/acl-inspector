@@ -40,6 +40,7 @@
             <option value="atkinson">Atkinson Hyperlegible</option>
             <option value="roboto">Roboto</option>
             <option value="source">Source Sans 3</option>
+            <option value="serif">Classic serif</option>
           </select>
         </div>
         <div class="pref-inline">
@@ -50,6 +51,7 @@
             <option value="fira">Fira Code</option>
             <option value="ibmplex">IBM Plex Mono</option>
             <option value="inconsolata">Inconsolata</option>
+            <option value="courier">Courier New</option>
           </select>
         </div>
         <div class="pref-inline pref-slider">
@@ -68,7 +70,12 @@
           <h4>Theme preview</h4>
           <p>Light: <span class="preview-tag" id="preview_light_name">Default</span> · Dark: <span class="preview-tag" id="preview_dark_name">Default</span></p>
           <p class="preview-body">Consistent spacing keeps extended configs readable across zoom levels.</p>
-          <code>permit tcp object OBJ_WEB object OBJ_APP eq 443</code>
+          <code>object network SAMPLE_HOST</code>
+          <code> host 203.0.113.10</code>
+          <code>object-group network SAMPLE_GROUP</code>
+          <code> network-object object SAMPLE_HOST</code>
+          <code> network-object 198.51.100.0 255.255.255.0</code>
+          <code>access-list OUTSIDE extended permit tcp any object SAMPLE_HOST eq 443</code>
         </div>
       </div>
     </div>

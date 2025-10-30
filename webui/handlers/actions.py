@@ -69,11 +69,11 @@ def process_run(state: AppState, fields: Mapping[str, List[str]]) -> Tuple[int, 
 
         if mode == "inspect":
             target = get("inspect")
+            cfg = asa_parser.ASAConfig(cfg_text)
             report = asa_parser.inspect_host(
                 cfg_text, target, service_filter=svc_filter, include_any=include_any
             )
             try:
-                cfg = asa_parser.ASAConfig(cfg_text)
                 nets = cfg.resolve_network(target)
                 inclusive = {}
                 for net in nets:
@@ -83,7 +83,7 @@ def process_run(state: AppState, fields: Mapping[str, List[str]]) -> Tuple[int, 
                 report["aliases"] = inclusive
             except Exception:
                 pass
-            html_output = _render_report(target, report, cfg_file)
+            html_output = _render_report(target, report, cfg_file, cfg)
             history_query = target
             meta["query"] = target
 
@@ -106,7 +106,7 @@ def process_run(state: AppState, fields: Mapping[str, List[str]]) -> Tuple[int, 
 
             old_aliases = _incl(old) if old else {}
             new_aliases = _incl(new) if new else {}
-            html_output = _render_diff(old, new, diff, cfg_file, old_aliases, new_aliases)
+            html_output = _render_diff(old, new, diff, cfg_file, cfg, old_aliases, new_aliases)
             history_query = f"{old}->{new}"
             meta["query"] = history_query
 
@@ -179,39 +179,174 @@ def _fmt(rule: dict) -> str:
         head = " ".join(parts) if parts else ""
         tail = (" ports=" + ",".join(port_parts)) if port_parts else ""
         svc_str = f" {head}{tail}".rstrip()
-    binding_str = rule.get("binding") or ""
-    bind_suffix = f" bind={binding_str}" if binding_str else ""
+    bind_suffix = ""
+    bind_desc = _format_binding(rule.get("binding"))
+    if bind_desc:
+        bind_suffix = f" bind={bind_desc}"
     proto = rule.get("proto")
     proto_part = f" {proto}" if proto else ""
     return f"{rule['action']}{proto_part}{svc_str} src=[{src_str}] dst=[{dst_str}]{bind_suffix}"
 
 
-def _render_report(target: str, report: dict, cfg_file: str) -> str:
-    lines_raw = "\n".join(f"  {entry['raw']}" for entry in report["hits"])
-    lines_flat = "\n".join(f"  {_fmt(entry)}" for entry in report["hits"])
-    alias_html = ""
-    aliases = report.get("aliases") or {}
+def _format_binding(binding: Optional[Mapping[str, Any]]) -> str:
+    if not binding or not isinstance(binding, Mapping):
+        return ""
+    interface = binding.get("interface")
+    direction = binding.get("direction")
+    scope = binding.get("scope")
+    if interface:
+        desc = str(interface)
+        if direction:
+            desc += f" ({direction})"
+        return desc
+    if scope:
+        return str(scope)
+    direction = direction or binding.get("scope")
+    if direction:
+        return str(direction)
+    return ""
+
+
+def _object_detail_block(
+    cfg: asa_parser.ASAConfig,
+    *,
+    primary_names: Iterable[str],
+    aliases: Mapping[Union[str, ipaddress.IPv4Address, ipaddress.IPv4Network], Iterable[str]],
+    membership: Mapping[str, Set[str]],
+    title: str,
+) -> str:
+    names: Set[str] = set()
+    literal_tokens: Set[str] = set()
+    for name in primary_names:
+        if isinstance(name, str) and name:
+            names.add(name)
+            if _looks_like_address(name):
+                literal_tokens.add(name.lower())
+    for addr, group_names in aliases.items():
+        literal_tokens.add(str(addr).lower())
+        for value in group_names:
+            if value:
+                names.add(str(value))
+    names_lower = {name.lower() for name in names}
+    object_lines: List[str] = []
+    seen_names: Set[str] = set()
+
+    def format_object(name: str) -> List[str]:
+        lines = [f"object network {name}"]
+        for net in sorted(cfg.network_objects.get(name, []), key=lambda v: str(v)):
+            if isinstance(net, ipaddress.IPv4Address):
+                lines.append(f" host {net}")
+            elif isinstance(net, ipaddress.IPv4Network):
+                mask = net.netmask.exploded
+                lines.append(f" network-object {net.network_address} {mask}")
+        return lines
+
+    for name in sorted(names):
+        lower = name.lower()
+        if lower in seen_names:
+            continue
+        seen_names.add(lower)
+        if lower in cfg.network_objects:
+            object_lines.extend(format_object(name))
+            object_lines.append("")
+
+    group_names: Set[str] = set()
+    for name in names:
+        group_names.update(membership.get(name.lower(), set()))
+
+    def format_group(group: str) -> List[str]:
+        members = cfg.network_object_groups.get(group, [])
+        lines = [f"object-group network {group}"]
+        for member in members:
+            if isinstance(member, dict):
+                if "object" in member:
+                    member_name = member["object"]
+                    if member_name.lower() in names_lower:
+                        lines.append(f" network-object object {member_name}")
+                elif "group-object" in member:
+                    child = member["group-object"]
+                    if child.lower() in group_names or child.lower() in names_lower:
+                        lines.append(f" group-object {child}")
+            else:
+                member_literal = str(member).lower()
+                if member_literal in literal_tokens:
+                    lines.append(f" network-object {member}")
+        return lines if len(lines) > 1 else []
+
+    group_lines: List[str] = []
+    seen_groups: Set[str] = set()
+    for group in sorted(group_names):
+        lower = group.lower()
+        if lower in seen_groups:
+            continue
+        seen_groups.add(lower)
+        formatted = format_group(group)
+        if formatted:
+            group_lines.extend(formatted)
+            group_lines.append("")
+
+    alias_lines: List[str] = []
     if aliases:
-        alias_lines = []
-        for addr, names in sorted(aliases.items(), key=lambda item: str(item[0])):
-            alias_lines.append(f"  {addr}: {', '.join(sorted(names))}")
-        alias_html = (
-            "<div class='diff diff-aliases-inspect'><h3>Duplicate Objects (Aliases)</h3><pre>"
-            + "\n".join(alias_lines)
-            + "</pre></div>"
-        )
-    else:
-        alias_html = (
-            "<div class='rr'><a href='https://youtu.be/dQw4w9WgXcQ' target='_blank' rel='noopener'>No duplicates found</a></div>"
-        )
+        for addr, nameset in sorted(aliases.items(), key=lambda item: str(item[0])):
+            alias_lines.append(f"{addr}: {', '.join(sorted(str(name) for name in nameset))}")
+
+    sections: List[str] = []
+    if object_lines:
+        sections.append("! Object definitions")
+        sections.extend([line.rstrip() for line in object_lines if line is not None])
+    if group_lines:
+        sections.append("! Group memberships")
+        sections.extend([line.rstrip() for line in group_lines if line is not None])
+    if alias_lines:
+        sections.append("! Resolved addresses")
+        sections.extend(alias_lines)
+    text = "\n".join(line for line in sections if line is not None).strip()
+    if not text:
+        return ""
+    return (
+        f"<div class='diff diff-objects'><h3>{_escape_text(title)}</h3>"
+        f"<pre data-lang='asa'>{_escape_text(text)}</pre></div>"
+    )
+
+
+def _looks_like_address(value: str) -> bool:
+    value = value.strip()
+    if not value:
+        return False
+    try:
+        ipaddress.ip_address(value)
+        return True
+    except Exception:
+        try:
+            ipaddress.ip_network(value, strict=False)
+            return True
+        except Exception:
+            return False
+
+
+def _render_report(target: str, report: dict, cfg_file: str, cfg: asa_parser.ASAConfig) -> str:
+    raw_entries = report.get("hits", [])
+    raw_text = "\n".join(entry["raw"] for entry in raw_entries)
+    raw_numbers = ",".join(str(entry.get("line") or "") for entry in raw_entries)
+    match_numbers = ",".join(str(entry.get("line")) for entry in raw_entries if entry.get("line"))
+    lines_flat = "\n".join(_fmt(entry) for entry in raw_entries)
+    aliases = report.get("aliases") or {}
+    membership = _build_group_membership(cfg)
+    object_block = _object_detail_block(
+        cfg,
+        primary_names=[target],
+        aliases=aliases,
+        membership=membership,
+        title="Object names and group memberships",
+    )
     return f"""
 <div class='results results-rules' data-tab='rules'>
   <div class='section'><h2>{_escape_text(cfg_file)}</h2><h3>Inspection Report for {_escape_text(target)}</h3>
   <p>Resolved to: {', '.join(_escape_text(str(net)) for net in report.get('target_nets', []))}</p>
   <p>Found {len(report.get('hits', []))} matching ACL entries.</p></div>
-  {alias_html}
+  {object_block or ""}
   <div class='diff diff-raw'><h3>Matched Rules (Raw)</h3>
-  <pre data-lang='asa'>{_escape_text(lines_raw)}</pre></div>
+  <pre data-lang='asa' data-line-numbers='{_escape_text(raw_numbers)}' data-match-lines='{_escape_text(match_numbers)}'>{_escape_text(raw_text)}</pre></div>
   <div class='diff diff-flattened'><h3>Matched Rules (Flattened)</h3>
   <pre data-lang='asa'>{_escape_text(lines_flat)}</pre></div>
 </div>
@@ -223,31 +358,26 @@ def _render_diff(
     new: str,
     diff: dict,
     cfg_file: str,
-    old_aliases: Optional[Mapping[ipaddress._BaseAddress, Iterable[str]]] = None,
-    new_aliases: Optional[Mapping[ipaddress._BaseAddress, Iterable[str]]] = None,
+    cfg: asa_parser.ASAConfig,
+    old_aliases: Optional[Mapping[Union[str, ipaddress.IPv4Address, ipaddress.IPv4Network], Iterable[str]]] = None,
+    new_aliases: Optional[Mapping[Union[str, ipaddress.IPv4Address, ipaddress.IPv4Network], Iterable[str]]] = None,
 ) -> str:
     added = "\n".join(f" + {entry['raw']}\n   -> {_fmt(entry)}" for entry in diff.get("added_to_new", [])[:200])
     removed = "\n".join(f" - {entry['raw']}\n   -> {_fmt(entry)}" for entry in diff.get("removed_from_old", [])[:200])
-    alias_html_parts: List[str] = []
-
-    if old_aliases:
-        lines = [
-            f"  {addr}: {', '.join(sorted(names))}"
-            for addr, names in sorted(old_aliases.items(), key=lambda item: str(item[0]))
-        ]
-        alias_html_parts.append(
-            "<div class='diff diff-aliases-old'><h3>Old Target Duplicates</h3><pre>" + "\n".join(lines) + "</pre></div>"
-        )
-    if new_aliases:
-        lines = [
-            f"  {addr}: {', '.join(sorted(names))}"
-            for addr, names in sorted(new_aliases.items(), key=lambda item: str(item[0]))
-        ]
-        alias_html_parts.append(
-            "<div class='diff diff-aliases-new'><h3>New Target Duplicates</h3><pre>" + "\n".join(lines) + "</pre></div>"
-        )
-    alias_section = "".join(alias_html_parts) or (
-        "<div class='rr'><a href='https://youtu.be/dQw4w9WgXcQ' target='_blank' rel='noopener'>No duplicates</a></div>"
+    membership = _build_group_membership(cfg)
+    old_block = _object_detail_block(
+        cfg,
+        primary_names=[old],
+        aliases=old_aliases or {},
+        membership=membership,
+        title="Old object names and group memberships",
+    )
+    new_block = _object_detail_block(
+        cfg,
+        primary_names=[new],
+        aliases=new_aliases or {},
+        membership=membership,
+        title="New object names and group memberships",
     )
 
     return f"""
@@ -257,7 +387,8 @@ def _render_diff(
   <p>New target: {_escape_text(new)}</p>
   <p>Old hits: {len(diff.get('old_hits', []))} &nbsp; New hits: {len(diff.get('new_hits', []))}</p>
   </div>
-  {alias_section}
+  {old_block or ""}
+  {new_block or ""}
   <div class='diff diff-added'><h3>New-only Rules</h3>
   <pre data-lang='asa'>{_escape_text(added or '  (none)')}</pre></div>
   <div class='diff diff-removed'><h3>Old-only Rules</h3>
@@ -295,6 +426,8 @@ def _render_find(target: str, results: List[dict], verbose: bool) -> str:
         if verbose:
             if result.get("literals"):
                 lines.append(_escape_text("Literals: " + _format_list(result["literals"], None)))
+            if result.get("score_details"):
+                lines.append(_escape_text("Score detail: " + ", ".join(result["score_details"])))
             lines.append(_escape_text(f"Score: {result['score']}"))
             if result.get("text_hit") and not result.get("has_detail"):
                 lines.append(_escape_text("Config text contains query"))
@@ -532,6 +665,24 @@ def _find_host(state: AppState, target: str) -> List[dict]:
             continue
 
         has_detail = bool(matched_objects or matched_groups or interface_hits)
+        score_details: List[str] = []
+        score = 0
+        if direct_object:
+            score += 100
+            score_details.append("Direct object reference")
+        if matched_groups:
+            score += 40
+            score_details.append("Group membership")
+        if interface_hits:
+            score += 60
+            score_details.append("Interface network match")
+        if matched_objects:
+            score += 20
+        if matched_literals:
+            score += 10
+        if text_hit and not has_detail:
+            score += 5
+            score_details.append("Text reference")
         results.append(
             {
                 "vendor": entry["vendor"],
@@ -542,6 +693,7 @@ def _find_host(state: AppState, target: str) -> List[dict]:
                 "groups": sorted(matched_groups),
                 "text_hit": text_hit,
                 "score": score,
+                "score_details": score_details,
                 "direct": direct_object,
                 "has_detail": has_detail,
             }
@@ -550,7 +702,14 @@ def _find_host(state: AppState, target: str) -> List[dict]:
     if not results:
         return []
 
-    results.sort(key=lambda res: (-res["score"], -len(res["interfaces"]), -len(res["objects"]), res["file"]))
+    results.sort(
+        key=lambda res: (
+            -res["score"],
+            -len(res["interfaces"]),
+            -len(res["objects"]),
+            res["file"],
+        )
+    )
     if results:
         top_score = results[0]["score"]
         if top_score > 0:

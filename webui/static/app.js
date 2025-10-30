@@ -29,8 +29,8 @@
   };
 
   const PREF_DEFAULTS = {
-    lineNumbers: false,
-    wrapResults: false,
+    lineNumbers: true,
+    wrapResults: true,
     configContext: false,
     configContextLines: 3,
     configMinChars: 4,
@@ -48,6 +48,7 @@
     atkinson: "'Atkinson Hyperlegible','Helvetica Neue',Arial,sans-serif",
     roboto: "'Roboto','Helvetica Neue',Arial,sans-serif",
     source: "'Source Sans 3','Helvetica Neue',Arial,sans-serif",
+    serif: "Georgia,'Times New Roman',serif",
   };
 
   const MONO_FONT_OPTIONS = {
@@ -56,6 +57,7 @@
     fira: "'Fira Code','SFMono-Regular',Consolas,monospace",
     ibmplex: "'IBM Plex Mono','SFMono-Regular',Consolas,monospace",
     inconsolata: "'Inconsolata','SFMono-Regular',Consolas,monospace",
+    courier: "'Courier New','Courier',monospace",
   };
 
   function computeAutoLayout() {
@@ -286,6 +288,7 @@
       if (layoutWidth) {
         layoutWidth.value = prefs.layoutWidth;
       }
+      styleFontOptionPreviews();
     } finally {
       prefGuard = false;
     }
@@ -355,6 +358,17 @@
     root.style.setProperty("--font-body", bodyFont);
     root.style.setProperty("--font-mono", monoFont);
     updateLayoutMetrics();
+    const preview = document.getElementById("theme_preview_box");
+    if (preview) {
+      preview.style.setProperty("--preview-body-font", bodyFont);
+      preview.style.setProperty("--preview-mono-font", monoFont);
+      preview
+        .querySelectorAll("code")
+        .forEach((node) => {
+          node.style.fontFamily = monoFont;
+        });
+    }
+    updateThemePreviewBox();
   }
 
   function refreshAutoLayout(force = false) {
@@ -370,9 +384,7 @@
 
   function applyPrefs() {
     document.body.classList.toggle("wrap-results", !!prefs.wrapResults);
-    document.querySelectorAll("pre:not([data-lang])").forEach((pre) => {
-      pre.classList.toggle("wrap", !!prefs.wrapResults);
-    });
+    ensurePreLanguage(document);
     syncConfigControls();
     const highlightToggle = document.getElementById("hlToggle");
     const enableHighlight = highlightToggle ? highlightToggle.checked : true;
@@ -380,6 +392,21 @@
     updateConfigViewer(document.getElementById("config_filter")?.value || "");
     refreshBetaVisibility();
     applyLayoutPrefs();
+  }
+
+  function styleFontOptionPreviews() {
+    const applyStyles = (select, library) => {
+      if (!select) {
+        return;
+      }
+      Array.from(select.options).forEach((opt) => {
+        const key = opt.value;
+        const family = resolveFont(key, library, library.auto);
+        opt.style.fontFamily = family;
+      });
+    };
+    applyStyles(document.getElementById("pref_font_body"), BODY_FONT_OPTIONS);
+    applyStyles(document.getElementById("pref_font_mono"), MONO_FONT_OPTIONS);
   }
 
   function clearResultsForTab(tab) {
@@ -522,6 +549,7 @@
     if (source !== "prefs-ui") {
       syncPreferenceControls();
     }
+    applyPrefs();
     if (source !== "config-ui") {
       syncConfigControls();
     }
@@ -584,11 +612,18 @@
     const lightTheme = themeForKind("light");
     const darkTheme = themeForKind("dark");
     box.style.setProperty("--preview-speed", `${THEME_PREVIEW_SPEED}s`);
+    const accentCandidate =
+      (darkTheme && darkTheme.vars && darkTheme.vars.accent) ||
+      (lightTheme && lightTheme.vars && lightTheme.vars.accent) ||
+      getComputedStyle(document.documentElement).getPropertyValue("--accent");
     if (lightTheme && lightTheme.vars) {
       box.style.setProperty("--preview-light", lightTheme.vars.bg || "#f6f8fa");
     }
     if (darkTheme && darkTheme.vars) {
       box.style.setProperty("--preview-dark", darkTheme.vars.bg || "#0e1116");
+    }
+    if (accentCandidate) {
+      box.style.setProperty("--preview-accent", accentCandidate.trim());
     }
     const lightName = document.getElementById("preview_light_name");
     if (lightName) {
@@ -697,10 +732,44 @@
     return html;
   }
 
+  function ensurePreLanguage(scope) {
+    const root =
+      scope && typeof scope.querySelectorAll === "function" ? scope : document;
+    root.querySelectorAll("pre").forEach((pre) => {
+      if (!pre.dataset.lang) {
+        pre.dataset.lang = "plain";
+      }
+    });
+  }
+
   function renderPre(pre, rawText, enableHighlight) {
     const lang = (pre.dataset.lang || "").toLowerCase();
     const lines = rawText.split("\n");
-    const numbering = Array.isArray(pre.__lineNumbers) ? pre.__lineNumbers : null;
+    let numbering = Array.isArray(pre.__lineNumbers) ? pre.__lineNumbers : null;
+    if (!numbering && pre.dataset.lineNumbers) {
+      numbering = pre.dataset.lineNumbers.split(",").map((value) => {
+        if (!value) {
+          return null;
+        }
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : null;
+      });
+      pre.__lineNumbers = numbering;
+    }
+    let matchNumbers =
+      pre.__matchNumbers && typeof pre.__matchNumbers === "object"
+        ? new Set(Array.from(pre.__matchNumbers))
+        : null;
+    if (!matchNumbers && pre.dataset.matchLines) {
+      const parsedMatches = pre.dataset.matchLines
+        .split(",")
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value));
+      if (parsedMatches.length) {
+        matchNumbers = new Set(parsedMatches);
+        pre.__matchNumbers = matchNumbers;
+      }
+    }
     const renderLine = (line) => {
       if (!enableHighlight) {
         return escapeHtml(line);
@@ -710,22 +779,47 @@
       }
       return escapeHtml(line);
     };
+    const getLineNumber = (idx) => {
+      if (!numbering) {
+        return idx + 1;
+      }
+      const value = numbering[idx];
+      if (value === null || value === undefined) {
+        return null;
+      }
+      return Number(value);
+    };
     if (prefs.lineNumbers) {
       const htmlLines = lines.map((line, idx) => {
         const labelValue = numbering ? numbering[idx] : idx + 1;
         const labelText = labelValue === null || labelValue === undefined ? "" : String(labelValue);
         const safeLabel = labelText ? escapeHtml(labelText) : "&nbsp;";
         const content = renderLine(line) || "&nbsp;";
-        return `<span class='line'><span class='ln'>${safeLabel}</span><span class='txt'>${content}</span></span>`;
+        const isMatch = matchNumbers && labelValue !== null && labelValue !== undefined && matchNumbers.has(Number(labelValue));
+        const lineClass = isMatch ? "line match-line" : "line";
+        const txtClass = isMatch ? "txt config-match" : "txt";
+        return `<span class='${lineClass}'><span class='ln'>${safeLabel}</span><span class='${txtClass}'>${content}</span></span>`;
       });
       pre.innerHTML = htmlLines.join("");
-    } else if (enableHighlight && lang === "asa") {
-      pre.innerHTML = lines.map((line) => highlightAsaLine(line)).join("\n");
     } else {
-      pre.textContent = rawText;
+      const htmlLines = lines.map((line, idx) => {
+        const rendered = renderLine(line) || "&nbsp;";
+        const lineNumber = getLineNumber(idx);
+        const isMatch = matchNumbers && lineNumber !== null && matchNumbers.has(Number(lineNumber));
+        if (isMatch) {
+          return `<span class='config-match'>${rendered}</span>`;
+        }
+        return rendered;
+      });
+      if (enableHighlight && lang === "asa") {
+        pre.innerHTML = htmlLines.join("\n");
+      } else {
+        pre.innerHTML = htmlLines.join("\n");
+      }
     }
     pre.classList.toggle("line-numbers", !!prefs.lineNumbers);
     pre.classList.toggle("wrap", !!prefs.wrapResults);
+    pre.dataset.raw = rawText;
   }
 
   function applyHighlight(pre, enable) {
@@ -746,6 +840,7 @@
     if (document.body) {
       document.body.classList.toggle("hl-off", !enable);
     }
+    ensurePreLanguage(document);
     refreshHighlights(enable);
     storageSet(HL_KEY, enable ? "on" : "off");
   }
@@ -1510,6 +1605,7 @@
     if (!viewer) {
       return;
     }
+    delete viewer.__matchNumbers;
     const notice = document.getElementById("config_filter_notice");
     const filterRaw = (filterText || "").trim();
     const regexToggle = document.getElementById("config_filter_regex");
@@ -1532,6 +1628,7 @@
         viewer.textContent = outputText;
         viewer.dataset.raw = outputText;
         viewer.__lineNumbers = numbering;
+        delete viewer.__matchNumbers;
         const nameDisplay = document.getElementById("config_name_display");
         if (nameDisplay) {
           const { config } = currentConfig();
@@ -1551,8 +1648,14 @@
     if (!currentConfigText) {
       displayLines = [];
       numbering = null;
+      delete viewer.__matchNumbers;
+      delete viewer.dataset.lineNumbers;
+      delete viewer.dataset.matchLines;
     } else if (!filterRaw) {
       numbering = null;
+      delete viewer.__matchNumbers;
+      delete viewer.dataset.lineNumbers;
+      delete viewer.dataset.matchLines;
     } else if (!useRegex && filterRaw.length < minChars) {
       const remaining = minChars - filterRaw.length;
       message = `Type ${remaining} more character${remaining === 1 ? "" : "s"} to filter (min ${minChars}).`;
@@ -1568,6 +1671,7 @@
         return;
       }
       numbering = null;
+      delete viewer.__matchNumbers;
     } else {
       const matches = [];
       for (let idx = 0; idx < allLines.length; idx += 1) {
@@ -1577,10 +1681,12 @@
           matches.push(idx);
         }
       }
+      let matchNumbersForDisplay = null;
       if (!matches.length) {
         displayLines = ["[no matches]"];
         numbering = [null];
         message = "No matches found.";
+        delete viewer.__matchNumbers;
       } else {
         const keep = new Set();
         if (prefs.configContext) {
@@ -1610,6 +1716,14 @@
         });
         displayLines = outLines;
         numbering = outNumbers;
+        matchNumbersForDisplay = new Set(matches.map((idx) => idx + 1));
+        if (matchNumbersForDisplay.size) {
+          viewer.__matchNumbers = matchNumbersForDisplay;
+          viewer.dataset.matchLines = Array.from(matchNumbersForDisplay).join(",");
+        } else {
+          delete viewer.__matchNumbers;
+          delete viewer.dataset.matchLines;
+        }
       }
     }
     const outputText = displayLines.length ? displayLines.join("\n") : "";
@@ -1617,8 +1731,10 @@
     viewer.dataset.raw = outputText;
     if (numbering) {
       viewer.__lineNumbers = numbering;
+      viewer.dataset.lineNumbers = numbering.map((value) => (value === null || value === undefined ? "" : String(value))).join(",");
     } else {
       delete viewer.__lineNumbers;
+      delete viewer.dataset.lineNumbers;
     }
     const nameDisplay = document.getElementById("config_name_display");
     if (nameDisplay) {
@@ -1674,14 +1790,12 @@
     }
     if (container) {
       container.innerHTML = htmlContent || "";
+      ensurePreLanguage(container);
     }
     activateTab(targetTab, true);
     const highlightToggle = document.getElementById("hlToggle");
     const enable = highlightToggle ? highlightToggle.checked : true;
     highlightAll(enable);
-    document.querySelectorAll("pre:not([data-lang])").forEach((pre) => {
-      pre.classList.toggle("wrap", !!prefs.wrapResults);
-    });
     if (meta) {
       if (meta.mode) {
         const modeInput = document.getElementById("mode");
@@ -1739,13 +1853,11 @@
     const container = probeResultsContainer();
     if (container) {
       container.innerHTML = htmlContent;
+      ensurePreLanguage(container);
     }
     const highlightToggle = document.getElementById("hlToggle");
     const enable = highlightToggle ? highlightToggle.checked : true;
     highlightAll(enable);
-    document.querySelectorAll("pre:not([data-lang])").forEach((pre) => {
-      pre.classList.toggle("wrap", !!prefs.wrapResults);
-    });
   }
 
   function renderProbeResult(configName, payload) {
@@ -2230,6 +2342,12 @@
         setPreference("layoutWidth", event.target.value, "prefs-ui");
       });
     }
+    document.querySelectorAll(".tab-panel").forEach((panel) => {
+      const controls = panel.querySelector(".tab-controls");
+      if (controls) {
+        panel.insertBefore(controls, panel.firstChild);
+      }
+    });
     document.querySelectorAll("button[data-clear-tab]").forEach((btn) => {
       btn.addEventListener("click", () => clearTab(btn.dataset.clearTab || ""));
     });
