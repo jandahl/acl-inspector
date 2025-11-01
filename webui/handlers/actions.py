@@ -239,6 +239,8 @@ def _object_detail_block(
             elif isinstance(net, ipaddress.IPv4Network):
                 mask = net.netmask.exploded
                 lines.append(f" network-object {net.network_address} {mask}")
+        for literal in sorted(getattr(cfg, "network_object_literals", {}).get(name, set())):
+            lines.append(f" {literal}")
         return lines
 
     for name in sorted(names):
@@ -271,6 +273,8 @@ def _object_detail_block(
                 member_literal = str(member).lower()
                 if member_literal in literal_tokens:
                     lines.append(f" network-object {member}")
+        for literal in sorted(getattr(cfg, "network_object_group_literals", {}).get(group, set())):
+            lines.append(f" {literal}")
         return lines if len(lines) > 1 else []
 
     group_lines: List[str] = []
@@ -332,6 +336,35 @@ def _render_report(target: str, report: dict, cfg_file: str, cfg: asa_parser.ASA
     lines_flat = "\n".join(_fmt(entry) for entry in raw_entries)
     aliases = report.get("aliases") or {}
     membership = _build_group_membership(cfg)
+    group_lookup = {name.lower(): name for name in cfg.network_object_groups.keys()}
+    target_groups = {
+        group_lookup[key.lower()]
+        for key in membership.get(target.lower(), set())
+        if key.lower() in group_lookup
+    }
+    allow_group_rules: Dict[str, Set[str]] = defaultdict(set)
+    if target_groups:
+        for entry in raw_entries:
+            if entry.get("action") != "permit":
+                continue
+            raw_line = entry.get("raw") or ""
+            raw_lower = raw_line.lower()
+            for group_name in target_groups:
+                if group_name.lower() in raw_lower:
+                    allow_group_rules[group_name].add(raw_line)
+    allow_block = ""
+    if allow_group_rules:
+        lines: List[str] = ["! Object groups permitting target"]
+        for group_name in sorted(allow_group_rules):
+            lines.append(f"object-group {group_name}")
+            for rule in sorted(allow_group_rules[group_name]):
+                lines.append(f"  {rule}")
+            lines.append("")
+        text = "\n".join(line.rstrip() for line in lines if line is not None).strip()
+        allow_block = (
+            f"<div class='diff diff-objects'><h3>Allowing object-groups</h3>"
+            f"<pre data-lang='asa'>{_escape_text(text)}</pre></div>"
+        )
     object_block = _object_detail_block(
         cfg,
         primary_names=[target],
@@ -345,6 +378,7 @@ def _render_report(target: str, report: dict, cfg_file: str, cfg: asa_parser.ASA
   <p>Resolved to: {', '.join(_escape_text(str(net)) for net in report.get('target_nets', []))}</p>
   <p>Found {len(report.get('hits', []))} matching ACL entries.</p></div>
   {object_block or ""}
+  {allow_block or ""}
   <div class='diff diff-raw'><h3>Matched Rules (Raw)</h3>
   <pre data-lang='asa' data-line-numbers='{_escape_text(raw_numbers)}' data-match-lines='{_escape_text(match_numbers)}'>{_escape_text(raw_text)}</pre></div>
   <div class='diff diff-flattened'><h3>Matched Rules (Flattened)</h3>
@@ -461,7 +495,7 @@ def _render_packet(cfg_file: str, pkt: dict) -> str:
     lines = []
     for item in matches[:200]:
         summary = item.get("summary") or ""
-        lines.append(f"  {item.get('raw')}\n   -> {summary}")
+        lines.append(f"  {item.get('raw')}\n   → {summary}")
     content = "\n".join(lines) if lines else "  (no ACL matches)"
     nat_trans = nat.get("translations", {})
     src_nat = nat_trans.get("src", {})
@@ -470,11 +504,11 @@ def _render_packet(cfg_file: str, pkt: dict) -> str:
     if nat.get("applied"):
         rule = nat.get("rule") or {}
         nat_lines.append(f"Rule: {rule.get('raw', 'unknown')}")
-        nat_lines.append(f"Source: {src_nat.get('before')} -> {src_nat.get('after')}")
+        nat_lines.append(f"Source: {src_nat.get('before')} → {src_nat.get('after')}")
         if src_nat.get("note"):
             nat_lines.append(f"  note: {src_nat.get('note')}")
         if dst_nat.get("after") and dst_nat.get("after") != dst_nat.get("before"):
-            nat_lines.append(f"Destination: {dst_nat.get('before')} -> {dst_nat.get('after')}")
+            nat_lines.append(f"Destination: {dst_nat.get('before')} → {dst_nat.get('after')}")
             if dst_nat.get("note"):
                 nat_lines.append(f"  note: {dst_nat.get('note')}")
     else:
@@ -498,8 +532,8 @@ def _render_packet(cfg_file: str, pkt: dict) -> str:
         f"  <p>Status: {status} (NAT direction: {_escape_text(str(nat.get('direction') or 'n/a'))})</p>\n"
         f"  <p>Input: src={_escape_text(inp.get('src', ''))} dst={_escape_text(inp.get('dst', ''))} "
         f"proto={_escape_text(inp.get('proto') or 'any')} dports={_escape_text(str(inp.get('dports') or 'any'))}</p>\n"
-        f"  <p>Resolved: src={_escape_text(str(resolved.get('src')))} -> {_escape_text(str(resolved.get('post_nat_src')))} | "
-        f"dst={_escape_text(str(resolved.get('dst')))} -> {_escape_text(str(resolved.get('post_nat_dst')))}</p></div>\n"
+        f"  <p>Resolved: src={_escape_text(str(resolved.get('src')))} → {_escape_text(str(resolved.get('post_nat_src')))} | "
+        f"dst={_escape_text(str(resolved.get('dst')))} → {_escape_text(str(resolved.get('post_nat_dst')))}</p></div>\n"
         "  <div class='diff diff-added'><h3>NAT Evaluation</h3>\n"
         f"  <pre>{_escape_text(nat_block)}</pre></div>\n"
         f"{candidate_block}"
@@ -593,6 +627,7 @@ def _find_host(state: AppState, target: str) -> List[dict]:
             if name.lower() in names_lower:
                 matched_objects.add(name)
                 matched_literals.update(str(val) for val in netset)
+                matched_literals.update(getattr(cfg, "network_object_literals", {}).get(name, set()))
                 if name.lower() == query_lower:
                     direct_object = True
                     score = max(score, 4)

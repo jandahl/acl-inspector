@@ -98,15 +98,19 @@ def path_check(
         rule_src_if = rule.get("src_if")
         if rule_dst_if:
             _add_candidate(rule_dst_if, "in")
+            _add_candidate(rule_dst_if, "out")
         if rule_src_if:
             _add_candidate(rule_src_if, "out")
+            _add_candidate(rule_src_if, "in")
         if nat_direction == "inbound" and rule_src_if and rule_dst_if is None:
             _add_candidate(rule_src_if, "in")
     else:
         if dst_iface:
             _add_candidate(dst_iface, "in")
+            _add_candidate(dst_iface, "out")
         if src_iface:
             _add_candidate(src_iface, "out")
+            _add_candidate(src_iface, "in")
 
     acl_context = (
         {"candidates": [{"interface": c["interface"], "direction": c["direction"]} for c in candidates]}
