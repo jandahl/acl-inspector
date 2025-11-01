@@ -6,6 +6,8 @@ from pathlib import Path
 
 from parsers.cisco import asa as asa_parser
 from parsers.cisco.asa import path as asa_path
+
+from tests.fixtures.cisco_asa_example import ASA_EXAMPLE
 from webui import settings as settings_mod
 from webui.handlers import actions as action_handlers
 from webui.state import AppState
@@ -121,26 +123,9 @@ object network OBJ_HOSTNAME
         self.assertIn("host warsapd5.sapag.local", literals)
 
     def test_packet_check_matches_object_host(self):
-        cfg_text = """
-interface inside
- nameif inside
- security-level 100
- ip address 10.0.0.1 255.255.255.0
-
-interface outside
- nameif outside
- security-level 0
- ip address 192.0.2.1 255.255.255.0
-
-object network OBJ_WEB
- host 192.0.2.10
-
-access-list OUTSIDE extended permit tcp any object OBJ_WEB eq 443
-access-group OUTSIDE in interface outside
-"""
         result = asa_path.path_check(
-            cfg_text,
-            src="10.0.0.5",
+            ASA_EXAMPLE,
+            src="10.0.0.10",
             dst="192.0.2.10",
             proto="tcp",
             dports={443},
@@ -148,49 +133,58 @@ access-group OUTSIDE in interface outside
         self.assertTrue(result["allowed"])
         matches = result["acl"].get("matches", [])
         self.assertTrue(matches)
-        self.assertIn("OBJ_WEB", matches[0]["raw"])
+        self.assertTrue(any("SRC_GROUP" in entry.get("raw", "") for entry in matches))
 
     def test_packet_check_collects_multiple_acl_matches(self):
-        cfg_text = """
-interface inside
- nameif inside
- security-level 100
- ip address 10.0.0.1 255.255.255.0
-
-interface outside
- nameif outside
- security-level 0
- ip address 192.0.2.1 255.255.255.0
-
-object network OBJ_SRC
- host 10.0.0.5
-object network OBJ_DST
- host 192.0.2.10
-object-group network OG_SRC
- network-object object OBJ_SRC
-
-access-list OUTSIDE extended permit tcp object-group OG_SRC object OBJ_DST eq 443
-access-group OUTSIDE in interface outside
-
-access-list INSIDE extended permit tcp object-group OG_SRC object OBJ_DST eq 443
-access-group INSIDE out interface inside
-"""
         result = asa_path.path_check(
-            cfg_text,
-            src="10.0.0.5",
+            ASA_EXAMPLE,
+            src="10.0.0.10",
             dst="192.0.2.10",
             proto="tcp",
             dports={443},
         )
         matches = [entry.get("raw") for entry in result["acl"].get("matches", [])]
         self.assertIn(
-            "access-list OUTSIDE extended permit tcp object-group OG_SRC object OBJ_DST eq 443",
+            "access-list outside_in extended permit tcp object-group SRC_GROUP object DST_HOST eq 443",
             matches,
         )
         self.assertIn(
-            "access-list INSIDE extended permit tcp object-group OG_SRC object OBJ_DST eq 443",
+            "access-list outside_out extended permit tcp object-group SRC_GROUP object DST_HOST eq 443",
             matches,
         )
+        warnings = result["acl"].get("warnings", [])
+        self.assertFalse(warnings)
+
+    def test_packet_check_warns_when_pair_missing(self):
+        cfg_text = ASA_EXAMPLE.replace(
+            "access-list outside_in extended permit tcp object-group SRC_GROUP object DST_HOST eq 443\naccess-group outside_in in interface outside\n\n",
+            "",
+        )
+        result = asa_path.path_check(
+            cfg_text,
+            src="10.0.0.10",
+            dst="192.0.2.10",
+            proto="tcp",
+            dports={443},
+        )
+        matches = [entry.get("raw") for entry in result["acl"].get("matches", [])]
+        self.assertIn(
+            "access-list outside_out extended permit tcp object-group SRC_GROUP object DST_HOST eq 443",
+            matches,
+        )
+        warnings = result["acl"].get("warnings", [])
+        self.assertTrue(any("outbound" in msg for msg in warnings))
+
+        result_no_guess = asa_path.path_check(
+            cfg_text,
+            src="10.0.0.10",
+            dst="192.0.2.10",
+            proto="tcp",
+            dports={443},
+            guess_interface_pairs=False,
+        )
+        matches_no_guess = [entry.get("raw") for entry in result_no_guess["acl"].get("matches", [])]
+        self.assertEqual(matches_no_guess.count("access-list outside_out extended permit tcp object-group SRC_GROUP object DST_HOST eq 443"), 1)
 
 
 if __name__ == "__main__":  # pragma: no cover

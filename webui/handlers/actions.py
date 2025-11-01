@@ -20,6 +20,16 @@ def process_run(state: AppState, fields: Mapping[str, List[str]]) -> Tuple[int, 
     def get(name: str, default: str = "") -> str:
         return (fields.get(name, [default])[0] or default).strip()
 
+    def is_checked(name: str, default: bool = False) -> bool:
+        values = fields.get(name)
+        if not values:
+            return default
+        for value in values:
+            text = (value or "").strip().lower()
+            if text in {"0", "false", "no", "off"}:
+                return False
+        return True
+
     vendor = get("vendor", "asa").lower()
     mode = get("mode", "inspect")
     cfg_file = get("config")
@@ -122,11 +132,15 @@ def process_run(state: AppState, fields: Mapping[str, List[str]]) -> Tuple[int, 
         elif mode == "packet":
             src = get("pkt_src")
             dst = get("pkt_dst")
-            pkt = _packet_check_asa(cfg_text, src, dst, proto or None, dports_clean, include_any)
+            guess_pairs = is_checked("pkt_guess", True)
+            pkt = _packet_check_asa(
+                cfg_text, src, dst, proto or None, dports_clean, include_any, guess_pairs
+            )
             html_output = _render_packet(cfg_file, pkt)
             tab = "packet"
             history_query = f"{src}->{dst}"
             meta["query"] = history_query
+            meta["guess_pairs"] = guess_pairs
 
         else:
             html_output = "<p style='color:red'>Unsupported mode.</p>"
@@ -495,7 +509,8 @@ def _render_packet(cfg_file: str, pkt: dict) -> str:
     lines = []
     for item in matches[:200]:
         summary = item.get("summary") or ""
-        lines.append(f"  {item.get('raw')}\n   → {summary}")
+        inferred_suffix = " (inferred)" if item.get("inferred") else ""
+        lines.append(f"  {item.get('raw')}{inferred_suffix}\n   → {summary}")
     content = "\n".join(lines) if lines else "  (no ACL matches)"
     nat_trans = nat.get("translations", {})
     src_nat = nat_trans.get("src", {})
@@ -526,6 +541,14 @@ def _render_packet(cfg_file: str, pkt: dict) -> str:
             "  <div class='diff diff-aliases'><h3>ACL Candidate Bindings</h3>\n"
             f"  <pre>{_escape_text(cand_text)}</pre></div>\n"
         )
+    warnings = (pkt.get("acl") or {}).get("warnings") or []
+    warning_block = ""
+    if warnings:
+        items = "".join(f"<li>{_escape_text(w)}</li>" for w in warnings)
+        warning_block = (
+            "  <div class='section warnings'><h3>Warnings</h3>\n"
+            f"  <ul>{items}</ul></div>\n"
+        )
     return (
         "<div class='results results-packet' data-tab='packet'>\n"
         f"  <div class='section'><h2>{_escape_text(cfg_file)}</h2><h3>Packet Check</h3>\n"
@@ -537,6 +560,7 @@ def _render_packet(cfg_file: str, pkt: dict) -> str:
         "  <div class='diff diff-added'><h3>NAT Evaluation</h3>\n"
         f"  <pre>{_escape_text(nat_block)}</pre></div>\n"
         f"{candidate_block}"
+        f"{warning_block}"
         "  <div class='diff diff-raw'><h3>ACL Matches</h3>\n"
         f"  <pre data-lang='asa'>{_escape_text(content)}</pre></div>\n"
         "</div>\n"
@@ -544,10 +568,24 @@ def _render_packet(cfg_file: str, pkt: dict) -> str:
 
 
 def _packet_check_asa(
-    cfg_text: str, src: str, dst: str, proto: Optional[str], dports: Set[int], include_any: bool
+    cfg_text: str,
+    src: str,
+    dst: str,
+    proto: Optional[str],
+    dports: Set[int],
+    include_any: bool,
+    guess_pairs: bool,
 ) -> dict:
     try:
-        return asa_parser.path_check(cfg_text, src, dst, proto=proto, dports=dports, include_any=include_any)
+        return asa_parser.path_check(
+            cfg_text,
+            src,
+            dst,
+            proto=proto,
+            dports=dports,
+            include_any=include_any,
+            guess_interface_pairs=guess_pairs,
+        )
     except Exception as exc:
         return {"error": str(exc), "allowed": False}
 

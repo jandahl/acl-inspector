@@ -1352,6 +1352,7 @@
       find_verbose: document.getElementById("find_verbose") ? document.getElementById("find_verbose").checked : false,
       pkt_src: document.getElementById("pkt_src").value,
       pkt_dst: document.getElementById("pkt_dst").value,
+      pkt_guess: document.getElementById("pkt_guess") ? document.getElementById("pkt_guess").checked : true,
       proto: document.querySelector("select[name='proto']").value,
       dport: document.querySelector("input[name='dport']").value,
       include_any: document.getElementById("include_any").checked,
@@ -1392,6 +1393,9 @@
     }
     assign("pkt_src", state.pkt_src);
     assign("pkt_dst", state.pkt_dst);
+    if (state.pkt_guess === false) {
+      params.set("pkt_guess", "0");
+    }
     assign("proto", state.proto);
     assign("dport", state.dport);
     if (state.include_any) {
@@ -1447,6 +1451,10 @@
     }
     take("pkt_src", "pkt_src");
     take("pkt_dst", "pkt_dst");
+    if (params.has("pkt_guess")) {
+      state.pkt_guess = parseBool(params.get("pkt_guess"), true);
+      hasValue = true;
+    }
     take("proto", "proto");
     take("dport", "dport");
     if (params.has("include_any")) {
@@ -1501,6 +1509,12 @@
       }
       assign("pkt_src", payload.pkt_src);
       assign("pkt_dst", payload.pkt_dst);
+      if (payload.pkt_guess !== undefined) {
+        const guessToggle = document.getElementById("pkt_guess");
+        if (guessToggle) {
+          guessToggle.checked = !!payload.pkt_guess;
+        }
+      }
       assign("probe_src", payload.probe_src);
       assign("probe_dst", payload.probe_dst);
       assign("probe_proto", payload.probe_proto);
@@ -1840,6 +1854,12 @@
         }
         if (dstField && !dstField.value) {
           dstField.value = dstVal;
+        }
+        if (meta.guess_pairs !== undefined) {
+          const guessToggle = document.getElementById("pkt_guess");
+          if (guessToggle) {
+            guessToggle.checked = !!meta.guess_pairs;
+          }
         }
       }
     }
