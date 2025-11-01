@@ -6,6 +6,9 @@
     <input type="text" name="pkt_src" id="pkt_src" list="targets" placeholder="Source object / host" autocomplete="off" class="mono-input">
     <label>Destination:</label>
     <input type="text" name="pkt_dst" id="pkt_dst" list="targets" placeholder="Destination object / host" autocomplete="off" class="mono-input">
+    <div class="packet-options">
+      <label><input type="checkbox" name="pkt_guess" id="pkt_guess" value="1" checked> Guess interface direction pairs</label>
+    </div>
   </fieldset>
   <div class="actions actions-run" data-tab="packet">
     <button type="submit">Run</button>

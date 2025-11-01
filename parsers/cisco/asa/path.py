@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
+from collections import defaultdict
 from typing import Dict, List, Optional, Set, Tuple, Union
 
 from .parser import (
@@ -10,6 +11,10 @@ from .parser import (
     _pick_preferred_address,
     _evaluate_nat,
     _evaluate_acl_flow,
+    _entry_summary,
+    _has_any_endpoint,
+    _service_matches,
+    nets_overlap,
 )
 
 __all__ = ["path_check"]
@@ -22,6 +27,7 @@ def path_check(
     proto: Optional[str] = None,
     dports: Optional[Set[int]] = None,
     include_any: bool = True,
+    guess_interface_pairs: bool = True,
 ) -> dict:
     """Evaluate NAT + ACL outcome for a single flow.
 
@@ -118,6 +124,18 @@ def path_check(
         else None
     )
     acl_info = _evaluate_acl_flow(cfg, src_after, dst_after, svc_filter, include_any, acl_context)
+    matches = acl_info.get("matches") or []
+    warnings: List[str] = []
+    if guess_interface_pairs and matches:
+        extras, inferred_warnings = _augment_acl_matches(
+            cfg, matches, src_after, dst_after, svc_filter, include_any
+        )
+        if extras:
+            matches.extend(extras)
+            acl_info["matches"] = matches
+        if inferred_warnings:
+            warnings.extend(inferred_warnings)
+            acl_info["warnings"] = warnings
     allowed = acl_info.get("decision") == "permit"
     context = {
         "src_interface": src_iface,
@@ -145,3 +163,118 @@ def path_check(
         "allowed": allowed,
         "context": context,
     }
+
+
+def _augment_acl_matches(
+    cfg: ASAConfig,
+    matches: List[dict],
+    src_ip: ipaddress.IPv4Address,
+    dst_ip: ipaddress.IPv4Address,
+    svc_filter: Optional[dict],
+    include_any: bool,
+) -> Tuple[List[dict], List[str]]:
+    """Infer counterpart ACL matches and emit warnings for imbalances."""
+
+    if not matches:
+        return [], []
+
+    def _extract_pair_key(name: Optional[str]) -> Optional[Tuple[str, str]]:
+        if not name:
+            return None
+        lower = name.lower()
+        if lower.endswith("_in"):
+            return (lower[:-3], "in")
+        if lower.endswith("_out"):
+            return (lower[:-4], "out")
+        return None
+
+    entries = cfg.flatten_acl()
+    entries_by_pair: Dict[Tuple[str, str], List[dict]] = defaultdict(list)
+    for entry in entries:
+        pair = _extract_pair_key(entry.get("acl"))
+        if not pair:
+            continue
+        entries_by_pair[pair].append(entry)
+
+    matched_by_pair: Dict[Tuple[str, str], List[dict]] = defaultdict(list)
+    existing_raw = {match.get("raw") for match in matches if match.get("raw")}
+    for match in matches:
+        pair = _extract_pair_key(match.get("acl"))
+        if pair:
+            matched_by_pair[pair].append(match)
+
+    new_matches: List[dict] = []
+    warnings: List[str] = []
+    processed_bases: Set[str] = set()
+    src_set = {src_ip}
+    dst_set = {dst_ip}
+
+    def _format_acl_names(items: List[dict]) -> str:
+        names = {item.get("acl") for item in items if item.get("acl")}
+        return ", ".join(sorted(names)) if names else "(unnamed)"
+
+    def _find_counterpart(base: str, direction: str) -> Optional[dict]:
+        for entry in entries_by_pair.get((base, direction), []):
+            if entry.get("raw") in existing_raw:
+                continue
+            if not include_any and _has_any_endpoint(entry):
+                continue
+            if not nets_overlap(entry.get("src", set()), src_set):
+                continue
+            if not nets_overlap(entry.get("dst", set()), dst_set):
+                continue
+            if svc_filter and not _service_matches(cfg, entry, svc_filter):
+                continue
+            new_match = {
+                "raw": entry.get("raw"),
+                "summary": _entry_summary(entry),
+                "acl": entry.get("acl"),
+                "action": entry.get("action"),
+                "binding": entry.get("binding"),
+                "inferred": True,
+            }
+            existing_raw.add(entry.get("raw"))
+            matched_by_pair[(base, direction)].append(new_match)
+            return new_match
+        return None
+
+    for (base, direction), current_matches in list(matched_by_pair.items()):
+        if base in processed_bases:
+            continue
+        processed_bases.add(base)
+        inbound = matched_by_pair.get((base, "in"), [])
+        outbound = matched_by_pair.get((base, "out"), [])
+
+        if inbound and not outbound:
+            counterpart = _find_counterpart(base, "out")
+            if counterpart:
+                new_matches.append(counterpart)
+                outbound = matched_by_pair.get((base, "out"), [])
+            else:
+                names = _format_acl_names(inbound)
+                warnings.append(
+                    f"ACL set '{names}' matched (inbound) but no corresponding outbound rule was found."
+                )
+        if outbound and not inbound:
+            counterpart = _find_counterpart(base, "in")
+            if counterpart:
+                new_matches.append(counterpart)
+                inbound = matched_by_pair.get((base, "in"), [])
+            else:
+                names = _format_acl_names(outbound)
+                warnings.append(
+                    f"ACL set '{names}' matched (outbound) but no corresponding inbound rule was found."
+                )
+
+        if len(inbound) > 1:
+            names = _format_acl_names(inbound)
+            warnings.append(
+                f"Multiple inbound ACL rules matched for '{names}'."
+            )
+        if len(outbound) > 1:
+            names = _format_acl_names(outbound)
+            warnings.append(
+                f"Multiple outbound ACL rules matched for '{names}'."
+            )
+
+    return new_matches, warnings
