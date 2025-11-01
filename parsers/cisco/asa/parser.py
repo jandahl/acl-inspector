@@ -129,11 +129,13 @@ class ASAConfig:
     def __init__(self, text: str) -> None:
         self.lines = [line.rstrip() for line in text.splitlines()]
         self.network_objects: Dict[
-            str, Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network, str]]
+            str, Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]]
         ] = {}
+        self.network_object_literals: Dict[str, Set[str]] = defaultdict(set)
         self.network_object_groups: Dict[
-            str, List[Union[dict, ipaddress.IPv4Address, ipaddress.IPv4Network, str]]
+            str, List[Union[dict, ipaddress.IPv4Address, ipaddress.IPv4Network]]
         ] = {}
+        self.network_object_group_literals: Dict[str, Set[str]] = defaultdict(set)
         self.acls: Dict[str, List[Tuple[str, int]]] = defaultdict(list)
         # Interfaces, ACL bindings, and NAT rules (initial subset)
         self.interfaces: Dict[str, dict] = {}
@@ -431,25 +433,27 @@ class ASAConfig:
             m = re_object.match(line)
             if m:
                 name = m.group('name')
-                nets: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network, str]] = set()
+                nets: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]] = set()
                 i += 1
                 while i < L and self.lines[i].startswith(' '):
-                    lm = re_object_network_host.match(self.lines[i])
+                    current_line = self.lines[i]
+                    lm = re_object_network_host.match(current_line)
                     if lm:
+                        value = lm.group('ip')
                         try:
-                            nets.add(to_ip_network(lm.group('ip')))
+                            nets.add(to_ip_network(value))
                         except ValueError:
-                            nets.add(lm.group('ip').strip())
+                            self.network_object_literals[name].add(current_line.strip())
                     else:
-                        lm2 = re_object_network_subnet.match(self.lines[i])
+                        lm2 = re_object_network_subnet.match(current_line)
                         if lm2:
                             try:
                                 nets.add(to_ip_network(lm2.group('ip'), lm2.group('mask')))
                             except ValueError:
-                                nets.add(self.lines[i].strip())
+                                self.network_object_literals[name].add(current_line.strip())
                         else:
                             # Auto NAT (object NAT) inside object network block
-                            mnat = re.match(r"^\s*nat\s*\((?P<src_if>[^,]+),(?P<dst_if>[^\)]+)\)\s+(?P<rest>.+)$", self.lines[i], re.IGNORECASE)
+                            mnat = re.match(r"^\s*nat\s*\((?P<src_if>[^,]+),(?P<dst_if>[^\)]+)\)\s+(?P<rest>.+)$", current_line, re.IGNORECASE)
                             if mnat:
                                 src_if = mnat.group('src_if').strip()
                                 dst_if = mnat.group('dst_if').strip()
@@ -486,15 +490,16 @@ class ASAConfig:
                         m_subnet = re_group_network_subnet.match(ln)
                         m_group = re_group_network_groupobj.match(ln)
                         if m_host:
+                            host_val = m_host.group('ip')
                             try:
-                                members.append(to_ip_network(m_host.group('ip')))
+                                members.append(to_ip_network(host_val))
                             except ValueError:
-                                members.append(m_host.group('ip').strip())
+                                self.network_object_group_literals[name].add(ln.strip())
                         elif m_subnet:
                             try:
                                 members.append(to_ip_network(m_subnet.group('ip'), m_subnet.group('mask')))
                             except ValueError:
-                                members.append(ln.strip())
+                                self.network_object_group_literals[name].add(ln.strip())
                         elif m_obj:
                             members.append({'object': m_obj.group('name')})
                         elif m_group:
@@ -841,9 +846,9 @@ class ASAConfig:
                 out.append(m)
         return out
 
-    def resolve_network(self, token: Union[str, ipaddress.IPv4Address, ipaddress.IPv4Network], visited: Optional[Set[str]] = None) -> Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network, str]]:
+    def resolve_network(self, token: Union[str, ipaddress.IPv4Address, ipaddress.IPv4Network], visited: Optional[Set[str]] = None) -> Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]]:
         visited = set() if visited is None else visited
-        results: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network, str]] = set()
+        results: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]] = set()
         if isinstance(token, (ipaddress.IPv4Address, ipaddress.IPv4Network)):
             return {token}
         token_lower = token.lower() if isinstance(token, str) else token
@@ -867,12 +872,13 @@ class ASAConfig:
                     elif 'object' in m:
                         results.update(self.resolve_network(m['object'], visited))
                 else:
-                    results.add(m)
+                    if isinstance(m, (ipaddress.IPv4Address, ipaddress.IPv4Network)):
+                        results.add(m)
             return results
         try:
             return {to_ip_network(token)}
         except Exception:
-            return {token}
+            return set()
 
     def find_alias_objects(self, target: Union[str, ipaddress.IPv4Address, ipaddress.IPv4Network], target_nets: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]]) -> Dict[Union[ipaddress.IPv4Address, ipaddress.IPv4Network], Set[str]]:
         exclude: Set[str] = set([target]) if isinstance(target, str) and target in self.network_objects else set()
@@ -923,7 +929,7 @@ class ASAConfig:
         return entries
 
 
-def nets_overlap(set_a: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network, str]], set_b: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network, str]]) -> bool:
+def nets_overlap(set_a: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]], set_b: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]]) -> bool:
     for net_a in set_a:
         if not isinstance(net_a, (ipaddress.IPv4Address, ipaddress.IPv4Network)):
             continue
