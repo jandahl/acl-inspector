@@ -1,0 +1,215 @@
+{
+  "fonts": [
+    {
+      "slug": "inter",
+      "family": "Inter",
+      "display": "swap",
+      "license": "OFL",
+      "homepage": "https://rsms.me/inter/",
+      "variants": [
+        {
+          "style": "normal",
+          "weight": "100 900",
+          "format": "truetype",
+          "filename": "Inter-Variable.ttf",
+          "url": "https://github.com/google/fonts/raw/main/ofl/inter/Inter%5Bwght%5D.ttf"
+        },
+        {
+          "style": "italic",
+          "weight": "100 900",
+          "format": "truetype",
+          "filename": "Inter-Italic-Variable.ttf",
+          "url": "https://github.com/google/fonts/raw/main/ofl/inter/Inter-Italic%5Bwght%5D.ttf"
+        }
+      ]
+    },
+    {
+      "slug": "atkinson",
+      "family": "Atkinson Hyperlegible",
+      "display": "swap",
+      "license": "OFL",
+      "homepage": "https://brailleinstitute.org/freefont",
+      "variants": [
+        {
+          "style": "normal",
+          "weight": "400",
+          "format": "truetype",
+          "filename": "AtkinsonHyperlegible-Regular.ttf",
+          "url": "https://github.com/google/fonts/raw/main/ofl/atkinsonhyperlegible/AtkinsonHyperlegible-Regular.ttf"
+        },
+        {
+          "style": "italic",
+          "weight": "400",
+          "format": "truetype",
+          "filename": "AtkinsonHyperlegible-Italic.ttf",
+          "url": "https://github.com/google/fonts/raw/main/ofl/atkinsonhyperlegible/AtkinsonHyperlegible-Italic.ttf"
+        },
+        {
+          "style": "normal",
+          "weight": "700",
+          "format": "truetype",
+          "filename": "AtkinsonHyperlegible-Bold.ttf",
+          "url": "https://github.com/google/fonts/raw/main/ofl/atkinsonhyperlegible/AtkinsonHyperlegible-Bold.ttf"
+        },
+        {
+          "style": "italic",
+          "weight": "700",
+          "format": "truetype",
+          "filename": "AtkinsonHyperlegible-BoldItalic.ttf",
+          "url": "https://github.com/google/fonts/raw/main/ofl/atkinsonhyperlegible/AtkinsonHyperlegible-BoldItalic.ttf"
+        }
+      ]
+    },
+    {
+      "slug": "jetbrainsmono",
+      "family": "JetBrains Mono",
+      "display": "swap",
+      "license": "OFL",
+      "homepage": "https://www.jetbrains.com/mono/",
+      "variants": [
+        {
+          "style": "normal",
+          "weight": "100 800",
+          "format": "truetype",
+          "filename": "JetBrainsMono-Variable.ttf",
+          "url": "https://github.com/google/fonts/raw/main/ofl/jetbrainsmono/JetBrainsMono%5Bwght%5D.ttf"
+        },
+        {
+          "style": "italic",
+          "weight": "100 800",
+          "format": "truetype",
+          "filename": "JetBrainsMono-Italic-Variable.ttf",
+          "url": "https://github.com/google/fonts/raw/main/ofl/jetbrainsmono/JetBrainsMono-Italic%5Bwght%5D.ttf"
+        }
+      ]
+    },
+    {
+      "slug": "firacode",
+      "family": "Fira Code",
+      "display": "swap",
+      "license": "OFL",
+      "homepage": "https://github.com/tonsky/FiraCode",
+      "variants": [
+        {
+          "style": "normal",
+          "weight": "300 700",
+          "format": "truetype",
+          "filename": "FiraCode-Variable.ttf",
+          "url": "https://github.com/google/fonts/raw/main/ofl/firacode/FiraCode%5Bwght%5D.ttf"
+        }
+      ]
+    },
+    {
+      "slug": "ubuntu",
+      "family": "Ubuntu",
+      "display": "swap",
+      "license": "UFL",
+      "homepage": "https://design.ubuntu.com/font/",
+      "variants": [
+        {
+          "style": "normal",
+          "weight": "400",
+          "filename": "Ubuntu-Regular.ttf",
+          "url": "https://github.com/google/fonts/raw/main/ufl/ubuntu/Ubuntu-Regular.ttf"
+        },
+        {
+          "style": "italic",
+          "weight": "400",
+          "filename": "Ubuntu-Italic.ttf",
+          "url": "https://github.com/google/fonts/raw/main/ufl/ubuntu/Ubuntu-Italic.ttf"
+        },
+        {
+          "style": "normal",
+          "weight": "700",
+          "filename": "Ubuntu-Bold.ttf",
+          "url": "https://github.com/google/fonts/raw/main/ufl/ubuntu/Ubuntu-Bold.ttf"
+        },
+        {
+          "style": "italic",
+          "weight": "700",
+          "filename": "Ubuntu-BoldItalic.ttf",
+          "url": "https://github.com/google/fonts/raw/main/ufl/ubuntu/Ubuntu-BoldItalic.ttf"
+        }
+      ]
+    },
+    {
+      "slug": "ubuntumono",
+      "family": "Ubuntu Mono",
+      "display": "swap",
+      "license": "UFL",
+      "homepage": "https://design.ubuntu.com/font/",
+      "variants": [
+        {
+          "style": "normal",
+          "weight": "400",
+          "filename": "UbuntuMono-Regular.ttf",
+          "url": "https://github.com/google/fonts/raw/main/ufl/ubuntumono/UbuntuMono-Regular.ttf"
+        },
+        {
+          "style": "italic",
+          "weight": "400",
+          "filename": "UbuntuMono-Italic.ttf",
+          "url": "https://github.com/google/fonts/raw/main/ufl/ubuntumono/UbuntuMono-Italic.ttf"
+        },
+        {
+          "style": "normal",
+          "weight": "700",
+          "filename": "UbuntuMono-Bold.ttf",
+          "url": "https://github.com/google/fonts/raw/main/ufl/ubuntumono/UbuntuMono-Bold.ttf"
+        },
+        {
+          "style": "italic",
+          "weight": "700",
+          "filename": "UbuntuMono-BoldItalic.ttf",
+          "url": "https://github.com/google/fonts/raw/main/ufl/ubuntumono/UbuntuMono-BoldItalic.ttf"
+        }
+      ]
+    },
+    {
+      "slug": "sourcesans3",
+      "family": "Source Sans 3",
+      "display": "swap",
+      "license": "OFL",
+      "homepage": "https://github.com/adobe-fonts/source-sans",
+      "variants": [
+        {
+          "style": "normal",
+          "weight": "200 900",
+          "format": "truetype",
+          "filename": "SourceSans3-Variable.ttf",
+          "url": "https://github.com/google/fonts/raw/main/ofl/sourcesans3/SourceSans3%5Bwght%5D.ttf"
+        },
+        {
+          "style": "italic",
+          "weight": "200 900",
+          "format": "truetype",
+          "filename": "SourceSans3-Italic-Variable.ttf",
+          "url": "https://github.com/google/fonts/raw/main/ofl/sourcesans3/SourceSans3-Italic%5Bwght%5D.ttf"
+        }
+      ]
+    },
+    {
+      "slug": "sourcecodepro",
+      "family": "Source Code Pro",
+      "display": "swap",
+      "license": "OFL",
+      "homepage": "https://github.com/adobe-fonts/source-code-pro",
+      "variants": [
+        {
+          "style": "normal",
+          "weight": "200 900",
+          "format": "truetype",
+          "filename": "SourceCodePro-Variable.ttf",
+          "url": "https://github.com/google/fonts/raw/main/ofl/sourcecodepro/SourceCodePro%5Bwght%5D.ttf"
+        },
+        {
+          "style": "italic",
+          "weight": "200 900",
+          "format": "truetype",
+          "filename": "SourceCodePro-Italic-Variable.ttf",
+          "url": "https://github.com/google/fonts/raw/main/ofl/sourcecodepro/SourceCodePro-Italic%5Bwght%5D.ttf"
+        }
+      ]
+    }
+  ]
+}

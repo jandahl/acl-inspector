@@ -21,68 +21,18 @@
   </fieldset>
   <fieldset class="section section-layout">
     <legend>Layout &amp; Presentation</legend>
-    <div class="theme-grid">
-      <div class="theme-form">
-        <div class="theme-control">
-          <label for="theme_dark">Dark theme:</label>
-          <select id="theme_dark"></select>
-        </div>
-        <div class="theme-control">
-          <label for="theme_light">Light theme:</label>
-          <select id="theme_light"></select>
-        </div>
-        <p class="pref-note">Theme choices are remembered per-device and sync with the header toggle.</p>
-        <div class="pref-inline">
-          <label for="pref_font_body">Normal font:</label>
-          <select id="pref_font_body">
-            <option value="auto">System default</option>
-            <option value="inter">Inter</option>
-            <option value="atkinson">Atkinson Hyperlegible</option>
-            <option value="roboto">Roboto</option>
-            <option value="source">Source Sans 3</option>
-            <option value="serif">Classic serif</option>
-          </select>
-        </div>
-        <div class="pref-inline">
-          <label for="pref_font_mono">Monospace font:</label>
-          <select id="pref_font_mono">
-            <option value="auto">System default</option>
-            <option value="jetbrains">JetBrains Mono</option>
-            <option value="fira">Fira Code</option>
-            <option value="ibmplex">IBM Plex Mono</option>
-            <option value="inconsolata">Inconsolata</option>
-            <option value="courier">Courier New</option>
-          </select>
-        </div>
-        <div class="pref-inline pref-slider">
-          <label for="pref_font_scale">Font size</label>
-          <input type="range" id="pref_font_scale" min="80" max="130" step="5" value="100">
-          <span class="pref-metric" id="pref_font_scale_value">100%</span>
-        </div>
-        <div class="pref-inline pref-slider">
-          <label for="pref_layout_width">App width</label>
-          <input type="range" id="pref_layout_width" min="70" max="150" step="5" value="100">
-          <span class="pref-metric" id="pref_layout_width_value">100%</span>
-        </div>
-      </div>
-      <div class="theme-preview-radar" id="theme_preview_box" aria-hidden="true">
-        <div class="preview-content">
-          <h4>Theme preview</h4>
-          <p>Light: <span class="preview-tag" id="preview_light_name">Default</span> · Dark: <span class="preview-tag" id="preview_dark_name">Default</span></p>
-          <p class="preview-body">Consistent spacing keeps extended configs readable across zoom levels.</p>
-          <code>object network SAMPLE_HOST</code>
-          <code> host 203.0.113.10</code>
-          <code>object-group network SAMPLE_GROUP</code>
-          <code> network-object object SAMPLE_HOST</code>
-          <code> network-object 198.51.100.0 255.255.255.0</code>
-          <code>access-list OUTSIDE extended permit tcp any object SAMPLE_HOST eq 443</code>
-        </div>
-      </div>
+    <p class="layout-summary" id="layout_summary">Dark theme · Light theme · Body font · Monospace font</p>
+    <button type="button" class="open-theme-modal" id="open_theme_modal">Customize theme &amp; layout</button>
+    <div class="pref-inline pref-slider">
+      <label for="pref_layout_width">App width</label>
+      <input type="range" id="pref_layout_width" min="70" max="150" step="5" value="100">
+      <span class="pref-metric" id="pref_layout_width_value">100%</span>
     </div>
+    <p class="pref-note">Theme, font, and layout choices are remembered per-device and sync with the header toggle.</p>
     <div class="pref-inline">
       <label><input type="checkbox" id="pref_show_beta"> Show beta modules</label>
     </div>
-    <p class="pref-note">Sizing sliders adjust the automatically detected baseline while keeping access to beta tabs optional.</p>
+    <p class="pref-note">Sizing controls are available inside the customizer; beta tabs remain optional per device.</p>
   </fieldset>
   <fieldset class="section section-debug">
     <legend>Debug</legend>
@@ -92,4 +42,123 @@
     </div>
     <p class="pref-note" id="debug_status"></p>
   </fieldset>
+  <div class="theme-modal" id="theme_modal" aria-hidden="true">
+    <div class="theme-modal__backdrop" data-theme-modal-close></div>
+    <div class="theme-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="theme_modal_title">
+      <header class="theme-modal__header">
+        <h3 id="theme_modal_title">Theme &amp; layout settings</h3>
+        <button type="button" class="theme-modal__close" id="theme_modal_close" aria-label="Close theme settings">
+          <svg viewBox="0 0 16 16" focusable="false" aria-hidden="true">
+            <line x1="3" y1="3" x2="13" y2="13" stroke="currentColor" stroke-width="2" stroke-linecap="round"></line>
+            <line x1="13" y1="3" x2="3" y2="13" stroke="currentColor" stroke-width="2" stroke-linecap="round"></line>
+          </svg>
+        </button>
+      </header>
+      <div class="theme-modal__body">
+        <div class="theme-modal__form">
+          <div class="theme-control">
+            <label for="theme_dark">Dark theme</label>
+            <select id="theme_dark"></select>
+          </div>
+          <div class="theme-control">
+            <label for="theme_light">Light theme</label>
+            <select id="theme_light"></select>
+          </div>
+          <div class="theme-control">
+            <label for="preview_mode">Preview mode</label>
+            <select id="preview_mode">
+              <option value="radar">Radar sweep</option>
+              <option value="light">Light only</option>
+              <option value="dark">Dark only</option>
+              <option value="rorschach">Rorschach</option>
+            </select>
+          </div>
+          <p class="pref-note">Changes apply to this browser and sync with the toolbar toggle.</p>
+          <div class="pref-inline">
+            <label for="pref_font_body">Normal font</label>
+            <select id="pref_font_body">
+              <option value="auto">System default</option>
+              <option value="inter">Inter</option>
+              <option value="atkinson">Atkinson Hyperlegible</option>
+              <option value="ubuntu">Ubuntu</option>
+              <option value="roboto">Roboto</option>
+              <option value="source">Source Sans 3</option>
+              <option value="serif">Classic serif</option>
+            </select>
+          </div>
+          <div class="pref-inline">
+            <label for="pref_font_mono">Monospace font</label>
+            <select id="pref_font_mono">
+              <option value="auto">System default</option>
+              <option value="jetbrains">JetBrains Mono</option>
+              <option value="fira">Fira Code</option>
+              <option value="ubuntumono">Ubuntu Mono</option>
+              <option value="sourcecode">Source Code Pro</option>
+              <option value="ibmplex">IBM Plex Mono</option>
+              <option value="inconsolata">Inconsolata</option>
+              <option value="courier">Courier New</option>
+            </select>
+          </div>
+          <div class="pref-inline pref-slider">
+            <label for="pref_font_scale">Font size</label>
+            <input type="range" id="pref_font_scale" min="80" max="130" step="5" value="100">
+            <span class="pref-metric" id="pref_font_scale_value">100%</span>
+          </div>
+        </div>
+        <div class="theme-modal__preview">
+          <div class="theme-preview-radar" id="theme_preview_box" aria-hidden="true">
+            <div class="preview-content">
+              <p class="preview-intro">Preview is animated to showcase both light and dark palettes.</p>
+              <div class="preview-grid">
+                <div class="preview-banners">
+                  <div class="preview-banner" data-theme-preview="light">
+                    <span class="preview-card__label">Light</span>
+                    <span class="preview-card__name" id="preview_light_name">Default</span>
+                  </div>
+                  <div class="preview-banner" data-theme-preview="dark">
+                    <span class="preview-card__label">Dark</span>
+                    <span class="preview-card__name" id="preview_dark_name">Default</span>
+                  </div>
+                </div>
+                <div class="preview-canvas">
+                  <div class="preview-card" data-theme-preview="light">
+                    <div class="preview-card__body">
+                    <p>Readable configs with consistent spacing.</p>
+                    <code><span class="kw">object</span> <span class="kw">network</span> <span class="addr">SAMPLE_WEB</span></code>
+                    <code><span class="kw"> host</span> <span class="addr">203.0.113.10</span></code>
+                    <code><span class="kw"> description</span> <span class="act">Internet web tier</span></code>
+                    <code><span class="kw">object-group</span> <span class="kw">network</span> <span class="addr">WEB_SERVERS</span></code>
+                    <code><span class="kw"> network-object</span> <span class="kw">object</span> <span class="match">SAMPLE_WEB</span></code>
+                    <code><span class="kw"> network-object</span> <span class="addr">198.51.100.0</span> <span class="addr">255.255.255.0</span></code>
+                    <code><span class="kw">access-list</span> <span class="kw">OUTSIDE</span> <span class="kw">extended</span> <span class="act">permit</span> <span class="proto">tcp</span> <span class="kw">any</span> <span class="kw">object-group</span> <span class="addr">WEB_SERVERS</span> <span class="kw">eq</span> <span class="num">443</span></code>
+                    <code><span class="kw">access-list</span> <span class="kw">OUTSIDE</span> <span class="kw">extended</span> <span class="act">permit</span> <span class="proto">tcp</span> <span class="kw">any</span> <span class="kw">object-group</span> <span class="addr">WEB_SERVERS</span> <span class="kw">eq</span> <span class="num">80</span></code>
+                    <code><span class="kw">access-list</span> <span class="kw">OUTSIDE</span> <span class="kw">extended</span> <span class="act">deny</span> <span class="proto">ip</span> <span class="kw">any</span> <span class="kw">any</span></code>
+                    </div>
+                  </div>
+                  <div class="preview-card" data-theme-preview="dark">
+                    <div class="preview-card__body">
+                    <p>Contrast tuned for late-night reviews.</p>
+                    <code><span class="kw">object</span> <span class="kw">network</span> <span class="addr">SAMPLE_WEB</span></code>
+                    <code><span class="kw"> host</span> <span class="addr">203.0.113.10</span></code>
+                    <code><span class="kw"> description</span> <span class="act">Internet web tier</span></code>
+                    <code><span class="kw">object-group</span> <span class="kw">network</span> <span class="addr">WEB_SERVERS</span></code>
+                    <code><span class="kw"> network-object</span> <span class="kw">object</span> <span class="match">SAMPLE_WEB</span></code>
+                    <code><span class="kw"> network-object</span> <span class="addr">198.51.100.0</span> <span class="addr">255.255.255.0</span></code>
+                    <code><span class="kw">access-list</span> <span class="kw">OUTSIDE</span> <span class="kw">extended</span> <span class="act">permit</span> <span class="proto">tcp</span> <span class="kw">any</span> <span class="kw">object-group</span> <span class="addr">WEB_SERVERS</span> <span class="kw">eq</span> <span class="num">443</span></code>
+                    <code><span class="kw">access-list</span> <span class="kw">OUTSIDE</span> <span class="kw">extended</span> <span class="act">permit</span> <span class="proto">tcp</span> <span class="kw">any</span> <span class="kw">object-group</span> <span class="addr">WEB_SERVERS</span> <span class="kw">eq</span> <span class="num">80</span></code>
+                    <code><span class="kw">access-list</span> <span class="kw">OUTSIDE</span> <span class="kw">extended</span> <span class="act">deny</span> <span class="proto">ip</span> <span class="kw">any</span> <span class="kw">any</span></code>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <footer class="theme-modal__footer">
+        <button type="button" class="theme-modal__cancel" id="theme_modal_cancel">Cancel</button>
+        <button type="button" class="theme-modal__save" id="theme_modal_save">Save</button>
+      </footer>
+    </div>
+  </div>
 </section>

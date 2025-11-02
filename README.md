@@ -32,6 +32,8 @@ Requirements
 Setup
 -----
 - Run `make themes` to download/update the optional iTerm2 color scheme files used by the web UI Preferences tab. The palettes come from the [iTerm2-Color-Schemes](https://github.com/mbadolato/iTerm2-Color-Schemes) project (MIT); see `LICENSE` for attribution.
+- Run `make fonts` to fetch libre font families — Inter, Atkinson Hyperlegible, Ubuntu, Ubuntu Mono, Source Sans 3, JetBrains Mono, Fira Code, Source Code Pro — into `fonts/downloaded/`. Set `FORCE=1` to refresh. Add your own fonts by dropping a `manifest.json` + font files under `fonts/custom/` (see inline comments in `fonts/fonts.json`).
+- For live development, use `make web-watch` (optionally `POLL=60 make web-watch` to poll once a minute). The helper watches `.py/.html/.css/.js` files and restarts the server when they change.
 
 Quick start (CLI)
 -----------------

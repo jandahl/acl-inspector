@@ -191,7 +191,7 @@ def run_server(settings: settings_mod.Settings) -> None:
     router = Router()
     register_api(router, state)
     register_pages(router, state)
-    register_static(router)
+    register_static(router, state)
     server = build_httpd(settings, state, router)
     if settings.server.prewarm_all and hasattr(_legacy, "prewarm_all_configs"):
         count = _legacy.prewarm_all_configs(server)

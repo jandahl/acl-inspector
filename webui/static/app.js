@@ -7,10 +7,10 @@
   if (!Number.isFinite(previewSpeed) || previewSpeed <= 0) {
     previewSpeed = 12;
   }
-  const THEME_PREVIEW_SPEED = previewSpeed;
-
+  const THEME_PREVIEW_SPEED = Math.min(Math.max(previewSpeed, 1), 120);
   const PREF_COOKIE = "acl_theme_pref";
   const THEME_KEY = "acl_theme";
+  const PREVIEW_MODE_KEY = "acl_preview_mode";
   const HL_KEY = "acl_highlight";
   const HIST_VIS_KEY = "acl_history_visible";
 
@@ -46,6 +46,7 @@
     auto: "system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,'Helvetica Neue',sans-serif",
     inter: "'Inter','Helvetica Neue',Arial,sans-serif",
     atkinson: "'Atkinson Hyperlegible','Helvetica Neue',Arial,sans-serif",
+    ubuntu: "'Ubuntu','Segoe UI',Roboto,'Helvetica Neue',sans-serif",
     roboto: "'Roboto','Helvetica Neue',Arial,sans-serif",
     source: "'Source Sans 3','Helvetica Neue',Arial,sans-serif",
     serif: "Georgia,'Times New Roman',serif",
@@ -55,10 +56,32 @@
     auto: "'SFMono-Regular',Menlo,Consolas,'Liberation Mono',monospace",
     jetbrains: "'JetBrains Mono','Fira Code','SFMono-Regular',Consolas,monospace",
     fira: "'Fira Code','SFMono-Regular',Consolas,monospace",
+    ubuntumono: "'Ubuntu Mono','Fira Code','SFMono-Regular',Consolas,monospace",
+    sourcecode: "'Source Code Pro','Fira Code','SFMono-Regular',Consolas,monospace",
     ibmplex: "'IBM Plex Mono','SFMono-Regular',Consolas,monospace",
     inconsolata: "'Inconsolata','SFMono-Regular',Consolas,monospace",
     courier: "'Courier New','Courier',monospace",
   };
+
+  const BODY_FONT_LABELS = {
+    auto: "System default",
+    inter: "Inter",
+    atkinson: "Atkinson Hyperlegible",
+    roboto: "Roboto",
+    source: "Source Sans 3",
+    serif: "Classic serif",
+  };
+
+  const MONO_FONT_LABELS = {
+    auto: "System default",
+    jetbrains: "JetBrains Mono",
+    fira: "Fira Code",
+    ibmplex: "IBM Plex Mono",
+    inconsolata: "Inconsolata",
+    courier: "Courier New",
+  };
+
+  const LAYOUT_PREF_KEYS = ["fontBody", "fontMono", "fontScale", "layoutWidth"];
 
   function computeAutoLayout() {
     const viewport = Math.max(window.innerWidth || 0, (window.screen && window.screen.width) || 0, 0);
@@ -98,6 +121,12 @@
   let prefs = { ...PREF_DEFAULTS };
   let prefGuard = false;
   let viewerGuard = false;
+  let themeModalOpen = false;
+  let modalThemePref = null;
+  let modalPrefs = null;
+  let themeModalSnapshot = null;
+  let themeModalFocusReturn = null;
+  let previewMode = storageGet(PREVIEW_MODE_KEY, "radar") || "radar";
   const BETA_MODULES = new Set(
     (Array.isArray(window.ACL_BETA_MODULES) ? window.ACL_BETA_MODULES : [])
       .map((name) => (name === null || name === undefined ? "" : String(name).toLowerCase()))
@@ -326,13 +355,13 @@
     return library[key] || fallback;
   }
 
-  function updateLayoutMetrics(tempScale, tempWidth) {
+  function updateLayoutMetrics(tempScale, tempWidth, sourcePrefs = prefs) {
     const scaleLabel = document.getElementById("pref_font_scale_value");
     if (scaleLabel) {
       const value =
         tempScale !== undefined && tempScale !== null
           ? clamp(Number(tempScale), 70, 150)
-          : clamp(prefs.fontScale, 70, 150);
+          : clamp(sourcePrefs.fontScale, 70, 150);
       scaleLabel.textContent = `${value}%`;
     }
     const widthLabel = document.getElementById("pref_layout_width_value");
@@ -340,7 +369,7 @@
       const value =
         tempWidth !== undefined && tempWidth !== null
           ? clamp(Number(tempWidth), 60, 160)
-          : clamp(prefs.layoutWidth, 60, 160);
+          : clamp(sourcePrefs.layoutWidth, 60, 160);
       widthLabel.textContent = `${value}%`;
     }
   }
@@ -357,18 +386,9 @@
     const monoFont = resolveFont(prefs.fontMono, MONO_FONT_OPTIONS, MONO_FONT_OPTIONS.auto);
     root.style.setProperty("--font-body", bodyFont);
     root.style.setProperty("--font-mono", monoFont);
-    updateLayoutMetrics();
-    const preview = document.getElementById("theme_preview_box");
-    if (preview) {
-      preview.style.setProperty("--preview-body-font", bodyFont);
-      preview.style.setProperty("--preview-mono-font", monoFont);
-      preview
-        .querySelectorAll("code")
-        .forEach((node) => {
-          node.style.fontFamily = monoFont;
-        });
-    }
-    updateThemePreviewBox();
+    updateLayoutMetrics(undefined, undefined, prefs);
+    updateThemePreviewBox(themePref, prefs);
+    updateLayoutSummary();
   }
 
   function refreshAutoLayout(force = false) {
@@ -502,45 +522,54 @@
       }
       default:
         break;
-    }
+  }
     clearResultsForTab(tab);
     setHistoryReplayFlag(false);
     saveState();
+  }
+
+  function normalizePreferenceInput(key, value, baseline) {
+    if (typeof baseline === "boolean") {
+      return !!value;
+    }
+    if (typeof baseline === "number") {
+      const asNumber = parseInt(value, 10);
+      if (Number.isNaN(asNumber)) {
+        return baseline;
+      }
+      if (key === "configContextLines") {
+        return clamp(asNumber, 0, 20);
+      }
+      if (key === "configMinChars") {
+        return clamp(asNumber, 1, 20);
+      }
+      if (key === "fontScale") {
+        return clamp(asNumber, 70, 150);
+      }
+      if (key === "layoutWidth") {
+        return clamp(asNumber, 60, 160);
+      }
+      return asNumber;
+    }
+    if (typeof baseline === "string") {
+      const cleaned = String(value || "").trim().toLowerCase();
+      if (key === "fontBody") {
+        return cleaned && BODY_FONT_OPTIONS[cleaned] ? cleaned : "auto";
+      }
+      if (key === "fontMono") {
+        return cleaned && MONO_FONT_OPTIONS[cleaned] ? cleaned : "auto";
+      }
+      return cleaned || baseline;
+    }
+    return value;
   }
 
   function setPreference(key, value, source) {
     if (!(key in prefs)) {
       return;
     }
-    let next = value;
     const current = prefs[key];
-    if (typeof current === "boolean") {
-      next = !!value;
-    } else if (typeof current === "number") {
-      const asNumber = parseInt(value, 10);
-      if (Number.isNaN(asNumber)) {
-        next = current;
-      } else if (key === "configContextLines") {
-        next = clamp(asNumber, 0, 20);
-      } else if (key === "configMinChars") {
-        next = clamp(asNumber, 1, 20);
-      } else if (key === "fontScale") {
-        next = clamp(asNumber, 70, 150);
-      } else if (key === "layoutWidth") {
-        next = clamp(asNumber, 60, 160);
-      } else {
-        next = asNumber;
-      }
-    } else if (typeof current === "string") {
-      const cleaned = String(value || "").trim().toLowerCase();
-      if (key === "fontBody") {
-        next = cleaned && BODY_FONT_OPTIONS[cleaned] ? cleaned : "auto";
-      } else if (key === "fontMono") {
-        next = cleaned && MONO_FONT_OPTIONS[cleaned] ? cleaned : "auto";
-      } else {
-        next = cleaned || current;
-      }
-    }
+    const next = normalizePreferenceInput(key, value, current);
     if (prefs[key] === next) {
       return;
     }
@@ -576,22 +605,32 @@
     return THEMES.find((t) => t.name === name && (!kind || t.kind === kind));
   }
 
-  function ensureThemePref() {
+  function ensureThemePrefState(state) {
+    if (!state) {
+      return;
+    }
     ["dark", "light"].forEach((kind) => {
       const available = THEMES.filter((t) => t.kind === kind);
       if (!available.length) {
         return;
       }
-      const current = themePref[kind];
+      const current = state[kind];
       if (!current || !themeByName(current, kind)) {
-        themePref[kind] = available[0].name;
+        state[kind] = available[0].name;
       }
     });
   }
 
-  function themeForKind(kind) {
-    ensureThemePref();
-    return themeByName(themePref[kind], kind) || THEMES.find((t) => t.kind === kind) || THEMES[0];
+  function ensureThemePref() {
+    ensureThemePrefState(themePref);
+  }
+
+  function themeForKind(kind, state) {
+    const target = state || themePref;
+    ensureThemePrefState(target);
+    return (
+      themeByName(target[kind], kind) || THEMES.find((t) => t.kind === kind) || THEMES[0]
+    );
   }
 
   function applyThemeVars(theme) {
@@ -604,39 +643,329 @@
     }
   }
 
-  function updateThemePreviewBox() {
-    const box = document.getElementById("theme_preview_box");
-    if (!box) {
+  function applyPreviewCard(card, theme, defaults) {
+    if (!card) {
+      return;
+    }
+    const vars = (theme && theme.vars) || {};
+    const bg = vars.bg || defaults.bg;
+    const text = vars.text || defaults.text;
+    const accent = vars.accent || defaults.accent;
+    const border = vars.border || defaults.border;
+    const muted = vars.muted || defaults.muted;
+    const kw = vars["hl-kw"] || defaults.kw;
+    const proto = vars["hl-proto"] || defaults.proto;
+    const act = vars["hl-act"] || defaults.act;
+    const addr = vars["hl-addr"] || defaults.addr;
+    const num = vars["hl-num"] || defaults.num;
+    card.style.setProperty("--preview-bg", bg);
+    card.style.setProperty("--preview-text", text);
+    card.style.setProperty("--preview-accent", accent);
+    card.style.setProperty("--preview-border", border);
+    card.style.setProperty("--preview-kw", kw);
+    card.style.setProperty("--preview-proto", proto);
+    card.style.setProperty("--preview-act", act);
+    card.style.setProperty("--preview-addr", addr);
+    card.style.setProperty("--preview-num", num);
+    card.style.setProperty("--preview-match", accent);
+    card.style.setProperty("--preview-code-bg", muted);
+    card.style.setProperty("--preview-code-border", border);
+    const name = card.querySelector(".preview-card__name");
+    if (name) {
+      name.textContent = theme ? theme.name : "Default";
+    }
+  }
+
+  function fontLabel(value, labels) {
+    const key = String(value || "auto").toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(labels, key)) {
+      return labels[key];
+    }
+    return labels.auto || "System default";
+  }
+
+  function updateLayoutSummary() {
+    const summary = document.getElementById("layout_summary");
+    if (!summary) {
       return;
     }
     const lightTheme = themeForKind("light");
     const darkTheme = themeForKind("dark");
+    const parts = [
+      `Dark: ${darkTheme ? darkTheme.name : "Default"}`,
+      `Light: ${lightTheme ? lightTheme.name : "Default"}`,
+      `Body font: ${fontLabel(prefs.fontBody, BODY_FONT_LABELS)}`,
+      `Monospace: ${fontLabel(prefs.fontMono, MONO_FONT_LABELS)}`,
+    ];
+    summary.textContent = parts.join(" · ");
+  }
+
+  function setPreviewMode(mode, persist = true) {
+    const allowed = ["radar", "light", "dark", "rorschach"];
+    if (!allowed.includes(mode)) {
+      mode = "radar";
+    }
+    previewMode = mode;
+    if (persist) {
+      storageSet(PREVIEW_MODE_KEY, previewMode);
+    }
+    const box = document.getElementById("theme_preview_box");
+    if (box) {
+      box.dataset.previewMode = previewMode;
+      const grid = box.querySelector(".preview-grid");
+      if (grid) {
+        grid.dataset.previewMode = previewMode;
+      }
+      const canvas = box.querySelector(".preview-canvas");
+      if (canvas) {
+        canvas.dataset.previewMode = previewMode;
+      }
+    }
+    const select = document.getElementById("preview_mode");
+    if (select && select.value !== previewMode) {
+      select.value = previewMode;
+    }
+    updateThemePreviewBox();
+  }
+
+  function updateThemePreviewBox(prefState = themePref, previewPrefs = prefs) {
+    const box = document.getElementById("theme_preview_box");
+    if (!box) {
+      return;
+    }
+    box.dataset.previewMode = previewMode;
+    const grid = box.querySelector(".preview-grid");
+    if (grid) {
+      grid.dataset.previewMode = previewMode;
+    }
+    const canvas = box.querySelector(".preview-canvas");
+    if (canvas) {
+      canvas.dataset.previewMode = previewMode;
+    }
+    const lightTheme = themeForKind("light", prefState);
+    const darkTheme = themeForKind("dark", prefState);
+    const computed = getComputedStyle(document.documentElement);
+    const defaults = {
+      bg: (computed.getPropertyValue("--muted") || "#1a1f29").trim() || "#1a1f29",
+      text: (computed.getPropertyValue("--text") || "#e6edf3").trim() || "#e6edf3",
+      accent: (computed.getPropertyValue("--accent") || "#7aa2f7").trim() || "#7aa2f7",
+      border: (computed.getPropertyValue("--border") || "rgba(255,255,255,0.12)").trim() || "rgba(255,255,255,0.12)",
+      muted: (computed.getPropertyValue("--muted") || "#1a1f29").trim() || "#1a1f29",
+      kw: (computed.getPropertyValue("--hl-kw") || "#c792ea").trim() || "#c792ea",
+      proto: (computed.getPropertyValue("--hl-proto") || "#82aaff").trim() || "#82aaff",
+      act: (computed.getPropertyValue("--hl-act") || "#c3e88d").trim() || "#c3e88d",
+      addr: (computed.getPropertyValue("--hl-addr") || "#f78c6c").trim() || "#f78c6c",
+      num: (computed.getPropertyValue("--hl-num") || "#ffcb6b").trim() || "#ffcb6b",
+    };
+    const bodyFont = resolveFont(
+      previewPrefs.fontBody,
+      BODY_FONT_OPTIONS,
+      BODY_FONT_OPTIONS.auto
+    );
+    const monoFont = resolveFont(
+      previewPrefs.fontMono,
+      MONO_FONT_OPTIONS,
+      MONO_FONT_OPTIONS.auto
+    );
+    const fontScale = clamp(previewPrefs.fontScale || 100, 70, 150) / 100;
+    const lightCard = box.querySelector(".preview-card[data-theme-preview='light']");
+    const darkCard = box.querySelector(".preview-card[data-theme-preview='dark']");
+    const lightBanner = box.querySelector(".preview-banner[data-theme-preview='light']");
+    const darkBanner = box.querySelector(".preview-banner[data-theme-preview='dark']");
     box.style.setProperty("--preview-speed", `${THEME_PREVIEW_SPEED}s`);
+    box.style.setProperty("--preview-body-font", bodyFont);
+    box.style.setProperty("--preview-mono-font", monoFont);
+    box.style.setProperty("--preview-font-scale", fontScale);
+    const lightBg = lightTheme && lightTheme.vars ? lightTheme.vars.bg || defaults.bg : defaults.bg;
+    const darkBg =
+      darkTheme && darkTheme.vars ? darkTheme.vars.bg || "#0e1116" : "#0e1116";
+    box.style.setProperty("--preview-light", lightBg);
+    box.style.setProperty("--preview-dark", darkBg);
     const accentCandidate =
       (darkTheme && darkTheme.vars && darkTheme.vars.accent) ||
       (lightTheme && lightTheme.vars && lightTheme.vars.accent) ||
-      getComputedStyle(document.documentElement).getPropertyValue("--accent");
-    if (lightTheme && lightTheme.vars) {
-      box.style.setProperty("--preview-light", lightTheme.vars.bg || "#f6f8fa");
+      defaults.accent;
+    box.style.setProperty("--preview-accent", accentCandidate);
+    applyPreviewCard(lightCard, lightTheme, defaults);
+    applyPreviewCard(darkCard, darkTheme, defaults);
+    applyPreviewCard(lightBanner, lightTheme, defaults);
+    applyPreviewCard(darkBanner, darkTheme, defaults);
+  }
+
+  function updateModalPreview() {
+    if (!themeModalOpen || !modalPrefs || !modalThemePref) {
+      return;
     }
-    if (darkTheme && darkTheme.vars) {
-      box.style.setProperty("--preview-dark", darkTheme.vars.bg || "#0e1116");
+    updateLayoutMetrics(modalPrefs.fontScale, undefined, modalPrefs);
+    updateThemePreviewBox(modalThemePref, modalPrefs);
+  }
+
+  function syncThemeModalControls() {
+    if (!themeModalOpen || !modalPrefs || !modalThemePref) {
+      return;
     }
-    if (accentCandidate) {
-      box.style.setProperty("--preview-accent", accentCandidate.trim());
+    const darkSelect = document.getElementById("theme_dark");
+    if (darkSelect) {
+      darkSelect.value = modalThemePref.dark || "";
     }
-    const lightName = document.getElementById("preview_light_name");
-    if (lightName) {
-      lightName.textContent = lightTheme ? lightTheme.name : "Default";
+    const lightSelect = document.getElementById("theme_light");
+    if (lightSelect) {
+      lightSelect.value = modalThemePref.light || "";
     }
-    const darkName = document.getElementById("preview_dark_name");
-    if (darkName) {
-      darkName.textContent = darkTheme ? darkTheme.name : "Default";
+    const fontBody = document.getElementById("pref_font_body");
+    if (fontBody) {
+      fontBody.value = modalPrefs.fontBody;
+    }
+    const fontMono = document.getElementById("pref_font_mono");
+    if (fontMono) {
+      fontMono.value = modalPrefs.fontMono;
+    }
+    const fontScale = document.getElementById("pref_font_scale");
+    if (fontScale) {
+      fontScale.value = modalPrefs.fontScale;
+    }
+    styleFontOptionPreviews();
+    updateModalPreview();
+  }
+
+  function updateThemePreview(_kind, prefState = themePref, previewPrefs = prefs) {
+    updateThemePreviewBox(prefState, previewPrefs);
+  }
+
+  function captureThemeModalSnapshot() {
+    const snapshotPrefs = {};
+    LAYOUT_PREF_KEYS.forEach((key) => {
+      snapshotPrefs[key] = prefs[key];
+    });
+    themeModalSnapshot = {
+      prefs: snapshotPrefs,
+      themePref: { ...themePref },
+      mode: storageGet(THEME_KEY, "dark"),
+    };
+  }
+
+  function restoreThemeModalSnapshot() {
+    if (!themeModalSnapshot) {
+      return;
+    }
+    const snapshot = themeModalSnapshot;
+    const restorePrefs = {};
+    LAYOUT_PREF_KEYS.forEach((key) => {
+      if (Object.prototype.hasOwnProperty.call(snapshot.prefs, key)) {
+        restorePrefs[key] = snapshot.prefs[key];
+      }
+    });
+    prefs = { ...prefs, ...restorePrefs };
+    Object.entries(restorePrefs).forEach(([key, value]) => {
+      savePreference(key, value);
+    });
+    syncPreferenceControls();
+    applyPrefs();
+    themePref = { ...snapshot.themePref };
+    saveThemePrefs();
+    if (snapshot.mode) {
+      storageSet(THEME_KEY, snapshot.mode);
+    }
+    populateThemeSelectors();
+    applyTheme();
+    setPreviewMode(previewMode, false);
+  }
+
+  function closeThemeModal() {
+    const modal = document.getElementById("theme_modal");
+    if (!modal) {
+      return;
+    }
+    const darkSelect = document.getElementById("theme_dark");
+    if (darkSelect) {
+      darkSelect.onchange = null;
+    }
+    const lightSelect = document.getElementById("theme_light");
+    if (lightSelect) {
+      lightSelect.onchange = null;
+    }
+    modal.classList.remove("is-open");
+    modal.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("modal-open");
+    themeModalOpen = false;
+    modalThemePref = null;
+    modalPrefs = null;
+    const focusTarget = themeModalFocusReturn;
+    themeModalFocusReturn = null;
+    themeModalSnapshot = null;
+    updateThemePreviewBox(themePref, prefs);
+    updateLayoutMetrics(undefined, undefined, prefs);
+    if (focusTarget && typeof focusTarget.focus === "function") {
+      focusTarget.focus();
     }
   }
 
-  function updateThemePreview(_kind) {
-    updateThemePreviewBox();
+  function openThemeModal(trigger) {
+    const modal = document.getElementById("theme_modal");
+    if (!modal) {
+      return;
+    }
+    captureThemeModalSnapshot();
+    themeModalFocusReturn = trigger || document.getElementById("open_theme_modal") || document.activeElement;
+    themeModalOpen = true;
+    modalThemePref = { ...themePref };
+    ensureThemePrefState(modalThemePref);
+    modalPrefs = { ...prefs };
+    modal.classList.add("is-open");
+    modal.setAttribute("aria-hidden", "false");
+    document.body.classList.add("modal-open");
+    syncThemeModalControls();
+    const darkSelect = document.getElementById("theme_dark");
+    if (darkSelect) {
+      darkSelect.onchange = (event) => {
+        modalThemePref.dark = event.target.value;
+        ensureThemePrefState(modalThemePref);
+        event.target.value = modalThemePref.dark;
+        updateModalPreview();
+      };
+    }
+    const lightSelect = document.getElementById("theme_light");
+    if (lightSelect) {
+      lightSelect.onchange = (event) => {
+        modalThemePref.light = event.target.value;
+        ensureThemePrefState(modalThemePref);
+        event.target.value = modalThemePref.light;
+        updateModalPreview();
+      };
+    }
+    setTimeout(() => {
+      const firstField = document.getElementById("theme_dark");
+      if (firstField && typeof firstField.focus === "function") {
+        firstField.focus();
+      }
+    }, 0);
+  }
+
+  function cancelThemeModal(event) {
+    if (event) {
+      event.preventDefault();
+    }
+    restoreThemeModalSnapshot();
+    closeThemeModal();
+  }
+
+  function saveThemeModal(event) {
+    if (event) {
+      event.preventDefault();
+    }
+    if (modalPrefs) {
+      setPreference("fontBody", modalPrefs.fontBody, "prefs-ui");
+      setPreference("fontMono", modalPrefs.fontMono, "prefs-ui");
+      setPreference("fontScale", modalPrefs.fontScale, "prefs-ui");
+    }
+    if (modalThemePref) {
+      themePref = { ...modalThemePref };
+      ensureThemePref();
+      saveThemePrefs();
+    }
+    applyTheme();
+    closeThemeModal();
+    updateLayoutSummary();
   }
 
   function populateThemeSelect(kind) {
@@ -645,6 +974,7 @@
       return;
     }
     const themes = THEMES.filter((t) => t.kind === kind);
+    const current = themePref[kind];
     select.innerHTML = "";
     themes.forEach((theme) => {
       const opt = document.createElement("option");
@@ -652,23 +982,18 @@
       opt.textContent = theme.name;
       select.appendChild(opt);
     });
-    ensureThemePref();
-    if (themePref[kind] && themeByName(themePref[kind], kind)) {
-      select.value = themePref[kind];
+    select.dataset.themeKind = kind;
+    if (current && themeByName(current, kind)) {
+      select.value = current;
+    } else if (themes.length) {
+      select.value = themes[0].name;
     }
-    select.onchange = (event) => {
-      themePref[kind] = event.target.value;
-      ensureThemePref();
-      saveThemePrefs();
-      applyTheme();
-      updateThemePreview(kind);
-    };
-    updateThemePreview(kind);
   }
 
   function populateThemeSelectors() {
     populateThemeSelect("dark");
     populateThemeSelect("light");
+    updateLayoutSummary();
   }
 
   function applyTheme() {
@@ -685,9 +1010,12 @@
     themePref[mode] = theme ? theme.name : themePref[mode];
     const toggle = document.getElementById("themeToggle");
     if (toggle) {
-      toggle.checked = mode === "light";
+      toggle.setAttribute("aria-pressed", mode === "light" ? "true" : "false");
+      toggle.classList.toggle("is-light", mode === "light");
+      toggle.setAttribute("title", mode === "light" ? "Switch to dark mode" : "Switch to light mode");
     }
     updateThemePreviewBox();
+    updateLayoutSummary();
   }
 
   function toggleTheme() {
@@ -2220,7 +2548,17 @@
 
     const themeToggle = document.getElementById("themeToggle");
     if (themeToggle) {
-      themeToggle.addEventListener("change", toggleTheme);
+      themeToggle.addEventListener("click", (event) => {
+        event.preventDefault();
+        toggleTheme();
+      });
+    }
+    const previewModeSelect = document.getElementById("preview_mode");
+    if (previewModeSelect) {
+      previewModeSelect.value = previewMode;
+      previewModeSelect.addEventListener("change", (event) => {
+        setPreviewMode(event.target.value || "radar");
+      });
     }
     const hlToggle = document.getElementById("hlToggle");
     if (hlToggle) {
@@ -2231,6 +2569,44 @@
       histToggle.addEventListener("click", toggleHistory);
       histToggle.style.display = HISTORY_ENABLED ? "inline-flex" : "none";
     }
+    const themeModalTrigger = document.getElementById("open_theme_modal");
+    if (themeModalTrigger) {
+      themeModalTrigger.addEventListener("click", (event) => {
+        event.preventDefault();
+        openThemeModal(themeModalTrigger);
+      });
+    }
+    const themeModalClose = document.getElementById("theme_modal_close");
+    if (themeModalClose) {
+      themeModalClose.addEventListener("click", cancelThemeModal);
+    }
+    const themeModalCancel = document.getElementById("theme_modal_cancel");
+    if (themeModalCancel) {
+      themeModalCancel.addEventListener("click", cancelThemeModal);
+    }
+    const themeModalSave = document.getElementById("theme_modal_save");
+    if (themeModalSave) {
+      themeModalSave.addEventListener("click", saveThemeModal);
+    }
+    const themeModal = document.getElementById("theme_modal");
+    if (themeModal) {
+      themeModal.addEventListener("click", (event) => {
+        if (event.target && event.target.hasAttribute("data-theme-modal-close")) {
+          cancelThemeModal(event);
+        }
+      });
+    }
+    window.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+      const modal = document.getElementById("theme_modal");
+      if (!modal || modal.getAttribute("aria-hidden") === "true") {
+        return;
+      }
+      event.preventDefault();
+      cancelThemeModal();
+    });
     document.getElementById("vendor").addEventListener("change", () => {
       toggleVendor();
       loadConfigText();
@@ -2320,6 +2696,13 @@
         if (prefGuard) {
           return;
         }
+        if (themeModalOpen && modalPrefs) {
+          const next = normalizePreferenceInput("fontBody", event.target.value, modalPrefs.fontBody);
+          modalPrefs.fontBody = next;
+          event.target.value = next;
+          updateModalPreview();
+          return;
+        }
         setPreference("fontBody", event.target.value, "prefs-ui");
       });
     }
@@ -2327,6 +2710,13 @@
     if (prefFontMono) {
       prefFontMono.addEventListener("change", (event) => {
         if (prefGuard) {
+          return;
+        }
+        if (themeModalOpen && modalPrefs) {
+          const next = normalizePreferenceInput("fontMono", event.target.value, modalPrefs.fontMono);
+          modalPrefs.fontMono = next;
+          event.target.value = next;
+          updateModalPreview();
           return;
         }
         setPreference("fontMono", event.target.value, "prefs-ui");
@@ -2338,10 +2728,26 @@
         if (prefGuard) {
           return;
         }
+        if (themeModalOpen && modalPrefs) {
+          const raw = Number(event.target.value);
+          const next = clamp(Number.isFinite(raw) ? raw : modalPrefs.fontScale, 70, 150);
+          modalPrefs.fontScale = next;
+          event.target.value = String(next);
+          updateModalPreview();
+          return;
+        }
         updateLayoutMetrics(event.target.value, undefined);
       });
       prefFontScale.addEventListener("change", (event) => {
         if (prefGuard) {
+          return;
+        }
+        if (themeModalOpen && modalPrefs) {
+          const raw = Number(event.target.value);
+          const next = clamp(Number.isFinite(raw) ? raw : modalPrefs.fontScale, 70, 150);
+          modalPrefs.fontScale = next;
+          event.target.value = String(next);
+          updateModalPreview();
           return;
         }
         setPreference("fontScale", event.target.value, "prefs-ui");

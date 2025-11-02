@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
 import time
@@ -12,9 +13,10 @@ from typing import Any, Dict, List, Optional
 
 from . import settings as settings_mod
 from .indexer import IndexEntry, IndexManager
-from .themes import load_themes
+from .themes import DEFAULT_THEMES, load_themes
+from .fonts import FontFile, discover_fonts, render_font_css
 
-
+logger = logging.getLogger(__name__)
 class DiskCache:
     """Simple JSON-on-disk cache wrapper."""
 
@@ -195,6 +197,8 @@ class AppState:
     index_manager: IndexManager
     history: HistoryTracker
     themes: List[Dict[str, Any]]
+    font_files: List[FontFile]
+    font_css: str
 
     @classmethod
     def create(cls, settings: settings_mod.Settings) -> "AppState":
@@ -211,7 +215,20 @@ class AppState:
             search_cache=search_index,
             manifest_name=settings.features.disk_cache.manifest,
         )
-        themes = load_themes(settings.paths.themes_dir)
+        theme_dir = settings.paths.themes_dir
+        if theme_dir and not Path(theme_dir).exists():
+            logger.info("Theme directory '%s' is missing; using built-in themes only.", theme_dir)
+        try:
+            themes = load_themes(theme_dir)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "Theme loading failed for '%s': %s; falling back to built-in themes.",
+                theme_dir,
+                exc,
+            )
+            themes = list(DEFAULT_THEMES)
+        font_files = discover_fonts(Path(settings.paths.settings_file).parent)
+        font_css = render_font_css(font_files)
         return cls(
             settings=settings,
             disk_cache=disk_cache,
@@ -219,6 +236,8 @@ class AppState:
             index_manager=index_manager,
             history=history,
             themes=themes,
+            font_files=font_files,
+            font_css=font_css,
         )
 
     def flush_caches(self, include_disk: bool = False) -> Dict[str, Any]:

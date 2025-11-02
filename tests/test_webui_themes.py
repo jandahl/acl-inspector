@@ -10,10 +10,15 @@ from webui.themes import DEFAULT_THEMES, load_iterm_theme, load_themes
 
 class ThemeLoaderTest(unittest.TestCase):
     def test_builtin_themes_present_when_directory_missing(self):
-        themes = load_themes("/nonexistent")
+        with self.assertLogs("webui.themes", level="INFO") as logs:
+            themes = load_themes("/nonexistent")
         names = [t["name"] for t in themes]
         for default in DEFAULT_THEMES:
             self.assertIn(default["name"], names)
+        self.assertTrue(
+            any("not found" in message.lower() for message in logs.output),
+            msg="Expected missing theme directory to emit a log message.",
+        )
 
     def test_empty_directory_still_returns_defaults(self):
         with tempfile.TemporaryDirectory() as tmpdir:
