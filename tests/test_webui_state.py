@@ -73,6 +73,22 @@ class AppStateTest(unittest.TestCase):
             self.assertIsNotNone(state.disk_cache)
             self.assertIsNotNone(state.search_index)
             self.assertIsNotNone(state.index_manager)
+            self.assertIsInstance(state.font_css, str)
+            self.assertIsInstance(state.font_files, list)
+
+    def test_app_state_missing_theme_dir_falls_back(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            settings = settings_mod.load_settings(
+                Path(tmpdir) / "settings.json",
+                env={
+                    "ACLINSPECTOR_CONFIGS_CISCO": str(Path(tmpdir) / "configs" / "asa"),
+                    "ACLINSPECTOR_THEME_DIR": str(Path(tmpdir) / "nonexistent" / "themes"),
+                },
+            )
+            state = AppState.create(settings)
+            names = {theme["name"] for theme in state.themes}
+            self.assertIn("Builtin Dark", names)
+            self.assertIn("Builtin Light", names)
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import plistlib
 from typing import Dict, List, Optional, Tuple
 
 # (content same as earlier)
+
+logger = logging.getLogger(__name__)
 
 def _channel_to_int(value: Optional[float]) -> int:
     if value is None:
@@ -146,20 +149,34 @@ def load_iterm_theme(path: str) -> Optional[Dict[str, object]]:
 
 
 def load_themes(theme_dir: str) -> List[Dict[str, object]]:
+    """Load themes from `theme_dir`, falling back to built-ins on failure."""
+
     themes: List[Dict[str, object]] = []
-    if theme_dir and os.path.isdir(theme_dir):
-        try:
-            for entry in sorted(os.listdir(theme_dir)):
-                if not entry.lower().endswith(".itermcolors"):
-                    continue
-                theme = load_iterm_theme(os.path.join(theme_dir, entry))
-                if theme:
-                    themes.append(theme)
-        except Exception:
-            pass
+    if theme_dir:
+        if os.path.isdir(theme_dir):
+            try:
+                for entry in sorted(os.listdir(theme_dir)):
+                    if not entry.lower().endswith(".itermcolors"):
+                        continue
+                    path = os.path.join(theme_dir, entry)
+                    theme = load_iterm_theme(path)
+                    if theme:
+                        themes.append(theme)
+                    else:
+                        logger.debug("Skipping unreadable theme file %s", path)
+            except Exception as exc:
+                logger.warning(
+                    "Failed to enumerate theme directory %s: %s", theme_dir, exc
+                )
+        else:
+            logger.info("Theme directory %s not found; using built-in themes.", theme_dir)
+    else:
+        logger.debug("No theme directory configured; using built-in themes.")
+
     for default in DEFAULT_THEMES:
         if not any(
-            t["name"] == default["name"] and t["kind"] == default["kind"] for t in themes
+            t["name"] == default["name"] and t["kind"] == default["kind"]
+            for t in themes
         ):
             themes.insert(0, default)
     for default in DEFAULT_THEMES:
