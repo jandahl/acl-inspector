@@ -45,7 +45,13 @@ class TestPathCheck(unittest.TestCase):
         self.assertTrue(any('SRC_NAT' in m['raw'] for m in acl.get('matches', [])))
         ctx = result.get('context') or {}
         self.assertEqual(ctx.get('nat_direction'), 'outbound')
-        self.assertIn({'interface': 'outside', 'direction': 'in'}, ctx.get('acl_candidates', []))
+        candidates = ctx.get('acl_candidates', [])
+        self.assertIn({'interface': 'outside', 'direction': 'in', 'acls': ['OUT']}, candidates)
+        self.assertTrue(any('OUT' in (cand.get('acls') or []) for cand in candidates))
+        iface_map = ctx.get('interface_acl_map', {})
+        self.assertIn('outside', iface_map)
+        self.assertEqual(iface_map['outside']['in'], ['OUT'])
+        self.assertEqual(ctx.get('global_acls'), [])
 
     def test_path_inbound_static(self):
         result = path_check(ASA_SAMPLE, '198.51.100.200', 'SRC_NAT', proto='tcp', dports={443})
@@ -59,7 +65,13 @@ class TestPathCheck(unittest.TestCase):
         self.assertTrue(any('object SRC eq 443' in m['raw'] for m in acl.get('matches', [])))
         ctx = result.get('context') or {}
         self.assertEqual(ctx.get('nat_direction'), 'inbound')
-        self.assertIn({'interface': 'outside', 'direction': 'in'}, ctx.get('acl_candidates', []))
+        candidates = ctx.get('acl_candidates', [])
+        self.assertIn({'interface': 'outside', 'direction': 'in', 'acls': ['OUT']}, candidates)
+        self.assertTrue(any('OUT' in (cand.get('acls') or []) for cand in candidates))
+        iface_map = ctx.get('interface_acl_map', {})
+        self.assertIn('outside', iface_map)
+        self.assertEqual(iface_map['outside']['in'], ['OUT'])
+        self.assertEqual(ctx.get('global_acls'), [])
 
 
 if __name__ == '__main__':
