@@ -26,6 +26,7 @@
     fontMono: "pref_font_mono",
     fontScale: "pref_font_scale",
     layoutWidth: "pref_layout_width",
+    previewSpeed: "pref_preview_speed",
   };
 
   const PREF_DEFAULTS = {
@@ -40,6 +41,7 @@
     fontMono: "auto",
     fontScale: 100,
     layoutWidth: 100,
+    previewSpeed: THEME_PREVIEW_SPEED,
   };
 
   const BODY_FONT_OPTIONS = {
@@ -81,7 +83,20 @@
     courier: "Courier New",
   };
 
-  const LAYOUT_PREF_KEYS = ["fontBody", "fontMono", "fontScale", "layoutWidth"];
+  const LAYOUT_PREF_KEYS = ["fontBody", "fontMono", "fontScale", "layoutWidth", "previewSpeed"];
+  const RORSCHACH_DEFAULTS = {
+    scale: 2.4,
+    threshold: 0.52,
+    edge: 0.07,
+    centerBias: 1.05,
+  };
+  const RORSCHACH_SPEED_SECONDS = { min: 6, max: 40 };
+
+  let rorschachCanvas = null;
+  let rorschachFallback = null;
+  let rorschachPreviewEngine = null;
+  let rorschachPreviewDisabled = false;
+  let rorschachLastSettings = null;
 
   function computeAutoLayout() {
     const viewport = Math.max(window.innerWidth || 0, (window.screen && window.screen.width) || 0, 0);
@@ -189,6 +204,702 @@
     return Math.min(Math.max(value, min), max);
   }
 
+  function rorschachSpeedFromPreview(seconds) {
+    const clamped = clamp(Number(seconds) || THEME_PREVIEW_SPEED, RORSCHACH_SPEED_SECONDS.min, RORSCHACH_SPEED_SECONDS.max);
+    const value = 1.5 / clamped;
+    return clamp(value, 0.05, 0.2);
+  }
+
+  function buildPreviewPalette(theme, defaults) {
+    const vars = (theme && theme.vars) || {};
+    return {
+      bg: vars.bg || defaults.bg,
+      text: vars.text || defaults.text,
+      accent: vars.accent || defaults.accent,
+      border: vars.border || defaults.border,
+      muted: vars.muted || defaults.muted,
+      kw: vars["hl-kw"] || defaults.kw,
+      proto: vars["hl-proto"] || defaults.proto,
+      act: vars["hl-act"] || defaults.act,
+      addr: vars["hl-addr"] || defaults.addr,
+      num: vars["hl-num"] || defaults.num,
+      name: (theme && theme.name) || "Default",
+    };
+  }
+
+  function updatePreviewSpeedMetric(tempValue, sourcePrefs = prefs) {
+    const label = document.getElementById("pref_preview_speed_value");
+    if (!label) {
+      return;
+    }
+    let effective;
+    if (tempValue !== undefined && tempValue !== null) {
+      const numeric = Number(tempValue);
+      effective = clamp(
+        Number.isFinite(numeric) ? numeric : THEME_PREVIEW_SPEED,
+        RORSCHACH_SPEED_SECONDS.min,
+        RORSCHACH_SPEED_SECONDS.max
+      );
+    } else {
+      const baseline = Number(sourcePrefs.previewSpeed ?? THEME_PREVIEW_SPEED) || THEME_PREVIEW_SPEED;
+      effective = clamp(baseline, RORSCHACH_SPEED_SECONDS.min, RORSCHACH_SPEED_SECONDS.max);
+    }
+    label.textContent = `${Math.round(effective)}s`;
+  }
+
+  function currentThemeMode() {
+    const theme =
+      (document.documentElement && document.documentElement.dataset
+        ? document.documentElement.dataset.theme
+        : null) || storageGet(THEME_KEY, "dark") || "dark";
+    return theme === "light" ? 0 : 1;
+  }
+
+  function previewBoxVisible() {
+    const box = document.getElementById("theme_preview_box");
+    if (!box) {
+      return false;
+    }
+    return box.offsetParent !== null;
+  }
+
+  function ensureRorschachHandles() {
+    if (!rorschachCanvas) {
+      rorschachCanvas = document.getElementById("preview_rorschach_canvas");
+    }
+    if (!rorschachFallback) {
+      rorschachFallback = document.getElementById("preview_rorschach_fallback");
+    }
+  }
+
+  function syncRorschachPreview(newSettings) {
+    if (newSettings) {
+      rorschachLastSettings = {
+        scale: RORSCHACH_DEFAULTS.scale,
+        threshold: RORSCHACH_DEFAULTS.threshold,
+        edge: RORSCHACH_DEFAULTS.edge,
+        centerBias: RORSCHACH_DEFAULTS.centerBias,
+        ...newSettings,
+      };
+    }
+    ensureRorschachHandles();
+    if (!rorschachCanvas) {
+      return;
+    }
+    if (previewMode !== "rorschach") {
+      if (rorschachPreviewEngine) {
+        rorschachPreviewEngine.setActive(false);
+      }
+      if (rorschachFallback) {
+        rorschachFallback.hidden = true;
+        rorschachFallback.classList.remove("is-visible");
+      }
+      return;
+    }
+    const effectiveSettings = rorschachLastSettings;
+    if (!effectiveSettings) {
+      return;
+    }
+    if (!rorschachPreviewEngine && !rorschachPreviewDisabled) {
+      rorschachPreviewEngine = createRorschachPreview(rorschachCanvas, rorschachFallback);
+      if (!rorschachPreviewEngine) {
+        rorschachPreviewDisabled = true;
+      }
+    }
+    if (rorschachPreviewEngine) {
+      const themeValue = currentThemeMode();
+      const active = previewBoxVisible();
+      rorschachPreviewEngine.update({ ...effectiveSettings, theme: themeValue });
+      rorschachPreviewEngine.setActive(active);
+      if (rorschachFallback) {
+        rorschachFallback.hidden = true;
+        rorschachFallback.classList.remove("is-visible");
+      }
+    } else if (rorschachFallback) {
+      rorschachFallback.hidden = false;
+      rorschachFallback.classList.add("is-visible");
+    }
+  }
+
+  function createRorschachPreview(canvas, fallback) {
+    if (!canvas) {
+      return null;
+    }
+    function showFallback() {
+      if (fallback) {
+        fallback.hidden = false;
+        fallback.classList.add("is-visible");
+      }
+    }
+    let gl = null;
+    try {
+      gl = canvas.getContext("webgl2", {
+        alpha: false,
+        depth: false,
+        stencil: false,
+        antialias: false,
+        powerPreference: "low-power",
+        premultipliedAlpha: false,
+      });
+    } catch (err) {
+      console.warn("Rorschach preview context failed", err);
+    }
+    if (!gl) {
+      showFallback();
+      return null;
+    }
+    if (fallback) {
+      fallback.hidden = true;
+      fallback.classList.remove("is-visible");
+    }
+
+    gl.disable(gl.DEPTH_TEST);
+    gl.disable(gl.CULL_FACE);
+    gl.disable(gl.BLEND);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+
+    const vertexSrc = `#version 300 es
+    precision highp float;
+    const vec2 V[6] = vec2[6](
+      vec2(-1.0, -1.0),
+      vec2( 1.0, -1.0),
+      vec2(-1.0,  1.0),
+      vec2(-1.0,  1.0),
+      vec2( 1.0, -1.0),
+      vec2( 1.0,  1.0)
+    );
+    void main() {
+      gl_Position = vec4(V[gl_VertexID], 0.0, 1.0);
+    }`;
+
+    const fragmentSrc = `#version 300 es
+    precision highp float;
+
+    out vec4 outColor;
+
+    uniform vec2 u_resolution;
+    uniform float u_time;
+    uniform float u_theme;
+    uniform float u_scale;
+    uniform float u_speed;
+    uniform float u_threshold;
+    uniform float u_edge_softness;
+    uniform float u_center_bias;
+    uniform vec2 u_seed;
+    uniform sampler2D u_light_tex;
+    uniform sampler2D u_dark_tex;
+
+    float hash(vec2 p) {
+      vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+      p3 += dot(p3, p3.yzx + 33.33);
+      return fract((p3.x + p3.y) * p3.z);
+    }
+
+    float noise(vec2 p) {
+      vec2 i = floor(p);
+      vec2 f = fract(p);
+      vec2 u = f * f * (3.0 - 2.0 * f);
+      float a = hash(i);
+      float b = hash(i + vec2(1.0, 0.0));
+      float c = hash(i + vec2(0.0, 1.0));
+      float d = hash(i + vec2(1.0, 1.0));
+      return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+    }
+
+    float fbm(vec2 p) {
+      float total = 0.0;
+      float amp = 0.58;
+      float freq = 1.0;
+      for (int i = 0; i < 5; ++i) {
+        total += noise(p * freq) * amp;
+        freq *= 1.9;
+        amp *= 0.52;
+      }
+      return total;
+    }
+
+    void main() {
+      vec2 uv = gl_FragCoord.xy / u_resolution.xy;
+      float mirrorX = uv.x <= 0.5 ? uv.x : (1.0 - uv.x);
+      vec2 muv = vec2(mirrorX, uv.y);
+      float t = u_time * u_speed;
+      vec2 domain = muv * u_scale + u_seed + vec2(t * 0.25, t);
+      domain += vec2(sin(t * 0.35) * 0.06, 0.0);
+      float n = fbm(domain);
+      float distCenter = abs(uv.x - 0.5) * 2.0;
+      float centerMask = pow(max(0.0, 1.0 - distCenter), u_center_bias);
+      n *= mix(0.62, 1.0, centerMask);
+      float ink = smoothstep(u_threshold - u_edge_softness, u_threshold + u_edge_softness, n);
+      float edgeDist = min(min(mirrorX, 1.0 - mirrorX), min(uv.y, 1.0 - uv.y));
+      float edgeMask = smoothstep(0.07, 0.12, edgeDist);
+      ink *= edgeMask;
+      vec3 lightColor = texture(u_light_tex, uv).rgb;
+      vec3 darkColor = texture(u_dark_tex, uv).rgb;
+      vec3 base = mix(lightColor, darkColor, ink);
+      vec3 overlay = mix(lightColor, darkColor, u_theme);
+      float overlayMix = mix(0.16, 0.05, edgeMask);
+      outColor = vec4(mix(base, overlay, overlayMix), 1.0);
+    }`;
+
+    function compileShader(type, source) {
+      const shader = gl.createShader(type);
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        console.warn("Rorschach shader error", gl.getShaderInfoLog(shader));
+        gl.deleteShader(shader);
+        return null;
+      }
+      return shader;
+    }
+
+    const vs = compileShader(gl.VERTEX_SHADER, vertexSrc);
+    const fs = compileShader(gl.FRAGMENT_SHADER, fragmentSrc);
+    if (!vs || !fs) {
+      if (vs) {
+        gl.deleteShader(vs);
+      }
+      if (fs) {
+        gl.deleteShader(fs);
+      }
+      showFallback();
+      return null;
+    }
+    const program = gl.createProgram();
+    gl.attachShader(program, vs);
+    gl.attachShader(program, fs);
+    gl.linkProgram(program);
+    gl.deleteShader(vs);
+    gl.deleteShader(fs);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      console.warn("Rorschach program error", gl.getProgramInfoLog(program));
+      gl.deleteProgram(program);
+      showFallback();
+      return null;
+    }
+
+    const locResolution = gl.getUniformLocation(program, "u_resolution");
+    const locTime = gl.getUniformLocation(program, "u_time");
+    const locTheme = gl.getUniformLocation(program, "u_theme");
+    const locScale = gl.getUniformLocation(program, "u_scale");
+    const locSpeed = gl.getUniformLocation(program, "u_speed");
+    const locThreshold = gl.getUniformLocation(program, "u_threshold");
+    const locEdge = gl.getUniformLocation(program, "u_edge_softness");
+    const locCenter = gl.getUniformLocation(program, "u_center_bias");
+    const locSeed = gl.getUniformLocation(program, "u_seed");
+    const locLightTex = gl.getUniformLocation(program, "u_light_tex");
+    const locDarkTex = gl.getUniformLocation(program, "u_dark_tex");
+
+    const seedSource = new Uint32Array(2);
+    if (window.crypto && typeof window.crypto.getRandomValues === "function") {
+      window.crypto.getRandomValues(seedSource);
+    } else {
+      seedSource[0] = Math.floor(Math.random() * 1e9);
+      seedSource[1] = Math.floor(Math.random() * 1e9);
+    }
+    const seed = new Float32Array([
+      (seedSource[0] % 100000) / 18000,
+      (seedSource[1] % 100000) / 22000,
+    ]);
+
+    const CARD_WIDTH = 640;
+    const CARD_HEIGHT = 360;
+
+    function createTexture() {
+      const tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, CARD_WIDTH, CARD_HEIGHT, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      return tex;
+    }
+
+    function roundedRectPath(ctx, x, y, w, h, r) {
+      const radius = Math.max(0, Math.min(r, Math.min(w, h) * 0.5));
+      ctx.beginPath();
+      ctx.moveTo(x + radius, y);
+      ctx.lineTo(x + w - radius, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+      ctx.lineTo(x + w, y + h - radius);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+      ctx.lineTo(x + radius, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+      ctx.lineTo(x, y + radius);
+      ctx.quadraticCurveTo(x, y, x + radius, y);
+      ctx.closePath();
+    }
+
+    function drawRoundedRect(ctx, x, y, w, h, r, fillStyle, strokeStyle, strokeWidth = 1) {
+      roundedRectPath(ctx, x, y, w, h, r);
+      if (fillStyle) {
+        ctx.fillStyle = fillStyle;
+        ctx.fill();
+      }
+      if (strokeStyle) {
+        ctx.strokeStyle = strokeStyle;
+        ctx.lineWidth = strokeWidth;
+        ctx.stroke();
+      }
+    }
+
+    function createCardSurface(label) {
+      const surfaceCanvas = document.createElement("canvas");
+      surfaceCanvas.width = CARD_WIDTH;
+      surfaceCanvas.height = CARD_HEIGHT;
+      const ctx = surfaceCanvas.getContext("2d");
+      return {
+        label,
+        canvas: surfaceCanvas,
+        ctx,
+        texture: createTexture(),
+        signature: "",
+      };
+    }
+
+    const cardSurfaces = {
+      light: createCardSurface("Light"),
+      dark: createCardSurface("Dark"),
+    };
+
+    function drawCodeLine(ctx, startX, startY, tokens, palette, lineHeight) {
+      let cursor = startX;
+      tokens.forEach((token) => {
+        if (!token || !token.text) {
+          return;
+        }
+        const metrics = ctx.measureText(token.text);
+        if (token.match) {
+          ctx.save();
+          ctx.globalAlpha = 0.32;
+          ctx.fillStyle = palette.accent;
+          roundedRectPath(ctx, cursor - 6, startY - 2, metrics.width + 12, lineHeight + 4, 6);
+          ctx.fill();
+          ctx.restore();
+        }
+        ctx.fillStyle = token.color || palette.text;
+        ctx.fillText(token.text, cursor, startY);
+        cursor += metrics.width;
+      });
+    }
+
+    function renderCardSurface(surface, palette, fonts) {
+      if (!surface || !surface.ctx || !palette) {
+        return;
+      }
+      const ctx = surface.ctx;
+      const { canvas } = surface;
+      const width = canvas.width;
+      const height = canvas.height;
+      const scale = clamp(fonts.fontScale || 1, 0.7, 1.5);
+      const outerPad = 16;
+      const innerInset = 8;
+      const contentPad = 22;
+      const innerRadius = 18;
+
+      ctx.save();
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = palette.muted || palette.bg;
+      drawRoundedRect(ctx, outerPad, outerPad, width - outerPad * 2, height - outerPad * 2, 24, ctx.fillStyle, palette.border, 2);
+
+      const innerX = outerPad + innerInset;
+      const innerY = outerPad + innerInset;
+      const innerW = width - (outerPad + innerInset) * 2;
+      const innerH = height - (outerPad + innerInset) * 2;
+      ctx.fillStyle = palette.bg;
+      drawRoundedRect(ctx, innerX, innerY, innerW, innerH, innerRadius, ctx.fillStyle, `${palette.border}AA`, 1.25);
+
+      ctx.save();
+      roundedRectPath(ctx, innerX, innerY, innerW, innerH, innerRadius);
+      ctx.clip();
+      ctx.translate(innerX + contentPad, innerY + contentPad);
+
+      const contentWidth = innerW - contentPad * 2;
+      const bodyFont = fonts.bodyFont || BODY_FONT_OPTIONS.auto;
+      const monoFont = fonts.monoFont || MONO_FONT_OPTIONS.auto;
+
+      const titleSize = 20 * scale;
+      const nameSize = 13 * scale;
+      const bodySize = 16 * scale;
+      const codeSize = 14 * scale;
+      const codeLineHeight = codeSize + 6 * scale;
+      const codeGap = 6 * scale;
+      const highlightRadius = 7 * scale;
+
+      ctx.textBaseline = "top";
+      ctx.fillStyle = palette.text;
+      ctx.font = `600 ${titleSize}px ${bodyFont}`;
+      ctx.fillText(surface.label, 0, 0);
+
+      const name = palette.name || "Default";
+      ctx.font = `500 ${nameSize}px ${monoFont}`;
+      const nameMetrics = ctx.measureText(name);
+      const pillPadX = 12 * scale;
+      const pillPadY = 6 * scale;
+      const pillWidth = Math.min(contentWidth, nameMetrics.width + pillPadX * 2);
+      const pillHeight = nameSize + pillPadY * 2;
+      const pillX = Math.max(0, contentWidth - pillWidth);
+      const pillY = Math.max(0, (titleSize - pillHeight) * 0.5);
+
+      ctx.save();
+      ctx.fillStyle = palette.accent;
+      drawRoundedRect(ctx, pillX, pillY, pillWidth, pillHeight, pillHeight * 0.55, ctx.fillStyle);
+      ctx.fillStyle = palette.bg;
+      const pillTextY = pillY + pillPadY - (scale * 0.5);
+      ctx.fillText(name, pillX + pillPadX, pillTextY);
+      ctx.restore();
+
+      let cursorY = titleSize + 18 * scale;
+      ctx.font = `500 ${bodySize}px ${bodyFont}`;
+      ctx.fillStyle = palette.text;
+      const bodyText =
+        surface.label === "Light"
+          ? "Readable configs with consistent spacing."
+          : "Contrast tuned for late-night reviews.";
+      ctx.fillText(bodyText, 0, cursorY);
+      cursorY += bodySize + 18 * scale;
+
+      const codeBackdropLeft = -6 * scale;
+      const codeBackdropWidth = contentWidth + 12 * scale;
+      ctx.font = `500 ${codeSize}px ${monoFont}`;
+      const codeLines = [
+        [
+          { text: "object", color: palette.kw },
+          { text: " network", color: palette.kw },
+          { text: " SAMPLE_WEB", color: palette.addr },
+        ],
+        [
+          { text: " host", color: palette.kw },
+          { text: " 203.0.113.10", color: palette.addr },
+        ],
+        [
+          { text: " description", color: palette.kw },
+          { text: " Internet web tier", color: palette.act },
+        ],
+        [
+          { text: "object-group", color: palette.kw },
+          { text: " network", color: palette.kw },
+          { text: " WEB_SERVERS", color: palette.addr },
+        ],
+        [
+          { text: " network-object", color: palette.kw },
+          { text: " object", color: palette.kw },
+          { text: " SAMPLE_WEB", color: palette.addr, match: true },
+        ],
+        [
+          { text: "access-list", color: palette.kw },
+          { text: " OUTSIDE", color: palette.kw },
+          { text: " extended", color: palette.kw },
+          { text: " permit", color: palette.act },
+          { text: " tcp", color: palette.proto },
+          { text: " any", color: palette.kw },
+          { text: " object-group", color: palette.kw },
+          { text: " WEB_SERVERS", color: palette.addr },
+          { text: " eq", color: palette.kw },
+          { text: " 443", color: palette.num },
+        ],
+      ];
+
+      codeLines.forEach((line, index) => {
+        const lineY = cursorY + index * (codeLineHeight + codeGap);
+        ctx.save();
+        ctx.globalAlpha = surface.label === "Light" ? 0.45 : 0.32;
+        drawRoundedRect(
+          ctx,
+          codeBackdropLeft,
+          lineY - 4 * scale,
+          codeBackdropWidth,
+          codeLineHeight + 8 * scale,
+          highlightRadius,
+          palette.muted || palette.bg
+        );
+        ctx.restore();
+        drawCodeLine(ctx, 0, lineY, line, palette, codeLineHeight);
+      });
+
+      ctx.restore();
+      ctx.restore();
+
+      gl.bindTexture(gl.TEXTURE_2D, surface.texture);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+    }
+
+    const state = {
+      theme: currentThemeMode(),
+      scale: RORSCHACH_DEFAULTS.scale,
+      speedSeconds: THEME_PREVIEW_SPEED,
+      speed: rorschachSpeedFromPreview(THEME_PREVIEW_SPEED),
+      threshold: RORSCHACH_DEFAULTS.threshold,
+      edge: RORSCHACH_DEFAULTS.edge,
+      centerBias: RORSCHACH_DEFAULTS.centerBias,
+      bodyFont: BODY_FONT_OPTIONS.auto,
+      monoFont: MONO_FONT_OPTIONS.auto,
+      fontScale: 1,
+    };
+
+    gl.useProgram(program);
+    gl.uniform1i(locLightTex, 0);
+    gl.uniform1i(locDarkTex, 1);
+    gl.useProgram(null);
+
+    let active = false;
+    let rafId = null;
+    const startTime = performance.now();
+    let lastDpr = 0;
+    let lastWidth = 0;
+    let lastHeight = 0;
+
+    function resize() {
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      const width = Math.max(1, Math.floor(rect.width * dpr));
+      const height = Math.max(1, Math.floor(rect.height * dpr));
+      if (width === lastWidth && height === lastHeight && dpr === lastDpr) {
+        return width > 0 && height > 0;
+      }
+      lastWidth = width;
+      lastHeight = height;
+      lastDpr = dpr;
+      canvas.width = width;
+      canvas.height = height;
+      gl.viewport(0, 0, width, height);
+      return width > 0 && height > 0;
+    }
+
+    function draw(now) {
+      if (!active) {
+        return;
+      }
+      rafId = requestAnimationFrame(draw);
+      if (!resize()) {
+        return;
+      }
+      const timeSeconds = (now - startTime) * 0.001;
+      gl.useProgram(program);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, cardSurfaces.light.texture);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, cardSurfaces.dark.texture);
+      gl.uniform2f(locResolution, canvas.width, canvas.height);
+      gl.uniform1f(locTime, timeSeconds);
+      const aspect = canvas.height > 0 ? canvas.width / canvas.height : 1;
+      const scaleAdjust = aspect > 1.25 ? state.scale * (0.78 + 0.22 * Math.min(aspect, 2.2)) : state.scale;
+      gl.uniform1f(locScale, scaleAdjust);
+      gl.uniform1f(locSpeed, state.speed);
+      gl.uniform1f(locThreshold, state.threshold);
+      gl.uniform1f(locEdge, state.edge);
+      gl.uniform1f(locCenter, state.centerBias);
+      gl.uniform1f(locTheme, state.theme);
+      gl.uniform2f(locSeed, seed[0], seed[1]);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+    }
+
+    function setActive(value) {
+      const shouldRun = Boolean(value);
+      if (shouldRun === active) {
+        return;
+      }
+      active = shouldRun;
+      if (active) {
+        resize();
+        rafId = requestAnimationFrame(draw);
+      } else if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+      canvas.setAttribute("aria-hidden", active ? "false" : "true");
+    }
+
+    function paletteSignature(palette, fonts) {
+      return JSON.stringify([
+        palette.bg,
+        palette.text,
+        palette.accent,
+        palette.border,
+        palette.muted,
+        palette.kw,
+        palette.proto,
+        palette.act,
+      palette.addr,
+      palette.num,
+      palette.name,
+      fonts.bodyFont,
+      fonts.monoFont,
+      Math.round((fonts.fontScale || 1) * 100),
+    ]);
+  }
+
+    function updateSurfaceTexture(surface, palette, fonts) {
+      if (!palette) {
+        return;
+      }
+      const signature = paletteSignature(palette, fonts);
+      if (surface.signature === signature) {
+        return;
+      }
+      surface.signature = signature;
+      renderCardSurface(surface, palette, fonts);
+    }
+
+    function update(settings) {
+      if (!settings) {
+        return;
+      }
+      if (typeof settings.theme === "number") {
+        state.theme = settings.theme;
+      }
+      if (typeof settings.scale === "number" && Number.isFinite(settings.scale)) {
+        state.scale = clamp(settings.scale, 1.6, 3.4);
+      }
+      if (typeof settings.previewSeconds === "number" && Number.isFinite(settings.previewSeconds)) {
+        const nextSeconds = clamp(settings.previewSeconds, RORSCHACH_SPEED_SECONDS.min, RORSCHACH_SPEED_SECONDS.max);
+        state.speedSeconds = nextSeconds;
+        state.speed = rorschachSpeedFromPreview(nextSeconds);
+      } else if (typeof settings.speed === "number" && Number.isFinite(settings.speed)) {
+        state.speed = clamp(settings.speed, 0.05, 0.2);
+      }
+      if (typeof settings.threshold === "number" && Number.isFinite(settings.threshold)) {
+        state.threshold = clamp(settings.threshold, 0.4, 0.6);
+      }
+      if (typeof settings.edge === "number" && Number.isFinite(settings.edge)) {
+      state.edge = clamp(settings.edge, 0.02, 0.12);
+    }
+    if (typeof settings.centerBias === "number" && Number.isFinite(settings.centerBias)) {
+      state.centerBias = clamp(settings.centerBias, 0.7, 1.4);
+    }
+    if (typeof settings.fontScale === "number" && Number.isFinite(settings.fontScale)) {
+      state.fontScale = clamp(settings.fontScale, 0.7, 1.5);
+    }
+    if (typeof settings.bodyFont === "string" && settings.bodyFont) {
+      state.bodyFont = settings.bodyFont;
+    }
+    if (typeof settings.monoFont === "string" && settings.monoFont) {
+      state.monoFont = settings.monoFont;
+    }
+    const fonts = {
+      bodyFont: state.bodyFont || BODY_FONT_OPTIONS.auto,
+      monoFont: state.monoFont || MONO_FONT_OPTIONS.auto,
+      fontScale: state.fontScale,
+    };
+      if (settings.lightPalette) {
+        updateSurfaceTexture(cardSurfaces.light, settings.lightPalette, fonts);
+      }
+      if (settings.darkPalette) {
+        updateSurfaceTexture(cardSurfaces.dark, settings.darkPalette, fonts);
+      }
+    }
+
+    function handleResize() {
+      resize();
+    }
+
+    return {
+      update,
+      setActive,
+      handleResize,
+    };
+  }
   function prefStorageKey(key) {
     return `acl_pref_${key}`;
   }
@@ -256,6 +967,12 @@
     );
     prefs.fontScale = readNumberPref(PREF_KEYS.fontScale, PREF_DEFAULTS.fontScale, 70, 150);
     prefs.layoutWidth = readNumberPref(PREF_KEYS.layoutWidth, PREF_DEFAULTS.layoutWidth, 60, 160);
+    prefs.previewSpeed = readNumberPref(
+      PREF_KEYS.previewSpeed,
+      PREF_DEFAULTS.previewSpeed,
+      RORSCHACH_SPEED_SECONDS.min,
+      RORSCHACH_SPEED_SECONDS.max
+    );
   }
 
   function savePreference(key, value) {
@@ -317,6 +1034,11 @@
       if (layoutWidth) {
         layoutWidth.value = prefs.layoutWidth;
       }
+      const previewSpeed = document.getElementById("pref_preview_speed");
+      if (previewSpeed) {
+        previewSpeed.value = prefs.previewSpeed;
+      }
+      updatePreviewSpeedMetric(undefined, prefs);
       styleFontOptionPreviews();
     } finally {
       prefGuard = false;
@@ -372,6 +1094,7 @@
           : clamp(sourcePrefs.layoutWidth, 60, 160);
       widthLabel.textContent = `${value}%`;
     }
+    updatePreviewSpeedMetric(undefined, sourcePrefs);
   }
 
   function applyLayoutPrefs() {
@@ -412,6 +1135,7 @@
     updateConfigViewer(document.getElementById("config_filter")?.value || "");
     refreshBetaVisibility();
     applyLayoutPrefs();
+    syncRorschachPreview();
   }
 
   function styleFontOptionPreviews() {
@@ -548,6 +1272,9 @@
       }
       if (key === "layoutWidth") {
         return clamp(asNumber, 60, 160);
+      }
+      if (key === "previewSpeed") {
+        return clamp(asNumber, RORSCHACH_SPEED_SECONDS.min, RORSCHACH_SPEED_SECONDS.max);
       }
       return asNumber;
     }
@@ -767,15 +1494,21 @@
       MONO_FONT_OPTIONS,
       MONO_FONT_OPTIONS.auto
     );
-    const fontScale = clamp(previewPrefs.fontScale || 100, 70, 150) / 100;
+    const fontScalePercent = clamp(previewPrefs.fontScale || 100, 70, 150);
+    const fontScale = fontScalePercent / 100;
     const lightCard = box.querySelector(".preview-card[data-theme-preview='light']");
     const darkCard = box.querySelector(".preview-card[data-theme-preview='dark']");
     const lightBanner = box.querySelector(".preview-banner[data-theme-preview='light']");
     const darkBanner = box.querySelector(".preview-banner[data-theme-preview='dark']");
-    box.style.setProperty("--preview-speed", `${THEME_PREVIEW_SPEED}s`);
+    const previewSeconds = clamp(
+      Number(previewPrefs.previewSpeed ?? THEME_PREVIEW_SPEED) || THEME_PREVIEW_SPEED,
+      RORSCHACH_SPEED_SECONDS.min,
+      RORSCHACH_SPEED_SECONDS.max
+    );
+    box.style.setProperty("--preview-speed", `${previewSeconds}s`);
     box.style.setProperty("--preview-body-font", bodyFont);
     box.style.setProperty("--preview-mono-font", monoFont);
-    box.style.setProperty("--preview-font-scale", fontScale);
+      box.style.setProperty("--preview-font-scale", fontScale);
     const lightBg = lightTheme && lightTheme.vars ? lightTheme.vars.bg || defaults.bg : defaults.bg;
     const darkBg =
       darkTheme && darkTheme.vars ? darkTheme.vars.bg || "#0e1116" : "#0e1116";
@@ -786,10 +1519,33 @@
       (lightTheme && lightTheme.vars && lightTheme.vars.accent) ||
       defaults.accent;
     box.style.setProperty("--preview-accent", accentCandidate);
+    const lightDefaults = {
+      ...defaults,
+      bg: lightBg,
+      text: (lightTheme && lightTheme.vars && lightTheme.vars.text) || "#24292f",
+    };
+    const darkDefaults = {
+      ...defaults,
+      bg: darkBg,
+      text: (darkTheme && darkTheme.vars && darkTheme.vars.text) || "#e6edf3",
+    };
+    lightDefaults.muted = (lightTheme && lightTheme.vars && lightTheme.vars.muted) || lightBg;
+    darkDefaults.muted = (darkTheme && darkTheme.vars && darkTheme.vars.muted) || darkBg;
     applyPreviewCard(lightCard, lightTheme, defaults);
     applyPreviewCard(darkCard, darkTheme, defaults);
     applyPreviewCard(lightBanner, lightTheme, defaults);
     applyPreviewCard(darkBanner, darkTheme, defaults);
+    const lightPalette = buildPreviewPalette(lightTheme, lightDefaults);
+    const darkPalette = buildPreviewPalette(darkTheme, darkDefaults);
+    const previewSettings = {
+      previewSeconds,
+      bodyFont,
+      monoFont,
+      lightPalette,
+      darkPalette,
+      fontScale,
+    };
+    syncRorschachPreview(previewSettings);
   }
 
   function updateModalPreview() {
@@ -824,6 +1580,11 @@
     if (fontScale) {
       fontScale.value = modalPrefs.fontScale;
     }
+    const previewSpeed = document.getElementById("pref_preview_speed");
+    if (previewSpeed) {
+      previewSpeed.value = modalPrefs.previewSpeed;
+    }
+    updatePreviewSpeedMetric(modalPrefs.previewSpeed, modalPrefs);
     styleFontOptionPreviews();
     updateModalPreview();
   }
@@ -957,6 +1718,7 @@
       setPreference("fontBody", modalPrefs.fontBody, "prefs-ui");
       setPreference("fontMono", modalPrefs.fontMono, "prefs-ui");
       setPreference("fontScale", modalPrefs.fontScale, "prefs-ui");
+      setPreference("previewSpeed", modalPrefs.previewSpeed, "prefs-ui");
     }
     if (modalThemePref) {
       themePref = { ...modalThemePref };
@@ -2736,7 +3498,12 @@
           updateModalPreview();
           return;
         }
-        updateLayoutMetrics(event.target.value, undefined);
+        const raw = Number(event.target.value);
+        const next = clamp(Number.isFinite(raw) ? raw : prefs.fontScale, 70, 150);
+        event.target.value = String(next);
+        updateLayoutMetrics(next, undefined);
+        const tempPrefs = { ...prefs, fontScale: next };
+        updateThemePreviewBox(themePref, tempPrefs);
       });
       prefFontScale.addEventListener("change", (event) => {
         if (prefGuard) {
@@ -2750,7 +3517,54 @@
           updateModalPreview();
           return;
         }
-        setPreference("fontScale", event.target.value, "prefs-ui");
+        const raw = Number(event.target.value);
+        const next = clamp(Number.isFinite(raw) ? raw : prefs.fontScale, 70, 150);
+        event.target.value = String(next);
+        setPreference("fontScale", next, "prefs-ui");
+      });
+    }
+    const prefPreviewSpeed = document.getElementById("pref_preview_speed");
+    if (prefPreviewSpeed) {
+      prefPreviewSpeed.addEventListener("input", (event) => {
+        if (prefGuard) {
+          return;
+        }
+        const raw = Number(event.target.value);
+        const next = clamp(
+          Number.isFinite(raw) ? raw : (themeModalOpen && modalPrefs ? modalPrefs.previewSpeed : prefs.previewSpeed),
+          RORSCHACH_SPEED_SECONDS.min,
+          RORSCHACH_SPEED_SECONDS.max
+        );
+        if (themeModalOpen && modalPrefs) {
+          modalPrefs.previewSpeed = next;
+          event.target.value = String(next);
+          updatePreviewSpeedMetric(next, modalPrefs);
+          updateModalPreview();
+          return;
+        }
+        updatePreviewSpeedMetric(next, { ...prefs, previewSpeed: next });
+        const tempPrefs = { ...prefs, previewSpeed: next };
+        updateThemePreviewBox(themePref, tempPrefs);
+      });
+      prefPreviewSpeed.addEventListener("change", (event) => {
+        if (prefGuard) {
+          return;
+        }
+        const raw = Number(event.target.value);
+        const next = clamp(
+          Number.isFinite(raw) ? raw : (themeModalOpen && modalPrefs ? modalPrefs.previewSpeed : prefs.previewSpeed),
+          RORSCHACH_SPEED_SECONDS.min,
+          RORSCHACH_SPEED_SECONDS.max
+        );
+        if (themeModalOpen && modalPrefs) {
+          modalPrefs.previewSpeed = next;
+          event.target.value = String(next);
+          updatePreviewSpeedMetric(next, modalPrefs);
+          updateModalPreview();
+          return;
+        }
+        event.target.value = String(next);
+        setPreference("previewSpeed", next, "prefs-ui");
       });
     }
     const prefLayoutWidth = document.getElementById("pref_layout_width");
@@ -2817,7 +3631,13 @@
 
     loadConfigText();
 
-    const resizeHandler = debounce(() => refreshAutoLayout(false), 200);
+    const resizeHandler = debounce(() => {
+      refreshAutoLayout(false);
+      if (rorschachPreviewEngine) {
+        rorschachPreviewEngine.handleResize();
+      }
+      syncRorschachPreview();
+    }, 200);
     window.addEventListener("resize", resizeHandler);
 
     window.addEventListener("popstate", () => {

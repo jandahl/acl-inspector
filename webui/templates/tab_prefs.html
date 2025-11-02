@@ -73,6 +73,11 @@
               <option value="rorschach">Rorschach</option>
             </select>
           </div>
+          <div class="pref-inline pref-slider">
+            <label for="pref_preview_speed">Preview speed</label>
+            <input type="range" id="pref_preview_speed" min="6" max="40" step="1" value="12">
+            <span class="pref-metric" id="pref_preview_speed_value">12s</span>
+          </div>
           <p class="pref-note">Changes apply to this browser and sync with the toolbar toggle.</p>
           <div class="pref-inline">
             <label for="pref_font_body">Normal font</label>
@@ -149,6 +154,8 @@
                     <code><span class="kw">access-list</span> <span class="kw">OUTSIDE</span> <span class="kw">extended</span> <span class="act">deny</span> <span class="proto">ip</span> <span class="kw">any</span> <span class="kw">any</span></code>
                     </div>
                   </div>
+                  <canvas id="preview_rorschach_canvas" class="preview-rorschach" aria-hidden="true"></canvas>
+                  <div class="preview-rorschach-fallback" id="preview_rorschach_fallback" hidden>WebGL preview unavailable</div>
                 </div>
               </div>
             </div>
