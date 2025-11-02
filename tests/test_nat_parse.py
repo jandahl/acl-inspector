@@ -46,6 +46,12 @@ class TestNatParse(unittest.TestCase):
         entry = cfg.flatten_acl()[0]
         self.assertEqual(entry['binding'].get('interface'), 'outside')
         self.assertEqual(entry['binding'].get('direction'), 'in')
+        iface_map = cfg.acl_interface_map.get('interfaces', {})
+        self.assertIn('outside', iface_map)
+        self.assertEqual(iface_map['outside']['in'], ['OUT'])
+        self.assertEqual(cfg.acls_for_interface('outside', 'in'), ['OUT'])
+        self.assertEqual(cfg.acls_for_interface('outside'), [])
+        self.assertEqual(cfg.acls_for_global(), [])
         # NAT rules: auto and manual present
         kinds = sorted([r['type'] for r in cfg.nat_rules])
         self.assertEqual(kinds, ['auto', 'manual'])

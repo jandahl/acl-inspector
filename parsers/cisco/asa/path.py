@@ -84,16 +84,21 @@ def path_check(
     def _add_candidate(interface: Optional[str], direction: Optional[str]) -> None:
         if not interface:
             return
-        key = (interface.lower(), direction.lower() if direction else None)
+        norm_direction = direction.lower() if direction else None
+        key = (interface.lower(), norm_direction)
         if key in seen:
             return
         seen.add(key)
+        bound_acls = cfg.acls_for_interface(interface, norm_direction)
+        if not bound_acls and norm_direction:
+            bound_acls = cfg.acls_for_interface(interface, None)
         candidates.append(
             {
                 "interface": interface.lower(),
-                "direction": direction.lower() if direction else None,
+                "direction": norm_direction,
                 "display_interface": interface,
                 "display_direction": direction,
+                "acls": bound_acls,
             }
         )
 
@@ -118,9 +123,31 @@ def path_check(
             _add_candidate(src_iface, "out")
             _add_candidate(src_iface, "in")
 
+    global_acls = cfg.acls_for_global()
+    if global_acls:
+        candidates.append(
+            {
+                "interface": None,
+                "direction": "global",
+                "display_interface": "global",
+                "display_direction": "global",
+                "acls": global_acls,
+            }
+        )
+
     acl_context = (
-        {"candidates": [{"interface": c["interface"], "direction": c["direction"]} for c in candidates]}
-        if candidates
+        {
+            "candidates": [
+                {
+                    "interface": c["interface"],
+                    "direction": c["direction"],
+                    "acls": c.get("acls", []),
+                }
+                for c in candidates
+            ],
+            "global_acls": global_acls,
+        }
+        if candidates or global_acls
         else None
     )
     acl_info = _evaluate_acl_flow(cfg, src_after, dst_after, svc_filter, include_any, acl_context)
@@ -142,8 +169,15 @@ def path_check(
         "dst_interface": dst_iface,
         "nat_direction": nat_info.get("direction"),
         "acl_candidates": [
-            {"interface": c["display_interface"], "direction": c["display_direction"]} for c in candidates
+            {
+                "interface": c["display_interface"],
+                "direction": c["display_direction"],
+                "acls": c.get("acls", []),
+            }
+            for c in candidates
         ],
+        "global_acls": global_acls,
+        "interface_acl_map": cfg.acl_interface_map.get("interfaces", {}) if hasattr(cfg, "acl_interface_map") else {},
     }
     return {
         "input": {

@@ -618,6 +618,84 @@ class ASAConfig:
                     ip_to_objects[n].add(name)
         self.ip_to_objects = dict(ip_to_objects)
 
+        interface_map: Dict[str, Dict[str, List[str]]] = defaultdict(lambda: defaultdict(list))
+        control_plane_map: Dict[str, List[str]] = defaultdict(list)
+        scope_map: Dict[str, List[str]] = defaultdict(list)
+        global_acls: List[str] = []
+
+        for acl_name, binding in self.acl_bindings.items():
+            if not binding:
+                continue
+            scope = (binding.get("scope") or "interface").lower()
+            direction_key = (binding.get("direction") or "any").lower()
+            interface_name = binding.get("interface")
+            if scope == "global":
+                global_acls.append(acl_name)
+                continue
+            if scope == "control-plane":
+                control_plane_map[direction_key].append(acl_name)
+                continue
+            if interface_name:
+                interface_map[interface_name][direction_key].append(acl_name)
+            else:
+                scope_map[scope].append(acl_name)
+
+        def _sorted_unique(values: List[str]) -> List[str]:
+            return sorted({v for v in values if v}, key=lambda item: item.lower())
+
+        interfaces_section: Dict[str, Dict[str, List[str]]] = {}
+        for iface, dir_map in interface_map.items():
+            interfaces_section[iface] = {}
+            for dir_key, names in dir_map.items():
+                interfaces_section[iface][dir_key] = _sorted_unique(names)
+            if "any" not in interfaces_section[iface]:
+                interfaces_section[iface]["any"] = []
+
+        control_plane_section = {dir_key: _sorted_unique(names) for dir_key, names in control_plane_map.items()}
+        other_scopes_section = {scope: _sorted_unique(names) for scope, names in scope_map.items()}
+        global_section = _sorted_unique(global_acls)
+
+        self.acl_interface_map = {
+            "interfaces": interfaces_section,
+            "control_plane": control_plane_section,
+            "global": global_section,
+            "other_scopes": other_scopes_section,
+        }
+
+        lookup: Dict[Tuple[str, str], List[str]] = {}
+        for iface, dir_map in interfaces_section.items():
+            for dir_key, names in dir_map.items():
+                lookup[(iface.lower(), dir_key.lower())] = names
+        self._acl_interface_lookup = lookup
+        self._global_acl_lookup = global_section
+        self._control_plane_lookup = {dir_key.lower(): names for dir_key, names in control_plane_section.items()}
+        self._other_scope_lookup = {scope.lower(): names for scope, names in other_scopes_section.items()}
+
+    def acls_for_interface(self, interface: Optional[str], direction: Optional[str] = None) -> List[str]:
+        if not interface:
+            return []
+        lookup = getattr(self, "_acl_interface_lookup", {})
+        iface_key = interface.lower()
+        dir_key = (direction or "any").lower()
+        names = lookup.get((iface_key, dir_key))
+        if names is None and dir_key != "any":
+            names = lookup.get((iface_key, "any"))
+        return list(names) if names else []
+
+    def acls_for_global(self) -> List[str]:
+        return list(getattr(self, "_global_acl_lookup", []))
+
+    def acls_for_control_plane(self, direction: Optional[str] = None) -> List[str]:
+        lookup = getattr(self, "_control_plane_lookup", {})
+        if direction:
+            names = lookup.get(direction.lower())
+            if names:
+                return list(names)
+        combined: List[str] = []
+        for names in lookup.values():
+            combined.extend(names)
+        return sorted({name for name in combined}, key=lambda item: item.lower())
+
     def interface_for_ip(self, ip: ipaddress.IPv4Address) -> Optional[str]:
         best_name: Optional[str] = None
         best_prefix = -1
@@ -1017,7 +1095,7 @@ def _entry_summary(entry: dict) -> str:
     return f"{entry['action']}{(' ' + entry['proto']) if entry.get('proto') else ''}{svc_str} src=[{src_str}] dst=[{dst_str}]{bind_str}"
 
 
-def _binding_applicable(binding: Optional[dict], context: Optional[dict]) -> bool:
+def _binding_applicable(binding: Optional[dict], context: Optional[dict], acl_name: Optional[str] = None) -> bool:
     if not context:
         return True
     if not binding:
@@ -1030,9 +1108,10 @@ def _binding_applicable(binding: Optional[dict], context: Optional[dict]) -> boo
         return True
     interface = (binding.get('interface') or '').lower() or None
     direction = (binding.get('direction') or '').lower() or None
+    acl_lower = acl_name.lower() if acl_name else None
     for cand in candidates:
-        cand_iface = cand.get('interface')
-        cand_dir = cand.get('direction')
+        cand_iface = (cand.get('interface') or '').lower() or None
+        cand_dir = (cand.get('direction') or '').lower() or None
         if interface is not None:
             if cand_iface is None or cand_iface != interface:
                 continue
@@ -1042,8 +1121,12 @@ def _binding_applicable(binding: Optional[dict], context: Optional[dict]) -> boo
         if direction is not None:
             if cand_dir is None or cand_dir != direction:
                 continue
+        if acl_lower:
+            cand_acls = [name.lower() for name in cand.get('acls', [])]
+            if cand_acls and acl_lower not in cand_acls:
+                continue
         return True
-    return False
+    return False if candidates else True
 
 
 def _evaluate_acl_flow(cfg: ASAConfig, src_ip: ipaddress.IPv4Address, dst_ip: ipaddress.IPv4Address, svc_filter: Optional[dict], include_any: bool, iface_context: Optional[dict] = None) -> dict:
@@ -1056,7 +1139,7 @@ def _evaluate_acl_flow(cfg: ASAConfig, src_ip: ipaddress.IPv4Address, dst_ip: ip
         inspected += 1
         if not include_any and _has_any_endpoint(entry):
             continue
-        if iface_context and not _binding_applicable(entry.get('binding'), iface_context):
+        if iface_context and not _binding_applicable(entry.get('binding'), iface_context, entry.get('acl')):
             continue
         if not nets_overlap(entry['src'], src_set):
             continue
