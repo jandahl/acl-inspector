@@ -20,6 +20,53 @@ from .parser import (
 __all__ = ["path_check"]
 
 
+def _build_packet_tracer_commands(
+    src_ip: ipaddress.IPv4Address,
+    dst_ip: ipaddress.IPv4Address,
+    proto: Optional[str],
+    dports: Set[int],
+    candidates: List[Dict[str, Union[str, None]]],
+) -> List[dict]:
+    commands: List[dict] = []
+    if not candidates:
+        return commands
+
+    proto_token = (proto or "ip").lower()
+    if proto_token not in {"tcp", "udp"}:
+        command_proto = "ip"
+        src_port = 0
+        dst_port = 0
+    else:
+        command_proto = proto_token
+        src_port = 12345
+        dst_port = sorted(dports)[0] if dports else 0
+
+    src_str = str(src_ip)
+    dst_str = str(dst_ip)
+
+    for cand in candidates:
+        iface = cand.get("display_interface") or cand.get("interface")
+        if not iface or iface.lower() == "global":
+            continue
+        direction = cand.get("display_direction") or cand.get("direction")
+        command = "packet-tracer input {iface} {proto} {src} {sport} {dst} {dport}".format(
+            iface=iface,
+            proto=command_proto,
+            src=src_str,
+            sport=src_port,
+            dst=dst_str,
+            dport=dst_port,
+        )
+        commands.append(
+            {
+                "interface": iface,
+                "direction": direction,
+                "command": command.strip(),
+            }
+        )
+    return commands
+
+
 def path_check(
     cfg_text: str,
     src: str,
@@ -163,7 +210,40 @@ def path_check(
         if inferred_warnings:
             warnings.extend(inferred_warnings)
             acl_info["warnings"] = warnings
+
+    context_walks: List[dict] = []
+    for candidate in candidates:
+        candidate_context = {
+            "candidates": [
+                {
+                    "interface": candidate["interface"],
+                    "direction": candidate["direction"],
+                    "acls": candidate.get("acls", []),
+                }
+            ],
+        }
+        if global_acls:
+            candidate_context["global_acls"] = global_acls
+        candidate_acl = _evaluate_acl_flow(
+            cfg,
+            src_after,
+            dst_after,
+            svc_filter,
+            include_any,
+            candidate_context,
+        )
+        context_walks.append(
+            {
+                "interface": candidate["display_interface"],
+                "direction": candidate["display_direction"],
+                "acls": candidate.get("acls", []),
+                "decision": candidate_acl.get("decision"),
+                "matches": candidate_acl.get("matches", []),
+            }
+        )
     allowed = acl_info.get("decision") == "permit"
+    packet_tracer_cmds = _build_packet_tracer_commands(src_ip, dst_ip, proto, dports, candidates)
+
     context = {
         "src_interface": src_iface,
         "dst_interface": dst_iface,
@@ -178,6 +258,8 @@ def path_check(
         ],
         "global_acls": global_acls,
         "interface_acl_map": cfg.acl_interface_map.get("interfaces", {}) if hasattr(cfg, "acl_interface_map") else {},
+        "walks": context_walks,
+        "packet_tracer": packet_tracer_cmds,
     }
     return {
         "input": {
@@ -196,6 +278,7 @@ def path_check(
         "acl": acl_info,
         "allowed": allowed,
         "context": context,
+        "packet_tracer": packet_tracer_cmds,
     }
 
 

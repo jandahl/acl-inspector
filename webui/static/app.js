@@ -98,6 +98,24 @@
   let rorschachPreviewDisabled = false;
   let rorschachLastSettings = null;
 
+  function isAnimatedPreviewMode(mode) {
+    const target = (mode || previewMode || "").trim();
+    return target === "radar" || target === "rorschach";
+  }
+
+  function normalizePreviewSpeed(value, fallback) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) {
+      return clamp(numeric, RORSCHACH_SPEED_SECONDS.min, RORSCHACH_SPEED_SECONDS.max);
+    }
+    const alt = Number(fallback);
+    return clamp(
+      Number.isFinite(alt) ? alt : THEME_PREVIEW_SPEED,
+      RORSCHACH_SPEED_SECONDS.min,
+      RORSCHACH_SPEED_SECONDS.max
+    );
+  }
+
   function computeAutoLayout() {
     const viewport = Math.max(window.innerWidth || 0, (window.screen && window.screen.width) || 0, 0);
     const dpr = window.devicePixelRatio || 1;
@@ -245,6 +263,33 @@
       effective = clamp(baseline, RORSCHACH_SPEED_SECONDS.min, RORSCHACH_SPEED_SECONDS.max);
     }
     label.textContent = `${Math.round(effective)}s`;
+  }
+
+  function updatePreviewSpeedDisabled(prefState = prefs) {
+    const slider = document.getElementById("pref_preview_speed");
+    if (!slider) {
+      return;
+    }
+    const container = document.querySelector(".preview-speed-control");
+    const valueLabel = document.getElementById("pref_preview_speed_value");
+    const enabled = isAnimatedPreviewMode(previewMode);
+    if (enabled) {
+      slider.removeAttribute("disabled");
+      slider.setAttribute("aria-disabled", "false");
+      if (container) {
+        container.classList.remove("is-disabled");
+      }
+      updatePreviewSpeedMetric(slider.value, prefState);
+    } else {
+      slider.setAttribute("disabled", "true");
+      slider.setAttribute("aria-disabled", "true");
+      if (container) {
+        container.classList.add("is-disabled");
+      }
+      if (valueLabel) {
+        valueLabel.textContent = "—";
+      }
+    }
   }
 
   function currentThemeMode() {
@@ -1040,6 +1085,7 @@
       }
       updatePreviewSpeedMetric(undefined, prefs);
       styleFontOptionPreviews();
+      updatePreviewSpeedDisabled();
     } finally {
       prefGuard = false;
     }
@@ -1428,11 +1474,15 @@
   }
 
   function setPreviewMode(mode, persist = true) {
-    const allowed = ["radar", "light", "dark", "rorschach"];
-    if (!allowed.includes(mode)) {
-      mode = "radar";
+    let nextMode = typeof mode === "string" ? mode.trim() : "";
+    const allowed = ["radar", "rorschach", "split", "light", "dark"];
+    if (!nextMode) {
+      nextMode = "radar";
     }
-    previewMode = mode;
+    if (!allowed.includes(nextMode)) {
+      nextMode = "radar";
+    }
+    previewMode = nextMode;
     if (persist) {
       storageSet(PREVIEW_MODE_KEY, previewMode);
     }
@@ -1453,6 +1503,7 @@
       select.value = previewMode;
     }
     updateThemePreviewBox();
+    updatePreviewSpeedDisabled(themeModalOpen && modalPrefs ? modalPrefs : prefs);
   }
 
   function updateThemePreviewBox(prefState = themePref, previewPrefs = prefs) {
@@ -1500,11 +1551,14 @@
     const darkCard = box.querySelector(".preview-card[data-theme-preview='dark']");
     const lightBanner = box.querySelector(".preview-banner[data-theme-preview='light']");
     const darkBanner = box.querySelector(".preview-banner[data-theme-preview='dark']");
-    const previewSeconds = clamp(
+    let previewSeconds = clamp(
       Number(previewPrefs.previewSpeed ?? THEME_PREVIEW_SPEED) || THEME_PREVIEW_SPEED,
       RORSCHACH_SPEED_SECONDS.min,
       RORSCHACH_SPEED_SECONDS.max
     );
+    if (!isAnimatedPreviewMode(previewMode)) {
+      previewSeconds = THEME_PREVIEW_SPEED;
+    }
     box.style.setProperty("--preview-speed", `${previewSeconds}s`);
     box.style.setProperty("--preview-body-font", bodyFont);
     box.style.setProperty("--preview-mono-font", monoFont);
@@ -1587,6 +1641,7 @@
     updatePreviewSpeedMetric(modalPrefs.previewSpeed, modalPrefs);
     styleFontOptionPreviews();
     updateModalPreview();
+    updatePreviewSpeedDisabled(modalPrefs);
   }
 
   function updateThemePreview(_kind, prefState = themePref, previewPrefs = prefs) {
@@ -3015,6 +3070,18 @@
     const candidateBlock = candidateLines.length
       ? `<div class='diff diff-aliases'><h3>ACL Candidate Bindings</h3><pre>${candidateLines.join("\n")}</pre></div>`
       : "";
+    const tracer = result.packet_tracer || context.packet_tracer || [];
+    const tracerLines = tracer
+      .map((entry) => {
+        const iface = entry.interface ? String(entry.interface) : "(unknown)";
+        const dir = entry.direction ? ` (${entry.direction})` : "";
+        const cmd = entry.command ? String(entry.command) : "";
+        return `${escapeHtml(iface + dir)}\n  ${escapeHtml(cmd)}`;
+      })
+      .join("\n\n");
+    const tracerBlock = tracer.length
+      ? `<div class='diff diff-cmd'><h3>ASA Packet-Tracer Commands</h3><pre>${tracerLines}</pre></div>`
+      : "";
     const jsonPretty = escapeHtml(JSON.stringify(result, null, 2));
     return `
 <div class='results results-probe' data-tab='packet-probe'>
@@ -3024,6 +3091,7 @@
   <p>Resolved: src=${escapeHtml(String(resolved.src || ""))} -> ${escapeHtml(String(resolved.post_nat_src || ""))} | dst=${escapeHtml(String(resolved.dst || ""))} -> ${escapeHtml(String(resolved.post_nat_dst || ""))}</p></div>
   <div class='diff diff-added'><h3>NAT Evaluation</h3><pre>${natLines.join("\n")}\n</pre></div>
   ${candidateBlock}
+  ${tracerBlock}
   <div class='diff diff-raw'><h3>ACL Matches</h3><pre data-lang='asa'>${aclText}</pre></div>
   <div class='diff diff-json'><h3>Raw Result</h3><pre>${jsonPretty}</pre></div>
 </div>
@@ -3529,41 +3597,30 @@
         if (prefGuard) {
           return;
         }
-        const raw = Number(event.target.value);
-        const next = clamp(
-          Number.isFinite(raw) ? raw : (themeModalOpen && modalPrefs ? modalPrefs.previewSpeed : prefs.previewSpeed),
-          RORSCHACH_SPEED_SECONDS.min,
-          RORSCHACH_SPEED_SECONDS.max
-        );
+        const fallback = themeModalOpen && modalPrefs ? modalPrefs.previewSpeed : prefs.previewSpeed;
+        const next = normalizePreviewSpeed(event.target.value, fallback);
+        event.target.value = String(next);
         if (themeModalOpen && modalPrefs) {
           modalPrefs.previewSpeed = next;
-          event.target.value = String(next);
           updatePreviewSpeedMetric(next, modalPrefs);
           updateModalPreview();
           return;
         }
         updatePreviewSpeedMetric(next, { ...prefs, previewSpeed: next });
-        const tempPrefs = { ...prefs, previewSpeed: next };
-        updateThemePreviewBox(themePref, tempPrefs);
       });
       prefPreviewSpeed.addEventListener("change", (event) => {
         if (prefGuard) {
           return;
         }
-        const raw = Number(event.target.value);
-        const next = clamp(
-          Number.isFinite(raw) ? raw : (themeModalOpen && modalPrefs ? modalPrefs.previewSpeed : prefs.previewSpeed),
-          RORSCHACH_SPEED_SECONDS.min,
-          RORSCHACH_SPEED_SECONDS.max
-        );
+        const fallback = themeModalOpen && modalPrefs ? modalPrefs.previewSpeed : prefs.previewSpeed;
+        const next = normalizePreviewSpeed(event.target.value, fallback);
+        event.target.value = String(next);
         if (themeModalOpen && modalPrefs) {
           modalPrefs.previewSpeed = next;
-          event.target.value = String(next);
           updatePreviewSpeedMetric(next, modalPrefs);
           updateModalPreview();
           return;
         }
-        event.target.value = String(next);
         setPreference("previewSpeed", next, "prefs-ui");
       });
     }
