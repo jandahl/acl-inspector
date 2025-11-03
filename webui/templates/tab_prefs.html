@@ -64,19 +64,22 @@
             <label for="theme_light">Light theme</label>
             <select id="theme_light"></select>
           </div>
-          <div class="theme-control">
+          <div class="theme-control theme-control--preview">
             <label for="preview_mode">Preview mode</label>
-            <select id="preview_mode">
-              <option value="radar">Radar sweep</option>
-              <option value="light">Light only</option>
-              <option value="dark">Dark only</option>
-              <option value="rorschach">Rorschach</option>
-            </select>
-          </div>
-          <div class="pref-inline pref-slider">
-            <label for="pref_preview_speed">Preview speed</label>
-            <input type="range" id="pref_preview_speed" min="6" max="40" step="1" value="12">
-            <span class="pref-metric" id="pref_preview_speed_value">12s</span>
+            <div class="preview-mode-controls">
+              <select id="preview_mode">
+                <option value="radar">Radar sweep</option>
+                <option value="rorschach">Rorschach</option>
+                <option value="split">Both light &amp; dark</option>
+                <option value="light">Light only</option>
+                <option value="dark">Dark only</option>
+              </select>
+              <div class="preview-speed-control">
+                <label for="pref_preview_speed">Speed</label>
+                <input type="range" id="pref_preview_speed" min="6" max="40" step="1" value="12">
+                <span class="pref-metric" id="pref_preview_speed_value">12s</span>
+              </div>
+            </div>
           </div>
           <p class="pref-note">Changes apply to this browser and sync with the toolbar toggle.</p>
           <div class="pref-inline">

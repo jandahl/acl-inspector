@@ -52,6 +52,16 @@ class TestPathCheck(unittest.TestCase):
         self.assertIn('outside', iface_map)
         self.assertEqual(iface_map['outside']['in'], ['OUT'])
         self.assertEqual(ctx.get('global_acls'), [])
+        walks = ctx.get('walks', [])
+        self.assertTrue(walks)
+        outside_in = next((w for w in walks if w['interface'] == 'outside' and w['direction'] == 'in'), None)
+        self.assertIsNotNone(outside_in)
+        self.assertEqual(outside_in['decision'], 'permit')
+        self.assertTrue(any('SRC_NAT' in m['raw'] for m in outside_in['matches']))
+        tracer = ctx.get('packet_tracer', [])
+        self.assertTrue(tracer)
+        self.assertTrue(any('packet-tracer input outside' in cmd['command'] for cmd in tracer))
+        self.assertEqual(result['packet_tracer'], tracer)
 
     def test_path_inbound_static(self):
         result = path_check(ASA_SAMPLE, '198.51.100.200', 'SRC_NAT', proto='tcp', dports={443})
@@ -72,6 +82,15 @@ class TestPathCheck(unittest.TestCase):
         self.assertIn('outside', iface_map)
         self.assertEqual(iface_map['outside']['in'], ['OUT'])
         self.assertEqual(ctx.get('global_acls'), [])
+        walks = ctx.get('walks', [])
+        self.assertTrue(walks)
+        outside_in = next((w for w in walks if w['interface'] == 'outside' and w['direction'] == 'in'), None)
+        self.assertIsNotNone(outside_in)
+        self.assertEqual(outside_in['decision'], 'permit')
+        self.assertTrue(any('object SRC eq 443' in m['raw'] for m in outside_in['matches']))
+        tracer = ctx.get('packet_tracer', [])
+        self.assertTrue(tracer)
+        self.assertTrue(any('packet-tracer input outside' in cmd['command'] for cmd in tracer))
 
 
 if __name__ == '__main__':

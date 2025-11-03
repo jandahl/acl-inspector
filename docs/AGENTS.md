@@ -65,6 +65,8 @@ Near-term roadmap (execution order)
   - Bind ACLs to interfaces/direction; capture global policy placement when possible.
 - Path check prototype (ASA only to start)
   - CLI tool and web tab to evaluate a 5‑tuple across one device, applying NAT and ACL checks stepwise.
+- Config to YAML export
+  - Extend the IR/CLI output pipeline to emit YAML alongside JSON, keeping dependencies optional.
 - Repository indexing improvements
   - Enhance vendor detection; add a cache manifest and `/api/index/status` endpoint for visibility.
 - FortiGate next
