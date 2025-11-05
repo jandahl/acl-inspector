@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Singularity · ACL Inspector</title>
+    <link rel="stylesheet" href="/static/themes.css">
+    <link rel="stylesheet" href="/static/singularity.css">
+    <script>
+      window.SINGULARITY_DATA = $singularity_payload;
+    </script>
+  </head>
+  <body class="singularity-body">
+    <div class="singularity-backdrop" aria-hidden="true"></div>
+    <div class="singularity-halo" aria-hidden="true"></div>
+    <main class="singularity-shell">
+      <header class="singularity-header">
+        <div class="brand">ACL Inspector</div>
+        <button class="config-pill" type="button" data-role="toggle-advanced" aria-expanded="false">
+          <span class="pill-label">Scope</span>
+          <span class="pill-value" data-role="config-chip">Detecting config…</span>
+        </button>
+      </header>
+      <section class="singularity-scope" data-role="scope-panel" hidden>
+        <div class="scope-card">
+          <div class="scope-head">
+            <h2>Choose your scope</h2>
+            <p>Focus suggestions on a specific device snapshot and adjust how we match.</p>
+          </div>
+          <div class="scope-grid">
+            <label class="control">
+              <span>Vendor</span>
+              <select data-role="vendor">
+                <option value="asa">Cisco ASA</option>
+                <option value="fortigate">FortiGate</option>
+              </select>
+            </label>
+            <label class="control">
+              <span>Config file</span>
+              <select data-role="config"></select>
+            </label>
+            <label class="control">
+              <span>Match style</span>
+              <select data-role="mode">
+                <option value="fuzzy">Adaptive</option>
+                <option value="prefix">Starts with</option>
+                <option value="substring">Contains</option>
+              </select>
+            </label>
+          </div>
+        </div>
+      </section>
+      <section class="singularity-hero">
+        <h1>Find an object. Let the app choreograph the next steps.</h1>
+        <p>Start typing an object, host, or network. We will surface the right views only when you need them.</p>
+      </section>
+      <section class="singularity-search">
+        <label class="search-label" for="singularity-query">What are we looking up?</label>
+        <div class="search-field">
+          <input
+            id="singularity-query"
+            type="search"
+            name="q"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="Try 10.0.0.5, web-prod, outside->inside, …"
+            data-role="query"
+          >
+          <div class="search-glow" aria-hidden="true"></div>
+        </div>
+        <p class="search-hint" data-role="search-hint">We’re warming up the index…</p>
+      </section>
+      <section class="singularity-suggestions" data-state="idle">
+        <ul class="suggestion-list" data-role="suggestions" aria-live="polite"></ul>
+        <div class="suggestion-empty" data-role="empty-state">
+          <strong>Nothing yet.</strong>
+          <span>Try the primary object name, an IP address, or even a partial match.</span>
+        </div>
+        <div class="suggestion-error" data-role="error-state" hidden></div>
+      </section>
+      <section class="singularity-details" data-role="details" hidden>
+        <div class="details-card">
+          <div class="details-head">
+            <span class="details-chip" data-role="selected-type">Object</span>
+            <h2 data-role="selected-label">Object</h2>
+            <p data-role="selected-meta">Ready when you are.</p>
+          </div>
+          <div class="details-actions">
+            <button class="action-primary" type="button" data-role="copy-value">Copy name</button>
+            <a class="action-primary" data-action="inspect" target="_blank" rel="noopener">Open full inspector</a>
+          </div>
+          <button class="action-ghost" type="button" data-role="reveal" aria-expanded="false">
+            <span class="reveal-open">Show the rest of the controls</span>
+            <span class="reveal-close">Hide extra controls</span>
+          </button>
+          <div class="details-more" data-role="advanced" hidden>
+            <div class="details-columns">
+              <div class="column">
+                <h3>Routes</h3>
+                <ul>
+                  <li><a data-action="inspect" target="_blank" rel="noopener">Inspect this object</a></li>
+                  <li><a data-action="compare" target="_blank" rel="noopener">Start a compare</a></li>
+                  <li><a data-action="packet" target="_blank" rel="noopener">Check a packet</a></li>
+                  <li><a data-action="find" target="_blank" rel="noopener">Search across configs</a></li>
+                </ul>
+              </div>
+              <div class="column scope-reminder">
+                <h3>Scope</h3>
+                <p>Need to switch configs or vendors? Use the Scope pill above to keep the search lightweight.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+    <script src="/static/singularity.js" type="module"></script>
+  </body>
+</html>
