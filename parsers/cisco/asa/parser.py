@@ -29,7 +29,7 @@ import ipaddress
 import re
 import socket
 from collections import defaultdict
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Union
 
 from .services import entry_effective_protos, spec_to_range_tuple, dst_ports_from_entry, service_matches
 from .nat import (
@@ -141,6 +141,11 @@ class ASAConfig:
         self.interfaces: Dict[str, dict] = {}
         self.acl_bindings: Dict[str, Dict[str, Optional[str]]] = {}
         self.nat_rules: List[dict] = []
+        self._network_cache: Dict[str, Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]]] = {}
+        self._network_in_progress: Dict[
+            str, Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]]
+        ] = {}
+        self._service_group_cache: Dict[str, Tuple[dict, ...]] = {}
         self.parse()
         self._build_reverse_indexes()
 
@@ -906,11 +911,18 @@ class ASAConfig:
         normalized.sort(key=lambda r: r['precedence'])
         return normalized
 
+    def _clone_service_members(self, members: Iterable[dict]) -> List[dict]:
+        return [dict(m) for m in members]
+
     def resolve_service_group(self, name: str, visited: Optional[Set[str]] = None) -> List[dict]:
         if not hasattr(self, 'service_object_groups'):
             return []
         if visited is None:
             visited = set()
+        cache_key = name
+        cached = self._service_group_cache.get(cache_key)
+        if cached is not None:
+            return self._clone_service_members(cached)
         if name in visited:
             return []
         visited.add(name)
@@ -922,37 +934,64 @@ class ASAConfig:
                 out.append(m)
             elif isinstance(m, dict) and 'object' in m:
                 out.append(m)
-        return out
+        cached_members = tuple(self._clone_service_members(out))
+        self._service_group_cache[cache_key] = cached_members
+        return self._clone_service_members(cached_members)
 
-    def resolve_network(self, token: Union[str, ipaddress.IPv4Address, ipaddress.IPv4Network], visited: Optional[Set[str]] = None) -> Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]]:
-        visited = set() if visited is None else visited
-        results: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]] = set()
+    def resolve_network(
+        self,
+        token: Union[str, ipaddress.IPv4Address, ipaddress.IPv4Network],
+        visited: Optional[Set[str]] = None,
+    ) -> Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]]:
         if isinstance(token, (ipaddress.IPv4Address, ipaddress.IPv4Network)):
             return {token}
-        token_lower = token.lower() if isinstance(token, str) else token
-        if token_lower in ('any', 'any4', 'any-ipv4'):
-            return {ipaddress.ip_network('0.0.0.0/0')}
-        if token_lower in ('any6', 'any-ipv6'):
+        if isinstance(token, str):
+            cache_key = token
+            cached = self._network_cache.get(cache_key)
+            if cached is not None:
+                return set(cached)
+            in_progress = self._network_in_progress.get(cache_key)
+            if in_progress is not None:
+                return set(in_progress)
+            token_lower = token.lower()
+            if token_lower in ('any', 'any4', 'any-ipv4'):
+                result = {ipaddress.ip_network('0.0.0.0/0')}
+                self._network_cache[cache_key] = set(result)
+                return result
+            if token_lower in ('any6', 'any-ipv6'):
+                try:
+                    result = {ipaddress.ip_network('::/0')}
+                except Exception:
+                    result = set()
+                self._network_cache[cache_key] = set(result)
+                return result
+            if token in self.network_objects:
+                nets = set(self.network_objects[token])
+                self._network_cache[cache_key] = set(nets)
+                return nets
+            if token in self.network_object_groups:
+                self._network_in_progress[cache_key] = set()
+                try:
+                    working = self._network_in_progress[cache_key]
+                    for m in self.network_object_groups[token]:
+                        if isinstance(m, dict):
+                            if 'group-object' in m:
+                                working.update(self.resolve_network(m['group-object'], visited))
+                            elif 'object' in m:
+                                working.update(self.resolve_network(m['object'], visited))
+                        elif isinstance(m, (ipaddress.IPv4Address, ipaddress.IPv4Network)):
+                            working.add(m)
+                    resolved = set(working)
+                finally:
+                    self._network_in_progress.pop(cache_key, None)
+                self._network_cache[cache_key] = set(resolved)
+                return resolved
             try:
-                return {ipaddress.ip_network('::/0')}
+                result = {to_ip_network(token)}
             except Exception:
-                return set()
-        if isinstance(token, str) and token in self.network_objects:
-            return self.network_objects[token]
-        if isinstance(token, str) and token in self.network_object_groups:
-            if token in visited:
-                return set()
-            visited.add(token)
-            for m in self.network_object_groups[token]:
-                if isinstance(m, dict):
-                    if 'group-object' in m:
-                        results.update(self.resolve_network(m['group-object'], visited))
-                    elif 'object' in m:
-                        results.update(self.resolve_network(m['object'], visited))
-                else:
-                    if isinstance(m, (ipaddress.IPv4Address, ipaddress.IPv4Network)):
-                        results.add(m)
-            return results
+                result = set()
+            self._network_cache[cache_key] = set(result)
+            return result
         try:
             return {to_ip_network(token)}
         except Exception:
