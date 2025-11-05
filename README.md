@@ -74,7 +74,7 @@ normally accepts `--config <path>`:
   zcat latest-export.asa.gz | ./access-list-inspector.py --vendor asa --config - --old AppSrvA --new AppSrvB
   ```
 
-- Find host across streamed configs (directory or file):
+- Find host in a streamed config:
   ```bash
   curl https://example.com/asa.conf \ 
     | ./access-list-inspector.py --vendor asa --config - --find-host 10.20.30.40
