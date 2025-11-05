@@ -49,7 +49,7 @@ class ActionHandlersTest(unittest.TestCase):
         )
         self.assertEqual(status, 200)
         self.assertIn("OBJ_WEB", payload["html"])
-        self.assertIn("Allowing object-groups", payload["html"])
+        self.assertIn("matching object-groups", payload["html"])
         self.assertIn("object-group OG_WEB", payload["html"])
         self.assertEqual(payload.get("meta", {}).get("mode"), "inspect")
         self.assertEqual(payload.get("meta", {}).get("query"), "OBJ_WEB")
