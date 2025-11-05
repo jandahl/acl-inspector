@@ -60,6 +60,25 @@ def _render_home(state: AppState) -> str:
     return Template(template).substitute(context)
 
 
+def _render_singularity(state: AppState) -> str:
+    template = resources.read_text("webui.templates", "singularity.html")
+    asa_options = sorted(api_handlers.config_listing(state, vendor="asa").keys())
+    fortigate_options = sorted(api_handlers.config_listing(state, vendor="fortigate").keys())
+    config_options = {"asa": asa_options, "fortigate": fortigate_options}
+    default_vendor = "asa" if asa_options else ("fortigate" if fortigate_options else "asa")
+    default_config = asa_options[0] if asa_options else (fortigate_options[0] if fortigate_options else "")
+    payload = {
+        "configOptions": config_options,
+        "searchLimit": state.settings.features.predictive_search.limit,
+        "defaultVendor": default_vendor,
+        "defaultConfig": default_config,
+        "defaultMode": "fuzzy",
+        "initialHint": "We’ll surface results the moment you start typing.",
+    }
+    context = {"singularity_payload": json.dumps(payload).replace("</", "<\\/")}
+    return Template(template).substitute(context)
+
+
 def register_pages(router: Router, state: AppState) -> None:
     """Register HTML page routes."""
 
@@ -76,6 +95,15 @@ def register_pages(router: Router, state: AppState) -> None:
 
     def handle_root(_request: Request) -> Response:
         body = _render_home(state).encode("utf-8")
+        headers = {
+            "Content-Type": "text/html; charset=utf-8",
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "Content-Length": str(len(body)),
+        }
+        return Response(status=200, headers=headers, body=body)
+
+    def handle_singularity(_request: Request) -> Response:
+        body = _render_singularity(state).encode("utf-8")
         headers = {
             "Content-Type": "text/html; charset=utf-8",
             "Cache-Control": "no-store, no-cache, must-revalidate",
@@ -172,6 +200,8 @@ def register_pages(router: Router, state: AppState) -> None:
         return render_design_page("Design Index", content)
 
     router.add("GET", "/", handle_root)
+    router.add("GET", "/singularity", handle_singularity)
+    router.add("GET", "/singularity/", handle_singularity)
     router.add("GET", "/design", handle_design_index)
     for path in design_docs:
         router.add("GET", path, handle_design_doc)
