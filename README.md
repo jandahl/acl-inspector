@@ -128,6 +128,7 @@ Web UI
   - Packet check tab evaluates a single flow through NAT + ACL (ASA prototype).
   - Packet probe tab (beta) exposes the experimental `/api/probe` endpoint. It reuses the flattened ACL view and current NAT evaluation; expect ASA support first, with richer NAT coverage staged on the roadmap.
 - Preferences now include a **Debug** section with buttons to flush server caches (index + history) and reset browser-side settings/local storage.
+- Looking ahead: we are exploring a simplified "V2" GUI — centred on one large search field with fuzzy, ranked suggestions (object/IP shown left, context/right-aligned). After selecting a target, the UI would preload the data in the background and reveal the relevant analysis views via bold, segmented toggles instead of the current tab matrix.
 
 Third-party Notice
 ------------------

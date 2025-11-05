@@ -98,6 +98,138 @@
   let rorschachPreviewDisabled = false;
   let rorschachLastSettings = null;
 
+  function handleFindToPacketClick(event) {
+    const trigger = event.target.closest(".js-find-to-packet");
+    if (!trigger) {
+      return;
+    }
+    event.preventDefault();
+    const vendor = (trigger.dataset.vendor || "asa").toLowerCase();
+    const config = trigger.dataset.config || "";
+    const targetValue = (trigger.dataset.target || "").trim();
+
+    const vendorSelect = document.getElementById("vendor");
+    if (vendorSelect && vendorSelect.value !== vendor) {
+      vendorSelect.value = vendor;
+      toggleVendor();
+    }
+
+    const vendorTabSelect = document.getElementById("config_vendor_tab");
+    if (vendorTabSelect && vendorTabSelect.value.toLowerCase() !== vendor) {
+      vendorTabSelect.value = vendor;
+    }
+
+    const configSelect =
+      vendor === "fortigate" ? document.getElementById("config_ftg") : document.getElementById("config");
+    if (configSelect && config) {
+      const option = Array.from(configSelect.options || []).find((opt) => opt.value === config);
+      if (option) {
+        configSelect.value = config;
+      }
+    }
+
+    const tabSelect = document.getElementById("config_select_tab");
+    if (tabSelect && vendor === "asa") {
+      const option = Array.from(tabSelect.options || []).find((opt) => opt.value === config);
+      if (option) {
+        tabSelect.value = config;
+      }
+    }
+
+    syncConfigViewerControls();
+    loadConfigText();
+    refreshMeta();
+
+    activateTab("packet", true);
+    setMode("packet");
+
+    const pktDst = document.getElementById("pkt_dst");
+    if (pktDst) {
+      pktDst.value = targetValue;
+    }
+
+    const pktSrc = document.getElementById("pkt_src");
+    if (pktSrc && !pktSrc.value) {
+      pktSrc.focus();
+    }
+
+    saveState();
+  }
+
+  function handleViewToggle(event) {
+    const btn = event.target.closest(".config-summary-btn");
+    if (!btn) {
+      return;
+    }
+    if (btn.classList.contains("acl-view-btn")) {
+      const ruleset = btn.closest(".diff-ruleset");
+      if (!ruleset) {
+        return;
+      }
+      const container = ruleset.querySelector(".acl-view-container");
+      if (!container) {
+        return;
+      }
+      const targetMode = btn.dataset.target || "both";
+      if (targetMode === "hide") {
+        container.classList.add("is-hidden");
+      } else {
+        container.classList.remove("is-hidden");
+        const panels = container.querySelectorAll(".acl-view");
+        const showAll = targetMode === "both";
+        panels.forEach((panel) => {
+          const viewType = panel.dataset.view || "";
+          const isActive = showAll || viewType === targetMode;
+          panel.classList.toggle("is-active", isActive);
+        });
+      }
+      ruleset.querySelectorAll(".acl-view-btn").forEach((button) => {
+        button.classList.toggle("is-active", button === btn);
+      });
+      return;
+    }
+    const diffBlock = btn.closest(".diff");
+    if (!diffBlock) {
+      return;
+    }
+    const summary = diffBlock.querySelector(".config-summary");
+    if (!summary) {
+      return;
+    }
+    const target = btn.dataset.target || "";
+    if (target === "hide") {
+      summary.classList.add("is-hidden");
+      const toggleHide = btn.closest(".config-summary-toggle");
+      if (toggleHide) {
+        toggleHide.querySelectorAll(".config-summary-btn").forEach((button) => {
+          button.classList.toggle("is-active", button === btn);
+        });
+      }
+      return;
+    }
+    summary.classList.remove("is-hidden");
+    const views = summary.querySelectorAll(".config-summary-view");
+    const showAll = target === "both" || !target;
+    let matched = false;
+    views.forEach((view) => {
+      const viewType = view.dataset.view || "";
+      const isMatch = showAll || viewType === target;
+      view.classList.toggle("is-active", isMatch);
+      if (isMatch) {
+        matched = true;
+      }
+    });
+    if (!matched) {
+      return;
+    }
+    const toggle = btn.closest(".config-summary-toggle");
+    if (toggle) {
+      toggle.querySelectorAll(".config-summary-btn").forEach((button) => {
+        button.classList.toggle("is-active", button === btn);
+      });
+    }
+  }
+
   function isAnimatedPreviewMode(mode) {
     const target = (mode || previewMode || "").trim();
     return target === "radar" || target === "rorschach";
@@ -3426,6 +3558,25 @@
         }
       });
     }
+  document.body.addEventListener("click", handleFindToPacketClick);
+  document.body.addEventListener("click", handleViewToggle);
+  document.body.addEventListener(
+    "toggle",
+    (event) => {
+      const details = event.target;
+      if (!details || !details.classList || !details.classList.contains("config-card-collapsible")) {
+        return;
+      }
+      const summary = details.querySelector(".config-card-collapsible-summary");
+      if (!summary) {
+        return;
+      }
+      const collapsedLabel = summary.dataset.labelCollapsed || summary.getAttribute("aria-label") || "";
+      const expandedLabel = summary.dataset.labelExpanded || summary.dataset.labelCollapsed || summary.getAttribute("aria-label") || "";
+      summary.setAttribute("aria-label", details.open ? expandedLabel : collapsedLabel);
+    },
+    true
+  );
     window.addEventListener("keydown", (event) => {
       if (event.key !== "Escape") {
         return;

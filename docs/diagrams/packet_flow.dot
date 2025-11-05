@@ -1,0 +1,22 @@
+digraph "packet_flow" {
+  graph [label="Packet Check Evaluation", labelloc=top, fontsize=20, fontname="Helvetica"];
+  rankdir=LR;
+  node [shape=rectangle, style="rounded,filled", fillcolor="#1f2933", fontcolor="white", fontname="Helvetica"];
+  edge [color="#748094", arrowsize=0.8];
+
+  client [label="UI: Packet Check form"];
+  api [label="POST /run (mode=packet)"];
+  parser [label="ASAConfig\n(parsers.cisco.asa)"];
+  nat [label="NAT evaluation\n(parsers...nat)"];
+  acl [label="ACL flatten & match"];
+  verdict [label="Verdict builder\n(webui.handlers.actions)"];
+  ui [label="UI renderer\n(webui/static/app.js)"];
+
+  client -> api [label="submit flow", fontcolor="#748094"];
+  api -> parser [label="load + cache config", fontcolor="#748094"];
+  parser -> nat [label="expanded object + NAT context", fontcolor="#748094"];
+  nat -> acl [label="translated endpoints", fontcolor="#748094"];
+  acl -> verdict [label="matching rules", fontcolor="#748094"];
+  verdict -> ui [label="JSON payload", fontcolor="#748094"];
+  ui -> client [label="render cards, toggles", fontcolor="#748094"];
+}

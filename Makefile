@@ -78,25 +78,40 @@ fonts:
 
 # Container targets
 CONTAINER_COMPOSE :=
+CONTAINER_HEALTH_CHECK := true
 ifeq ($(shell command -v docker-compose 2>/dev/null),)
 ifeq ($(shell command -v podman-compose 2>/dev/null),)
 $(error "Neither docker-compose nor podman-compose found. Please install one to use container targets.")
 else
 CONTAINER_COMPOSE := podman-compose
+CONTAINER_HEALTH_CHECK := \
+	if ! podman info >/dev/null 2>&1; then \
+		echo "Podman daemon is not reachable."; \
+		echo "Run 'podman machine start' (macOS) or ensure 'podman system service' is active, then retry."; \
+		exit 1; \
+	fi;
 endif
 else
 CONTAINER_COMPOSE := docker-compose
+CONTAINER_HEALTH_CHECK := \
+	if ! docker info >/dev/null 2>&1; then \
+		echo "Docker daemon is not reachable."; \
+		echo "Start Docker Desktop or your docker service, then retry."; \
+		exit 1; \
+	fi;
 endif
 
 
 container-build:
 	@echo "Using $(CONTAINER_COMPOSE) to build the container image..."
+	@$(CONTAINER_HEALTH_CHECK)
 	$(if $(CONFIGS_CISCO),ACLINSPECTOR_CONFIGS_CISCO=$(CONFIGS_CISCO) ,)\
 	$(if $(CONFIGS_FORTIGATE),ACLINSPECTOR_CONFIGS_FORTIGATE=$(CONFIGS_FORTIGATE) ,)\
 	$(CONTAINER_COMPOSE) -f Dockersetup/podman-compose.yaml -p aclinspector up --build -d --no-start
 
 container-run:
 	@echo "Using $(CONTAINER_COMPOSE) to run the container..."
+	@$(CONTAINER_HEALTH_CHECK)
 	$(if $(CONFIGS_CISCO),ACLINSPECTOR_CONFIGS_CISCO=$(CONFIGS_CISCO) ,)\
 	$(if $(CONFIGS_FORTIGATE),ACLINSPECTOR_CONFIGS_FORTIGATE=$(CONFIGS_FORTIGATE) ,)\
 	$(CONTAINER_COMPOSE) -f Dockersetup/podman-compose.yaml -p aclinspector up -d
@@ -104,22 +119,27 @@ container-run:
 
 container-status:
 	@echo "Using $(CONTAINER_COMPOSE) to show container status..."
+	@$(CONTAINER_HEALTH_CHECK)
 	$(CONTAINER_COMPOSE) -f Dockersetup/podman-compose.yaml -p aclinspector ps
 
 container-logs:
 	@echo "Using $(CONTAINER_COMPOSE) to show container logs (tail -f)..."
+	@$(CONTAINER_HEALTH_CHECK)
 	$(CONTAINER_COMPOSE) -f Dockersetup/podman-compose.yaml -p aclinspector logs -f acl-inspector-web
 
 container-stop:
 	@echo "Using $(CONTAINER_COMPOSE) to stop the container..."
+	@$(CONTAINER_HEALTH_CHECK)
 	$(CONTAINER_COMPOSE) -f Dockersetup/podman-compose.yaml -p aclinspector stop
 
 container-prune:
 	@echo "Using $(CONTAINER_COMPOSE) to remove the container while keeping cached images..."
+	@$(CONTAINER_HEALTH_CHECK)
 	$(CONTAINER_COMPOSE) -f Dockersetup/podman-compose.yaml -p aclinspector down
 
 container-clean:
 	@echo "Using $(CONTAINER_COMPOSE) to stop and remove the container..."
+	@$(CONTAINER_HEALTH_CHECK)
 	$(CONTAINER_COMPOSE) -f Dockersetup/podman-compose.yaml -p aclinspector down --rmi all --volumes
 
 build: themes fonts

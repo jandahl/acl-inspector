@@ -158,6 +158,10 @@ def _escape_text(value: str) -> str:
     return html.escape(html.unescape(value or ""))
 
 
+def _escape_attr(value: str) -> str:
+    return html.escape(html.unescape(value or ""), quote=True)
+
+
 def _format_list(values: Iterable[str], limit: Optional[int] = None) -> str:
     seq = [str(v) for v in values if v]
     if not seq:
@@ -231,19 +235,33 @@ def _object_detail_block(
 ) -> str:
     names: Set[str] = set()
     literal_tokens: Set[str] = set()
+    primary_tokens: Set[str] = set()
+    alias_lookup: Dict[str, List[Union[str, ipaddress.IPv4Address, ipaddress.IPv4Network]]] = defaultdict(list)
+    object_lookup = {name.lower(): name for name in cfg.network_objects.keys()}
+    group_lookup = {name.lower(): name for name in cfg.network_object_groups.keys()}
     for name in primary_names:
         if isinstance(name, str) and name:
-            names.add(name)
+            canon = object_lookup.get(name.lower(), name)
+            names.add(canon)
+            lower_name = name.lower()
+            primary_tokens.add(lower_name)
             if _looks_like_address(name):
-                literal_tokens.add(name.lower())
+                literal_tokens.add(lower_name)
     for addr, group_names in aliases.items():
         literal_tokens.add(str(addr).lower())
         for value in group_names:
             if value:
-                names.add(str(value))
+                value_str = str(value)
+                canon = object_lookup.get(value_str.lower(), value_str)
+                names.add(canon)
+                alias_lookup[canon.lower()].append(addr)
+                primary_tokens.add(canon.lower())
     names_lower = {name.lower() for name in names}
-    object_lines: List[str] = []
+    primary_tokens.update(names_lower)
+    primary_tokens.update(literal_tokens)
+    object_sections: List[List[str]] = []
     seen_names: Set[str] = set()
+    object_cards: List[str] = []
 
     def format_object(name: str) -> List[str]:
         lines = [f"object network {name}"]
@@ -257,51 +275,174 @@ def _object_detail_block(
             lines.append(f" {literal}")
         return lines
 
-    for name in sorted(names):
+    def format_addr_line(addr: Union[str, ipaddress.IPv4Address, ipaddress.IPv4Network]) -> str:
+        if isinstance(addr, ipaddress.IPv4Address):
+            return f" host {addr}"
+        if isinstance(addr, ipaddress.IPv4Network):
+            mask = addr.netmask.exploded
+            return f" network-object {addr.network_address} {mask}"
+        return f" {addr}"
+
+    def build_card(
+        lines: List[str],
+        *,
+        variant: str,
+        alias_key: Optional[str] = None,
+        highlight_tokens: Optional[Set[str]] = None,
+        extra_override: Optional[List[str]] = None,
+    ) -> Optional[str]:
+        cleaned = [line.rstrip() for line in lines if line is not None and line.rstrip()]
+        if not cleaned:
+            return None
+        first_line = cleaned[0]
+        second_line = ""
+        highlight_tokens = highlight_tokens or set()
+        highlight_line: Optional[str] = None
+        extra_lines: List[str] = []
+        if len(cleaned) > 1:
+            candidates = cleaned[1:]
+            for line in candidates:
+                lower_line = line.lower()
+                if any(token in lower_line for token in highlight_tokens):
+                    highlight_line = line
+                    break
+            if not highlight_line:
+                highlight_line = candidates[0]
+            second_line = highlight_line
+            if extra_override is not None:
+                extra_lines = list(extra_override)
+                if highlight_line in extra_lines:
+                    extra_lines = [line for line in extra_lines if line != highlight_line]
+            else:
+                extra_lines = [line for line in candidates if line != highlight_line]
+        elif alias_key:
+            for addr in alias_lookup.get(alias_key, []):
+                fallback = format_addr_line(addr)
+                if fallback:
+                    second_line = fallback
+                    break
+        if not second_line:
+            return None
+        row_attrs: List[str] = []
+        aria_label = second_line.strip()
+        extra_hint = ""
+        if extra_lines:
+            count_label = "members" if variant == "group" else "entries"
+            extra_hint = f"(+{len(extra_lines)} more {count_label})"
+            row_attrs.append(f"data-extra-label=\"{_escape_attr(extra_hint)}\"")
+            aria_label = f"{aria_label} {extra_hint}".strip()
+        if aria_label:
+            row_attrs.append(f"aria-label=\"{_escape_attr(aria_label)}\"")
+        row_attr_str = (" " + " ".join(row_attrs)) if row_attrs else ""
+        highlight_class = " is-highlight" if variant == "object" or (highlight_line and any(token in highlight_line.lower() for token in highlight_tokens)) else ""
+        extra_html = ""
+        if extra_lines:
+            count_label = "members" if variant == "group" else "entries"
+            label_collapsed = f"Show {len(extra_lines)} more {count_label}"
+            label_expanded = f"Hide {len(extra_lines)} {count_label}"
+            extra_content = "".join(
+                f"<div class='config-card-extra-line'><span class='config-card-text'>{_escape_text(line)}</span></div>"
+                for line in extra_lines
+            )
+            collapsed_attr = _escape_attr(label_collapsed)
+            expanded_attr = _escape_attr(label_expanded)
+            extra_html = (
+                "<details class='config-card-collapsible'>"
+                f"<summary class='config-card-collapsible-summary' aria-label='{collapsed_attr}' "
+                f"data-label-collapsed='{collapsed_attr}' data-label-expanded='{expanded_attr}'></summary>"
+                f"<div class='config-card-extra'>{extra_content}</div>"
+                "</details>"
+            )
+        return (
+            f"<div class='config-card config-card--{variant}'>"
+            f"<div class='config-card-row is-name'><span class='config-card-text'>{_escape_text(first_line)}</span></div>"
+            f"<div class='config-card-row is-value{highlight_class}'{row_attr_str}><span class='config-card-text'>{_escape_text(second_line)}</span></div>"
+            f"{extra_html}</div>"
+        )
+
+    for name in sorted(names, key=lambda v: v.lower()):
         lower = name.lower()
         if lower in seen_names:
             continue
         seen_names.add(lower)
-        if lower in cfg.network_objects:
-            object_lines.extend(format_object(name))
-            object_lines.append("")
+        canonical = object_lookup.get(lower, name)
+        if lower in object_lookup:
+            formatted_object = format_object(canonical)
+            object_sections.append(formatted_object)
+            card = build_card(
+                formatted_object,
+                variant="object",
+                alias_key=lower,
+                highlight_tokens=primary_tokens,
+            )
+            if card:
+                object_cards.append(card)
 
     group_names: Set[str] = set()
     for name in names:
         group_names.update(membership.get(name.lower(), set()))
 
-    def format_group(group: str) -> List[str]:
-        members = cfg.network_object_groups.get(group, [])
-        lines = [f"object-group network {group}"]
+    def format_group(group: str) -> Tuple[List[str], List[str]]:
+        canonical_group = group_lookup.get(group.lower(), group)
+        members = cfg.network_object_groups.get(canonical_group, [])
+        primary_lines = [f"object-group network {canonical_group}"]
+        extra_lines: List[str] = []
+
+        def add_line(text: str, important: bool) -> None:
+            target = primary_lines if important else extra_lines
+            target.append(text)
+
         for member in members:
             if isinstance(member, dict):
                 if "object" in member:
                     member_name = member["object"]
-                    if member_name.lower() in names_lower:
-                        lines.append(f" network-object object {member_name}")
+                    line = f" network-object object {member_name}"
+                    important = member_name.lower() in names_lower or member_name.lower() in primary_tokens
+                    add_line(line, important)
                 elif "group-object" in member:
                     child = member["group-object"]
-                    if child.lower() in group_names or child.lower() in names_lower:
-                        lines.append(f" group-object {child}")
+                    line = f" group-object {child}"
+                    important = (
+                        child.lower() in group_names
+                        or child.lower() in names_lower
+                        or child.lower() in primary_tokens
+                    )
+                    add_line(line, important)
             else:
                 member_literal = str(member).lower()
-                if member_literal in literal_tokens:
-                    lines.append(f" network-object {member}")
+                if isinstance(member, ipaddress.IPv4Address):
+                    line = f" host {member}"
+                elif isinstance(member, ipaddress.IPv4Network):
+                    line = f" network-object {member.network_address} {member.netmask.exploded}"
+                else:
+                    line = f" {member}"
+                add_line(line, member_literal in literal_tokens)
         for literal in sorted(getattr(cfg, "network_object_group_literals", {}).get(group, set())):
-            lines.append(f" {literal}")
-        return lines if len(lines) > 1 else []
+            literal_lower = literal.lower()
+            add_line(f" {literal}", literal_lower in literal_tokens)
+        if len(primary_lines) == 1 and extra_lines:
+            primary_lines.append(extra_lines.pop(0))
+        return primary_lines, extra_lines
 
-    group_lines: List[str] = []
+    group_sections: List[List[str]] = []
     seen_groups: Set[str] = set()
+    group_cards: List[str] = []
     for group in sorted(group_names):
         lower = group.lower()
         if lower in seen_groups:
             continue
         seen_groups.add(lower)
-        formatted = format_group(group)
-        if formatted:
-            group_lines.extend(formatted)
-            group_lines.append("")
+        formatted_primary, formatted_extra = format_group(group_lookup.get(lower, group))
+        if formatted_primary:
+            group_sections.append(formatted_primary + (formatted_extra if formatted_extra else []))
+            card = build_card(
+                formatted_primary,
+                variant="group",
+                highlight_tokens=primary_tokens,
+                extra_override=formatted_extra,
+            )
+            if card:
+                group_cards.append(card)
 
     alias_lines: List[str] = []
     if aliases:
@@ -309,21 +450,91 @@ def _object_detail_block(
             alias_lines.append(f"{addr}: {', '.join(sorted(str(name) for name in nameset))}")
 
     sections: List[str] = []
-    if object_lines:
-        sections.append("! Object definitions")
-        sections.extend([line.rstrip() for line in object_lines if line is not None])
-    if group_lines:
-        sections.append("! Group memberships")
-        sections.extend([line.rstrip() for line in group_lines if line is not None])
+    object_lines: List[str] = []
+    if object_sections:
+        sections.append("!!! OBJECTS")
+        for idx, block in enumerate(object_sections):
+            for line in block:
+                object_lines.append(line.rstrip())
+            if idx < len(object_sections) - 1:
+                object_lines.append("!")
+            object_lines.append("")
+        sections.extend([line for line in object_lines if line is not None])
+    if group_sections:
+        sections.append("!!! GROUPS")
+        for idx, block in enumerate(group_sections):
+            for line in block:
+                sections.append(line.rstrip())
+            if idx < len(group_sections) - 1:
+                sections.append("!")
+            sections.append("")
     if alias_lines:
-        sections.append("! Resolved addresses")
+        sections.append("!!! RESOLVED ADDRESSES")
         sections.extend(alias_lines)
     text = "\n".join(line for line in sections if line is not None).strip()
-    if not text:
+    cards_sections: List[str] = []
+    obj_count = len(object_cards)
+    group_count = len(group_cards)
+    if object_cards:
+        cards_sections.append(
+            "<div class='config-card-stack'>"
+            "<div class='config-card-stack-title'>Objects</div>"
+            f"<div class='config-card-grid'>{''.join(object_cards)}</div>"
+            "</div>"
+        )
+    if group_cards:
+        cards_sections.append(
+            "<div class='config-card-stack'>"
+            "<div class='config-card-stack-title'>Groups</div>"
+            f"<div class='config-card-grid'>{''.join(group_cards)}</div>"
+            "</div>"
+        )
+    cards_body = "".join(cards_sections)
+    views: List[str] = []
+    buttons: List[Tuple[str, str, bool]] = []
+    if cards_body:
+        label = "Summary"
+        counts: List[str] = []
+        if obj_count:
+            counts.append(f"{obj_count} object{'s' if obj_count != 1 else ''}")
+        if group_count:
+            counts.append(f"{group_count} group{'s' if group_count != 1 else ''}")
+        if counts:
+            label = f"{label} ({', '.join(counts)})"
+        views.append(
+            "<div class='config-summary-view is-active' data-view='cards'>"
+            f"<div class='config-card-area'>{cards_body}</div>"
+            "</div>"
+        )
+        buttons.append(("cards", label, True))
+    if text:
+        detail_text = _escape_text(text)
+        active_flag = "" if views else " is-active"
+        views.append(
+            f"<div class='config-summary-view{active_flag}' data-view='config'>"
+            f"<pre data-lang='asa'>{detail_text}</pre>"
+            "</div>"
+        )
+        buttons.append(("config", "Config view", not cards_body))
+    if not views:
         return ""
+    buttons.append(("hide", "Hide", False))
+    toggle_html = ""
+    buttons_html = "".join(
+        f"<button type='button' class='config-summary-btn{' is-active' if is_active else ''}' "
+        f"data-target='{target}'>{_escape_text(label)}</button>"
+        for target, label, is_active in buttons
+    )
+    toggle_html = (
+        "<div class='config-summary-toggle' role='group' aria-label='Result view'>"
+        f"{buttons_html}</div>"
+    )
     return (
         f"<div class='diff diff-objects'><h3>{_escape_text(title)}</h3>"
-        f"<pre data-lang='asa'>{_escape_text(text)}</pre></div>"
+        f"{toggle_html}"
+        "<div class='config-summary'>"
+        f"{''.join(views)}"
+        "</div></div>"
     )
 
 
@@ -376,7 +587,7 @@ def _render_report(target: str, report: dict, cfg_file: str, cfg: asa_parser.ASA
             lines.append("")
         text = "\n".join(line.rstrip() for line in lines if line is not None).strip()
         allow_block = (
-            f"<div class='diff diff-objects'><h3>Allowing object-groups</h3>"
+            f"<div class='diff diff-objects'><h3>ACL permit rules via matching object-groups</h3>"
             f"<pre data-lang='asa'>{_escape_text(text)}</pre></div>"
         )
     object_block = _object_detail_block(
@@ -393,10 +604,25 @@ def _render_report(target: str, report: dict, cfg_file: str, cfg: asa_parser.ASA
   <p>Found {len(report.get('hits', []))} matching ACL entries.</p></div>
   {object_block or ""}
   {allow_block or ""}
-  <div class='diff diff-raw'><h3>Matched Rules (Raw)</h3>
-  <pre data-lang='asa' data-line-numbers='{_escape_text(raw_numbers)}' data-match-lines='{_escape_text(match_numbers)}'>{_escape_text(raw_text)}</pre></div>
-  <div class='diff diff-flattened'><h3>Matched Rules (Flattened)</h3>
-  <pre data-lang='asa'>{_escape_text(lines_flat)}</pre></div>
+  <div class='diff diff-ruleset'>
+    <h3>Matched Rules</h3>
+    <div class='config-summary-toggle acl-view-toggle' role='group' aria-label='Matched rules view'>
+      <button type='button' class='config-summary-btn acl-view-btn' data-target='raw'>Raw access-lists</button>
+      <button type='button' class='config-summary-btn acl-view-btn' data-target='flat'>Flattened access-lists</button>
+      <button type='button' class='config-summary-btn acl-view-btn is-active' data-target='both'>Both</button>
+      <button type='button' class='config-summary-btn acl-view-btn' data-target='hide'>Hide</button>
+    </div>
+    <div class='acl-view-container' data-mode='both'>
+      <div class='acl-view acl-view--raw is-active' data-view='raw'>
+        <h4>Raw access-lists</h4>
+        <pre data-lang='asa' data-line-numbers='{_escape_text(raw_numbers)}' data-match-lines='{_escape_text(match_numbers)}'>{_escape_text(raw_text)}</pre>
+      </div>
+      <div class='acl-view acl-view--flat is-active' data-view='flat'>
+        <h4>Flattened access-lists</h4>
+        <pre data-lang='asa'>{_escape_text(lines_flat)}</pre>
+      </div>
+    </div>
+  </div>
 </div>
 """
 
@@ -455,8 +681,12 @@ def _render_find(target: str, results: List[dict], verbose: bool) -> str:
 """
 
     limit = None if verbose else 6
-    blocks: List[str] = []
-    for result in filtered[:50]:
+    primary = filtered[0]
+    primary_file = _escape_text(primary["file"])
+    primary_vendor = _escape_text(primary["vendor"])
+    target_safe = _escape_text(target)
+
+    def _render_lines(result: dict) -> str:
         file_label = _escape_text(result["file"])
         vendor_label = _escape_text(result["vendor"].upper())
         header = f"File: {file_label} ({vendor_label})"
@@ -479,16 +709,36 @@ def _render_find(target: str, results: List[dict], verbose: bool) -> str:
             lines.append(_escape_text(f"Score: {result['score']}"))
             if result.get("text_hit") and not result.get("has_detail"):
                 lines.append(_escape_text("Config text contains query"))
-        else:
-            if result.get("text_hit") and not result.get("has_detail"):
-                lines.append(_escape_text("Config text contains query"))
-        blocks.append("\n".join(lines))
+        elif result.get("text_hit") and not result.get("has_detail"):
+            lines.append(_escape_text("Config text contains query"))
+        return "\n".join(lines)
+
+    primary_block = _render_lines(primary)
+
+    jump_button = (
+        "<div class='find-actions'>"
+        f"<button type='button' class='btn-secondary js-find-to-packet' data-config='{primary_file}' "
+        f"data-vendor='{primary_vendor}' data-target='{target_safe}'>Send to Packet Check</button>"
+        "</div>"
+    )
+
+    other_blocks: List[str] = []
+    for result in filtered[1:50]:
+        other_blocks.append(_render_lines(result))
 
     return (
-        "<div class='results results-find' data-tab='find'><div class='section'><h3>Find Host Results</h3>"
-        "<pre>"
-        + "\n\n".join(blocks)
-        + "</pre></div></div>"
+        "<div class='results results-find' data-tab='find'>"
+        "<div class='section find-primary'><h3>Likely Owner</h3>"
+        f"{jump_button}"
+        f"<pre>{primary_block}</pre></div>"
+        + (
+            "<div class='section find-secondary'><h3>Other Matches</h3><pre>"
+            + "\n\n".join(other_blocks)
+            + "</pre></div>"
+            if other_blocks
+            else ""
+        )
+        + "</div>"
     )
 
 
