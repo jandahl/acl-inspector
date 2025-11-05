@@ -1,0 +1,35 @@
+digraph "api_router_flow" {
+  graph [label="API Request Flow", labelloc=top, fontsize=20, fontname="Helvetica"];
+  rankdir=LR;
+  node [shape=rectangle, style="rounded,filled", fillcolor="#1f2933", fontcolor="white", fontname="Helvetica"];
+  edge [color="#748094", arrowsize=0.8];
+
+  subgraph cluster_client {
+    label="Client";
+    color="#425066";
+    fontcolor="white";
+    style="rounded";
+    req [label="Browser / CLI"];
+  }
+
+  subgraph cluster_server {
+    label="ACL Inspector Web Server";
+    color="#425066";
+    fontcolor="white";
+    style="rounded";
+
+    router [label="Router\n(webui.router)"];
+    handler [label="Handler\n(webui.handlers.api)"];
+    state [label="AppState\n(webui.state)"];
+    parser [label="Parser / Cache\n(parsers.* + index)"];
+    response [label="Response JSON"];
+  }
+
+  req -> router [label="HTTP request", fontcolor="#748094"];
+  router -> handler [label="dispatch()", fontcolor="#748094"];
+  handler -> state [label="look up settings + history", fontcolor="#748094"];
+  handler -> parser [label="resolve objects / ACLs", fontcolor="#748094"];
+  parser -> handler [label="structured data", fontcolor="#748094"];
+  handler -> response [label="assemble payload", fontcolor="#748094"];
+  response -> req [label="HTTP response", fontcolor="#748094"];
+}

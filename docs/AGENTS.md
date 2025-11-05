@@ -50,6 +50,7 @@ Tests
 Future abstractions and goals
 -----------------------------
 - Web wrapper page with a simple UI for inspect/compare flows (separate script)
+- Simplified "V2" GUI concept: a full-screen, single entry form with large typography and a predictive search experience. Suggestions should surface object name/IP (or group) on the left and context/firewall on the right, preferring the object's primary owner. After selection, preload the relevant data server-side and reveal modal/segmented controls that guide the user through the available analysis paths on demand.
 - Nicer CSS
 - Vendor abstraction: introduce a pluggable parser layer to support FortiGate (with VDOMs) and others
 - Cross-vendor diff: normalize flattened entries to a common model for comparison
