@@ -1,5 +1,6 @@
 """Tests for API handler helpers."""
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -95,6 +96,50 @@ class APIHandlersTest(unittest.TestCase):
         self.assertIn("/static/app.css", html)
         self.assertIn("<select name=\"vendor\"", html)
         self.assertIn("ACL_BETA_MODULES", html)
+
+    def _extract_singularity_payload(self, html: str) -> dict:
+        marker = "window.SINGULARITY_DATA = "
+        self.assertIn(marker, html, msg="Singularity payload missing from template")
+        segment = html.split(marker, 1)[1]
+        terminator = segment.find(";")
+        self.assertGreater(terminator, 0, msg="Unable to locate payload terminator")
+        raw = segment[:terminator].strip()
+        return json.loads(raw)
+
+    def test_render_singularity_payload_includes_themes(self):
+        html = page_handlers._render_singularity(self.state)
+        payload = self._extract_singularity_payload(html)
+        self.assertEqual(payload["defaultVendor"], "asa")
+        self.assertEqual(payload["defaultConfig"], "sample.cfg")
+        self.assertIn("themes", payload)
+        self.assertIn("dark", payload["themes"])
+        self.assertIn("light", payload["themes"])
+        for palette in payload["themes"].values():
+            self.assertIn("bg-base", palette)
+            self.assertIn("accent", palette)
+            self.assertIn("highlight", palette)
+        self.assertIn(payload["defaultTheme"], ("dark", "light"))
+
+    def test_singularity_default_vendor_with_only_fortigate(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            cisco_root = base / "configs" / "cisco"
+            cisco_root.mkdir(parents=True, exist_ok=True)
+            ftg_root = base / "configs" / "fortigate"
+            ftg_root.mkdir(parents=True, exist_ok=True)
+            (ftg_root / "ftg.conf").write_text("config firewall address\n", encoding="utf-8")
+            settings = settings_mod.load_settings(
+                base / "settings.json",
+                env={
+                    "ACLINSPECTOR_CONFIGS_CISCO": str(cisco_root),
+                    "ACLINSPECTOR_CONFIGS_FORTIGATE": str(ftg_root),
+                },
+            )
+            alt_state = AppState.create(settings)
+            html = page_handlers._render_singularity(alt_state)
+            payload = self._extract_singularity_payload(html)
+            self.assertEqual(payload["defaultVendor"], "fortigate")
+            self.assertEqual(payload["defaultConfig"], "ftg.conf")
 
     def test_packet_probe(self):
         status, payload = api_handlers.packet_probe(
