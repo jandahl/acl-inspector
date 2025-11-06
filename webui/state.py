@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from . import settings as settings_mod
-from .indexer import IndexEntry, IndexManager
+from analysis_core import IndexEntry, IndexManager
 from .themes import DEFAULT_THEMES, load_themes
 from .fonts import FontFile, discover_fonts, render_font_css
 
