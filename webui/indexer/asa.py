@@ -14,11 +14,41 @@ def build_index(text: str) -> Dict[str, object]:
     objects = sorted(cfg.network_objects.keys())
     groups = sorted(cfg.network_object_groups.keys())
     literals: Set[str] = set()
-    for members in cfg.network_objects.values():
-        for entry in members:
-            literals.add(str(entry))
+    object_meta: Dict[str, Dict[str, object]] = {}
+    for name in objects:
+        members = cfg.network_objects.get(name, set())
+        literal_values = sorted(str(entry) for entry in members)
+        literals.update(literal_values)
+        object_meta[name] = {
+            "literals": literal_values,
+            "primary": literal_values[0] if literal_values else "",
+        }
+    group_meta: Dict[str, Dict[str, object]] = {}
+    for name in groups:
+        members = cfg.network_object_groups.get(name, [])
+        rendered = []
+        for member in members:
+            if isinstance(member, dict):
+                if "group-object" in member:
+                    rendered.append(f"group {member['group-object']}")
+                elif "object" in member:
+                    rendered.append(f"object {member['object']}")
+            else:
+                text = str(member)
+                rendered.append(text)
+                literals.add(text)
+        group_meta[name] = {
+            "members": rendered,
+            "primary": "",
+        }
+    literal_meta = {value: {"primary": value} for value in literals}
     return {
         "objects": objects,
         "groups": groups,
         "literals": sorted(literals),
+        "meta": {
+            "object": object_meta,
+            "group": group_meta,
+            "literal": literal_meta,
+        },
     }

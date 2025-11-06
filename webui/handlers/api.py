@@ -26,6 +26,15 @@ def _resolve_config(state: AppState, vendor: str, filename: str) -> Optional[Pat
     return path
 
 
+def _vendor_os_tag(vendor: str) -> str:
+    vendor_lower = (vendor or "").lower()
+    if vendor_lower == "asa":
+        return "ASA"
+    if vendor_lower == "fortigate":
+        return "FortiOS"
+    return vendor.upper()
+
+
 def _extract_meta(vendor: str, text: str) -> Dict[str, str]:
     vendor = (vendor or "").lower()
     if vendor == "asa":
@@ -62,6 +71,69 @@ def objects(
     entry = state.index_manager.get_index(vendor, os_tag, version, str(path))
     items = state.index_manager.suggest(entry.index, query, mode, limit)
     return 200, {"items": items}
+
+
+def singularity_suggestions(
+    state: AppState,
+    *,
+    query: str,
+    mode: str,
+    limit: int,
+) -> Tuple[int, Dict[str, Any]]:
+    needle = (query or "").strip()
+    if not needle:
+        return 200, {"items": []}
+
+    search_limit = state.settings.features.predictive_search.limit
+    limit = max(1, min(int(limit or search_limit), search_limit))
+    aggregated: List[Dict[str, Any]] = []
+    seen: Set[Tuple[str, str, str, str]] = set()
+
+    vendors = sorted(state.settings.paths.configs.keys())
+    for vendor in vendors:
+        listing = config_listing(state, vendor=vendor)
+        if not listing:
+            continue
+        os_tag = _vendor_os_tag(vendor)
+        for name in sorted(listing.keys()):
+            path = listing[name]
+            try:
+                entry = state.index_manager.get_index(vendor, os_tag, "auto", path)
+            except Exception:
+                continue
+            suggestions = state.index_manager.suggest(entry.index, needle, mode, limit)
+            for suggestion in suggestions:
+                key = (
+                    vendor,
+                    name,
+                    str(suggestion.get("value", "")),
+                    str(suggestion.get("type", "")),
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                aggregated.append(
+                    {
+                        "value": suggestion.get("value"),
+                        "label": suggestion.get("label") or suggestion.get("value"),
+                        "type": suggestion.get("type") or "object",
+                        "vendor": vendor,
+                        "config": name,
+                        "context": name,
+                        "primary": suggestion.get("primary", ""),
+                        "literals": suggestion.get("literals", []),
+                        "score": suggestion.get("score"),
+                    }
+                )
+
+    def _score_key(item: Dict[str, Any]) -> Tuple[Any, ...]:
+        score = item.get("score")
+        if isinstance(score, tuple):
+            return (*score, item.get("label"), item.get("config"))
+        return (9, item.get("label"), item.get("config"))
+
+    aggregated.sort(key=_score_key)
+    return 200, {"items": aggregated[:limit]}
 
 
 def meta(state: AppState, *, vendor: str, filename: str) -> Tuple[int, Dict[str, Any]]:
