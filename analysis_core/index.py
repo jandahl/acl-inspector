@@ -146,7 +146,7 @@ class IndexManager:
 
     @staticmethod
     def _is_fresh(entry: IndexEntry, mtime: float, size: int) -> bool:
-        return abs(entry.src_mtime - mtime) < 0.0001 and entry.src_size == size
+        return math.isclose(entry.src_mtime, mtime) and entry.src_size == size
 
     def _build_index(self, vendor: str, text: str) -> Dict[str, Any]:
         vendor = (vendor or "").lower()
