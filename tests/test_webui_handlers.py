@@ -1,5 +1,6 @@
 """Tests for API handler helpers."""
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -95,6 +96,47 @@ class APIHandlersTest(unittest.TestCase):
         self.assertIn("/static/app.css", html)
         self.assertIn("<select name=\"vendor\"", html)
         self.assertIn("ACL_BETA_MODULES", html)
+
+    def _extract_singularity_payload(self, html: str) -> dict:
+        marker = "window.SINGULARITY_DATA = "
+        self.assertIn(marker, html, msg="Singularity payload missing from template")
+        segment = html.split(marker, 1)[1]
+        terminator = segment.find(";")
+        self.assertGreater(terminator, 0, msg="Unable to locate payload terminator")
+        raw = segment[:terminator].strip()
+        return json.loads(raw)
+
+    def test_render_singularity_payload_includes_themes(self):
+        html = page_handlers._render_singularity(self.state)
+        payload = self._extract_singularity_payload(html)
+        self.assertIn("themes", payload)
+        self.assertIn("dark", payload["themes"])
+        self.assertIn("light", payload["themes"])
+        for palette in payload["themes"].values():
+            self.assertIn("bg-base", palette)
+            self.assertIn("accent", palette)
+            self.assertIn("highlight", palette)
+        self.assertIn(payload["defaultTheme"], ("dark", "light"))
+        self.assertEqual(payload["searchLimit"], self.state.settings.features.predictive_search.limit)
+        self.assertEqual(payload["defaultMode"], "fuzzy")
+        self.assertNotIn("defaultVendor", payload)
+        self.assertNotIn("defaultConfig", payload)
+
+    def test_singularity_suggestions_span_configs(self):
+        status, payload = api_handlers.singularity_suggestions(
+            self.state,
+            query="OBJ",
+            mode="prefix",
+            limit=5,
+        )
+        self.assertEqual(status, 200)
+        self.assertIn("items", payload)
+        values = {item["value"] for item in payload["items"]}
+        self.assertIn("OBJ_WEB", values)
+        first = next(item for item in payload["items"] if item["value"] == "OBJ_WEB")
+        self.assertEqual(first["config"], "sample.cfg")
+        self.assertEqual(first["vendor"], "asa")
+        self.assertIn("primary", first)
 
     def test_packet_probe(self):
         status, payload = api_handlers.packet_probe(
