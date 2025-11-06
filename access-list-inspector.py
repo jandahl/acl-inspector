@@ -15,6 +15,7 @@ considers full rule identity (including protocol/ports). Optional --proto and
 import argparse
 import sys
 import json
+from typing import Optional
 from xml.etree.ElementTree import Element, SubElement, tostring
 
 from parsers.cisco import asa as cisco_asa
@@ -78,6 +79,30 @@ def _to_str_set(values):
     return sorted([str(v) for v in values])
 
 
+def _serialize_service(svc: Optional[dict]) -> dict:
+    if not svc:
+        return {
+            'proto': None,
+            'service_group_at_proto': None,
+            'dst_ports': [],
+            'dst_ops': [],
+            'dst_service_groups': [],
+            'dst_service_objects': [],
+        }
+    dst_ports = [
+        {'op': op, 'start': rng[0], 'end': rng[1]}
+        for op, rng in svc.get('dst_ports', [])
+    ]
+    return {
+        'proto': svc.get('proto'),
+        'service_group_at_proto': svc.get('service_group_at_proto'),
+        'dst_ports': dst_ports,
+        'dst_ops': sorted(list(svc.get('dst_ops') or [])),
+        'dst_service_groups': sorted(list(svc.get('dst_service_groups') or [])),
+        'dst_service_objects': sorted(list(svc.get('dst_service_objects') or [])),
+    }
+
+
 def _serialize_entry(e: dict) -> dict:
     return {
         'acl': e.get('acl'),
@@ -85,7 +110,7 @@ def _serialize_entry(e: dict) -> dict:
         'proto': e.get('proto'),
         'src': _to_str_set(e.get('src', [])),
         'dst': _to_str_set(e.get('dst', [])),
-        'svc': e.get('svc'),
+        'svc': _serialize_service(e.get('svc')),
         'binding': e.get('binding'),
         'raw': e.get('raw'),
     }
@@ -179,6 +204,17 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    stdin_cache: Optional[str] = None
+
+    def read_config_text(path: str) -> str:
+        nonlocal stdin_cache
+        if path == '-':
+            if stdin_cache is None:
+                stdin_cache = clean_config_text(sys.stdin.read())
+            return stdin_cache
+        with open(path, 'r', encoding='utf-8') as f:
+            return clean_config_text(f.read())
+
     if args.examples:
         print_examples()
         return
@@ -194,19 +230,21 @@ def main() -> None:
     if args.find_host:
         path = args.config
         import os
-        files = []
-        if os.path.isdir(path):
+
+        sources = []
+        if path == '-':
+            sources.append(('<stdin>', '-'))
+        elif os.path.isdir(path):
             for fname in sorted(os.listdir(path)):
                 fpath = os.path.join(path, fname)
                 if os.path.isfile(fpath):
-                    files.append(fpath)
+                    sources.append((fname, fpath))
         else:
-            files = [path]
+            sources.append((os.path.basename(path), path))
         results = []
-        for fpath in files:
+        for display_name, source_path in sources:
             try:
-                with open(fpath, 'r') as f:
-                    text = clean_config_text(f.read())
+                text = read_config_text(source_path)
                 if args.vendor == 'asa':
                     cfg = cisco_asa.ASAConfig(text)
                     objects = []
@@ -225,7 +263,7 @@ def main() -> None:
                         pass
                     hit = bool(objects or literals or (q in text))
                     if hit:
-                        results.append({'file': os.path.basename(fpath), 'objects': sorted(set(objects)), 'literals': sorted(set(literals))})
+                        results.append({'file': display_name, 'objects': sorted(set(objects)), 'literals': sorted(set(literals))})
                 # FortiGate: placeholder for future VDOM-aware search
             except Exception:
                 continue
@@ -250,10 +288,12 @@ def main() -> None:
         parser.error('--packet-src and --packet-dst are required with --packet')
 
     try:
-        with open(args.config, 'r') as f:
-            cfg_text = clean_config_text(f.read())
+        cfg_text = read_config_text(args.config)
     except FileNotFoundError:
         print(f"Error: Config file not found at {args.config}", file=sys.stderr)
+        sys.exit(1)
+    except OSError as exc:
+        print(f"Error reading config {args.config}: {exc}", file=sys.stderr)
         sys.exit(1)
 
     svc_filter = None
