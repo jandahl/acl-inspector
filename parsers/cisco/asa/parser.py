@@ -142,9 +142,6 @@ class ASAConfig:
         self.acl_bindings: Dict[str, Dict[str, Optional[str]]] = {}
         self.nat_rules: List[dict] = []
         self._network_cache: Dict[str, Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]]] = {}
-        self._network_in_progress: Dict[
-            str, Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]]
-        ] = {}
         self._service_group_cache: Dict[str, Tuple[dict, ...]] = {}
         self.parse()
         self._build_reverse_indexes()
@@ -943,6 +940,7 @@ class ASAConfig:
         token: Union[str, ipaddress.IPv4Address, ipaddress.IPv4Network],
         visited: Optional[Set[str]] = None,
     ) -> Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]]:
+        visited = set() if visited is None else visited
         if isinstance(token, (ipaddress.IPv4Address, ipaddress.IPv4Network)):
             return {token}
         if isinstance(token, str):
@@ -950,9 +948,6 @@ class ASAConfig:
             cached = self._network_cache.get(cache_key)
             if cached is not None:
                 return set(cached)
-            in_progress = self._network_in_progress.get(cache_key)
-            if in_progress is not None:
-                return set(in_progress)
             token_lower = token.lower()
             if token_lower in ('any', 'any4', 'any-ipv4'):
                 result = {ipaddress.ip_network('0.0.0.0/0')}
@@ -970,20 +965,19 @@ class ASAConfig:
                 self._network_cache[cache_key] = set(nets)
                 return nets
             if token in self.network_object_groups:
-                self._network_in_progress[cache_key] = set()
-                try:
-                    working = self._network_in_progress[cache_key]
-                    for m in self.network_object_groups[token]:
-                        if isinstance(m, dict):
-                            if 'group-object' in m:
-                                working.update(self.resolve_network(m['group-object'], visited))
-                            elif 'object' in m:
-                                working.update(self.resolve_network(m['object'], visited))
-                        elif isinstance(m, (ipaddress.IPv4Address, ipaddress.IPv4Network)):
-                            working.add(m)
-                    resolved = set(working)
-                finally:
-                    self._network_in_progress.pop(cache_key, None)
+                if token in visited:
+                    self._network_cache[cache_key] = set()
+                    return set()
+                visited.add(token)
+                resolved: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]] = set()
+                for m in self.network_object_groups[token]:
+                    if isinstance(m, dict):
+                        if 'group-object' in m:
+                            resolved.update(self.resolve_network(m['group-object'], visited))
+                        elif 'object' in m:
+                            resolved.update(self.resolve_network(m['object'], visited))
+                    elif isinstance(m, (ipaddress.IPv4Address, ipaddress.IPv4Network)):
+                        resolved.add(m)
                 self._network_cache[cache_key] = set(resolved)
                 return resolved
             try:
