@@ -119,7 +119,7 @@ def _render_singularity(state: AppState) -> str:
         "defaultVendor": default_vendor,
         "defaultConfig": default_config,
         "defaultMode": "fuzzy",
-        "initialHint": "We’ll surface results the moment you start typing.",
+        "initialHint": "Type to search every cached config instantly.",
         "themes": theme_payload["palettes"],
         "themeNames": theme_payload["names"],
         "defaultTheme": theme_payload["default"],
