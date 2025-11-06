@@ -45,11 +45,9 @@
           </button>
         </div>
       </header>
-      <section class="singularity-hero">
-        <h1>Singularity</h1>
-      </section>
       <section class="singularity-search">
-        <label class="search-label" for="singularity-query">Search</label>
+        <h1 class="sr-only">Singularity</h1>
+        <label class="sr-only" for="singularity-query">Search across configs</label>
         <div class="search-field">
           <input
             id="singularity-query"
@@ -62,11 +60,11 @@
           >
           <div class="search-glow" aria-hidden="true"></div>
         </div>
-        <p class="search-hint" data-role="search-hint">Ready when you are.</p>
+        <p class="search-hint" data-role="search-hint" hidden></p>
       </section>
       <section class="singularity-suggestions" data-state="idle">
         <ul class="suggestion-list" data-role="suggestions" aria-live="polite"></ul>
-        <div class="suggestion-empty" data-role="empty-state">
+        <div class="suggestion-empty" data-role="empty-state" hidden>
           <strong>Nothing yet.</strong>
           <span>Try the primary object name, an IP address, or even a partial match.</span>
         </div>

@@ -36,6 +36,7 @@ const selectors = {
 const SEARCH_LIMIT = Number(DATA.searchLimit || 12) || 12;
 let activeFetchToken = 0;
 let activeSelection = null;
+let hasActiveQuery = false;
 
 function setToggleState(kind) {
   if (!selectors.themeToggle) {
@@ -180,17 +181,31 @@ function setSuggestionState(next) {
   }
 }
 
+function updateHint(text) {
+  if (!selectors.hint) {
+    return;
+  }
+  const content = (text || '').trim();
+  if (content) {
+    selectors.hint.textContent = content;
+    selectors.hint.hidden = false;
+  } else {
+    selectors.hint.textContent = '';
+    selectors.hint.hidden = true;
+  }
+}
+
 function clearSuggestions() {
   if (selectors.suggestions) {
     selectors.suggestions.innerHTML = '';
   }
   if (selectors.empty) {
-    selectors.empty.hidden = false;
+    selectors.empty.hidden = true;
   }
   if (selectors.error) {
     selectors.error.hidden = true;
   }
-  setSuggestionState('idle');
+  setSuggestionState(hasActiveQuery ? 'empty' : 'idle');
 }
 
 function describeType(kind) {
@@ -224,13 +239,15 @@ function renderSuggestions(items) {
   }
   if (!items || !items.length) {
     if (selectors.empty) {
-      selectors.empty.hidden = false;
+      selectors.empty.hidden = !hasActiveQuery;
     }
+    setSuggestionState(hasActiveQuery ? 'empty' : 'idle');
     return;
   }
   if (selectors.empty) {
     selectors.empty.hidden = true;
   }
+  setSuggestionState('results');
   items.slice(0, SEARCH_LIMIT).forEach((item, index) => {
     const entry = document.createElement('li');
     entry.className = 'suggestion-item';
@@ -448,10 +465,12 @@ async function selectSuggestion(element) {
 async function requestSuggestions(query) {
   const trimmed = (query || '').trim();
   if (!trimmed) {
+    hasActiveQuery = false;
     clearSuggestions();
     hideDetails();
     return;
   }
+  hasActiveQuery = true;
   const token = ++activeFetchToken;
   setSuggestionState('loading');
   try {
@@ -470,11 +489,13 @@ async function requestSuggestions(query) {
         selectors.error.hidden = false;
         selectors.error.textContent = 'Suggestion service is unavailable right now.';
       }
-      setSuggestionState('idle');
+      if (selectors.empty) {
+        selectors.empty.hidden = true;
+      }
+      setSuggestionState('error');
       return;
     }
     const payload = await response.json();
-    setSuggestionState('idle');
     renderSuggestions(payload.items || []);
   } catch (err) {
     if (token !== activeFetchToken) {
@@ -484,7 +505,10 @@ async function requestSuggestions(query) {
       selectors.error.hidden = false;
       selectors.error.textContent = 'Network hiccup. Try again in a moment.';
     }
-    setSuggestionState('idle');
+    if (selectors.empty) {
+      selectors.empty.hidden = true;
+    }
+    setSuggestionState('error');
   }
 }
 
@@ -494,7 +518,9 @@ function handleQueryInput(event) {
   if (selectors.error) {
     selectors.error.hidden = true;
   }
-  debouncedRequest(event.target.value);
+  const value = event.target.value || '';
+  updateHint('');
+  debouncedRequest(value);
 }
 
 function handleCopy() {
@@ -522,8 +548,13 @@ function initEvents() {
   if (selectors.query) {
     selectors.query.addEventListener('input', handleQueryInput);
     selectors.query.addEventListener('focus', () => {
-      if (selectors.hint) {
-        selectors.hint.textContent = 'Try a host, network, or object name. Results span every config.';
+      if (!(selectors.query && (selectors.query.value || '').trim())) {
+        updateHint('Try a host, network, or object name. Results span every config.');
+      }
+    });
+    selectors.query.addEventListener('blur', () => {
+      if (selectors.query && !(selectors.query.value || '').trim()) {
+        updateHint(DATA.initialHint || '');
       }
     });
   }
@@ -538,9 +569,7 @@ function initEvents() {
 function init() {
   initThemeControls();
   initEvents();
-  if (selectors.hint) {
-    selectors.hint.textContent = DATA.initialHint || 'Start typing to explore suggestions across your configs.';
-  }
+  updateHint(DATA.initialHint || '');
   if (selectors.copy) {
     selectors.copy.disabled = true;
   }
