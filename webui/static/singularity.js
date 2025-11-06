@@ -50,6 +50,10 @@ const configOptions = DATA.configOptions || { asa: [], fortigate: [] };
 let activeFetchToken = 0;
 let activeSelection = null;
 
+function invalidateActiveFetch() {
+  activeFetchToken += 1;
+}
+
 function setToggleState(kind) {
   if (!selectors.themeToggle) {
     return;
@@ -591,6 +595,7 @@ function initEvents() {
       state.config = '';
       pickDefaultConfig();
       populateConfigSelect();
+      invalidateActiveFetch();
       clearSuggestions();
       cache.meta.clear();
       hideDetails();
@@ -600,6 +605,7 @@ function initEvents() {
     selectors.config.addEventListener('change', (event) => {
       state.config = event.target.value || '';
       updateConfigChip();
+      invalidateActiveFetch();
       clearSuggestions();
       cache.meta.clear();
       hideDetails();
