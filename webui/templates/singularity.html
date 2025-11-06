@@ -10,16 +10,44 @@
       window.SINGULARITY_DATA = $singularity_payload;
     </script>
   </head>
-  <body class="singularity-body">
+  <body class="singularity-body" data-theme="$singularity_default_theme">
     <div class="singularity-backdrop" aria-hidden="true"></div>
     <div class="singularity-halo" aria-hidden="true"></div>
     <main class="singularity-shell">
       <header class="singularity-header">
         <div class="brand">ACL Inspector</div>
+        <div class="header-actions">
+          <button
+            class="singularity-theme"
+            type="button"
+            data-role="theme-toggle"
+            aria-label="Toggle light and dark mode"
+            aria-pressed="false"
+          >
+            <span class="theme-icon theme-icon-dark" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false">
+                <path d="M21 12.79A9 9 0 0111.21 3a7 7 0 000 14 9 9 0 009.79-4.21z" fill="currentColor"></path>
+              </svg>
+            </span>
+            <span class="theme-icon theme-icon-light" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false">
+                <circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"></circle>
+                <line x1="12" y1="2" x2="12" y2="5" stroke="currentColor" stroke-width="2" stroke-linecap="round"></line>
+                <line x1="12" y1="19" x2="12" y2="22" stroke="currentColor" stroke-width="2" stroke-linecap="round"></line>
+                <line x1="4.22" y1="4.22" x2="6.34" y2="6.34" stroke="currentColor" stroke-width="2" stroke-linecap="round"></line>
+                <line x1="17.66" y1="17.66" x2="19.78" y2="19.78" stroke="currentColor" stroke-width="2" stroke-linecap="round"></line>
+                <line x1="2" y1="12" x2="5" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"></line>
+                <line x1="19" y1="12" x2="22" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"></line>
+                <line x1="4.22" y1="19.78" x2="6.34" y2="17.66" stroke="currentColor" stroke-width="2" stroke-linecap="round"></line>
+                <line x1="17.66" y1="6.34" x2="19.78" y2="4.22" stroke="currentColor" stroke-width="2" stroke-linecap="round"></line>
+              </svg>
+            </span>
+          </button>
         <button class="config-pill" type="button" data-role="toggle-advanced" aria-expanded="false">
           <span class="pill-label">Scope</span>
           <span class="pill-value" data-role="config-chip">Detecting config…</span>
         </button>
+        </div>
       </header>
       <section class="singularity-scope" data-role="scope-panel" hidden>
         <div class="scope-card">
