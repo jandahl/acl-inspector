@@ -138,7 +138,7 @@ def _aggregate_suggestions(
                 enriched.setdefault("score", suggestion.get("score", float(rank)))
                 results.append(enriched)
             if q_lower in name.lower():
-                score_value = -1.0 if name.lower() == q_lower else -0.5
+                score_value = CONTEXT_EXACT_MATCH_SCORE if name.lower() == q_lower else CONTEXT_SUBSTRING_MATCH_SCORE
                 results.append(
                     {
                         "value": name,
