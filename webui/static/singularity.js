@@ -1,9 +1,8 @@
 const DATA = window.SINGULARITY_DATA || {};
 
 const state = {
-  vendor: (DATA.defaultVendor || 'asa').toLowerCase(),
-  config: DATA.defaultConfig || '',
   mode: (DATA.defaultMode || 'fuzzy').toLowerCase(),
+  selection: null,
 };
 
 const cache = {
@@ -32,23 +31,55 @@ const selectors = {
   copy: document.querySelector('[data-role="copy-value"]'),
   reveal: document.querySelector('[data-role="reveal"]'),
   advanced: document.querySelector('[data-role="advanced"]'),
-  vendor: document.querySelector('[data-role="vendor"]'),
-  config: document.querySelector('[data-role="config"]'),
-  mode: document.querySelector('[data-role="mode"]'),
-  configChip: document.querySelector('[data-role="config-chip"]'),
-  scopeToggle: document.querySelector('[data-role="toggle-advanced"]'),
-  scopePanel: document.querySelector('[data-role="scope-panel"]'),
   themeToggle: document.querySelector('[data-role="theme-toggle"]'),
+  settingsToggle: document.querySelector('[data-role="settings-toggle"]'),
+  settingsOverlay: document.querySelector('[data-role="settings-overlay"]'),
+  settingsClose: document.querySelector('[data-role="settings-close"]'),
+  rankingPopularity: document.querySelector('[data-role="ranking-popularity"]'),
+  rankingPopularityValue: document.querySelector('[data-role="ranking-popularity-value"]'),
+  rankingHome: document.querySelector('[data-role="ranking-home"]'),
+  rankingHomeValue: document.querySelector('[data-role="ranking-home-value"]'),
+  motionForeground: document.querySelector('[data-role="motion-foreground"]'),
+  motionForegroundValue: document.querySelector('[data-role="motion-foreground-value"]'),
+  motionBackground: document.querySelector('[data-role="motion-background"]'),
+  motionBackgroundValue: document.querySelector('[data-role="motion-background-value"]'),
 };
 
-if (selectors.vendor && state.vendor !== selectors.vendor.value) {
-  selectors.vendor.value = state.vendor;
-}
-
+const shell = document.querySelector('.singularity-shell');
 const SEARCH_LIMIT = Number(DATA.searchLimit || 12) || 12;
-const configOptions = DATA.configOptions || { asa: [], fortigate: [] };
 let activeFetchToken = 0;
 let activeSelection = null;
+const settingsTabs = Array.from(document.querySelectorAll('[data-role="settings-tab"]'));
+const settingsPanels = Array.from(document.querySelectorAll('[data-role="settings-panel"]'));
+
+const PREFERENCES_KEY = 'acl.singularity.prefs';
+const defaultPreferences = {
+  ranking: {
+    popularity: 0.6,
+    home: 0.4,
+  },
+  motion: {
+    foreground: 260,
+    background: 120,
+  },
+};
+
+let preferences = loadPreferences();
+let settingsOpen = false;
+let lastFocusedElement = null;
+let lastSuggestions = [];
+let isRendering = false;
+
+function setStage(next) {
+  if (!shell) {
+    return;
+  }
+  const current = shell.dataset.stage || 'idle';
+  if (current === next) {
+    return;
+  }
+  shell.dataset.stage = next;
+}
 
 function invalidateActiveFetch() {
   activeFetchToken += 1;
@@ -189,49 +220,9 @@ function hideDetails() {
     selectors.advanced.hidden = true;
   }
   activeSelection = null;
-}
-
-function pickDefaultConfig() {
-  if (state.config) {
-    return;
-  }
-  const options = configOptions[state.vendor] || [];
-  state.config = options.length > 0 ? options[0] : '';
-}
-
-function updateConfigChip() {
-  if (!selectors.configChip) {
-    return;
-  }
-  if (!state.config) {
-    selectors.configChip.textContent = 'No config selected';
-    selectors.configChip.classList.add('is-empty');
-  } else {
-    selectors.configChip.textContent = state.config;
-    selectors.configChip.classList.remove('is-empty');
-  }
-}
-
-function populateConfigSelect() {
-  if (!selectors.config) {
-    return;
-  }
-  const options = configOptions[state.vendor] || [];
-  selectors.config.innerHTML = '';
-  for (const name of options) {
-    const option = document.createElement('option');
-    option.value = name;
-    option.textContent = name;
-    if (name === state.config) {
-      option.selected = true;
-    }
-    selectors.config.appendChild(option);
-  }
-  if (!state.config && options.length) {
-    state.config = options[0];
-  }
-  selectors.config.disabled = options.length === 0;
-  updateConfigChip();
+  state.selection = null;
+  const hasQuery = selectors.query && selectors.query.value && selectors.query.value.trim().length > 0;
+  setStage(hasQuery ? 'searching' : 'idle');
 }
 
 function setSuggestionState(next) {
@@ -244,8 +235,10 @@ function clearSuggestions() {
   if (selectors.suggestions) {
     selectors.suggestions.innerHTML = '';
   }
+  lastSuggestions = [];
+  const stage = shell ? shell.dataset.stage : 'idle';
   if (selectors.empty) {
-    selectors.empty.hidden = false;
+    selectors.empty.hidden = stage !== 'searching';
   }
   if (selectors.error) {
     selectors.error.hidden = true;
@@ -259,8 +252,251 @@ function describeType(kind) {
       return 'Group';
     case 'literal':
       return 'Literal';
+    case 'context':
+      return 'Context';
     default:
       return 'Object';
+  }
+}
+
+function clonePreferences(source) {
+  return JSON.parse(JSON.stringify(source));
+}
+
+function loadPreferences() {
+  const base = clonePreferences(defaultPreferences);
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const raw = window.localStorage.getItem(PREFERENCES_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          if (parsed.ranking && typeof parsed.ranking === 'object') {
+            if (!Number.isNaN(Number(parsed.ranking.popularity))) {
+              base.ranking.popularity = Number(parsed.ranking.popularity);
+            }
+            if (!Number.isNaN(Number(parsed.ranking.home))) {
+              base.ranking.home = Number(parsed.ranking.home);
+            }
+          }
+          if (parsed.motion && typeof parsed.motion === 'object') {
+            if (!Number.isNaN(Number(parsed.motion.foreground))) {
+              base.motion.foreground = Number(parsed.motion.foreground);
+            }
+            if (!Number.isNaN(Number(parsed.motion.background))) {
+              base.motion.background = Number(parsed.motion.background);
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    /* ignore corrupted preferences */
+  }
+  return base;
+}
+
+function savePreferences() {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem(PREFERENCES_KEY, JSON.stringify(preferences));
+    }
+  } catch (err) {
+    /* ignore storage failures */
+  }
+}
+
+function getRankingWeights() {
+  return preferences.ranking;
+}
+
+function formatWeight(value) {
+  return Number.parseFloat(value).toFixed(1);
+}
+
+function computeItemScore(item, index) {
+  const weights = getRankingWeights();
+  const baseScore =
+    typeof item.score === 'number'
+      ? -item.score
+      : -(typeof item.rank === 'number' ? item.rank : index);
+  const popularitySignal =
+    typeof item.popularity === 'number'
+      ? item.popularity
+      : Number((item.signals && item.signals.popularity) || 0);
+  let scopeBoost = 0;
+  if (item.home === 'home') {
+    scopeBoost = weights.home;
+  } else if (item.home === 'probable') {
+    scopeBoost = weights.home * 0.5;
+  }
+  return baseScore + popularitySignal * weights.popularity + scopeBoost;
+}
+
+function rankSuggestions(items) {
+  return (items || [])
+    .map((entry, idx) => ({
+      entry,
+      idx,
+      score: computeItemScore(entry, idx),
+    }))
+    .sort((a, b) => {
+      if (b.score !== a.score) {
+        return b.score - a.score;
+      }
+      return a.idx - b.idx;
+    })
+    .map((payload) => payload.entry);
+}
+
+function rerenderSuggestions() {
+  if (!lastSuggestions.length || isRendering) {
+    return;
+  }
+  if (shell && shell.dataset.stage === 'selected') {
+    return;
+  }
+  renderSuggestions(lastSuggestions.slice());
+}
+
+function applyMotionPreferences() {
+  const fg = preferences.motion.foreground;
+  const stage = Math.round(fg * 1.05);
+  const search = Math.round(fg * 1.2);
+  const delayStep = Math.max(10, Math.round(fg / 8));
+  const bg = preferences.motion.background;
+  const halo = Math.round(bg * 1.1);
+  if (document.body) {
+    document.body.style.setProperty('--sg-motion-foreground', `${fg}ms`);
+    document.body.style.setProperty('--sg-motion-stage', `${stage}ms`);
+    document.body.style.setProperty('--sg-motion-search', `${search}ms`);
+    document.body.style.setProperty('--sg-motion-delay-step', `${delayStep}ms`);
+    document.body.style.setProperty('--sg-motion-background', `${bg}s`);
+    document.body.style.setProperty('--sg-motion-halo', `${halo}s`);
+  }
+}
+
+function refreshRankingView() {
+  if (selectors.rankingPopularity) {
+    selectors.rankingPopularity.value = String(preferences.ranking.popularity);
+  }
+  if (selectors.rankingHome) {
+    selectors.rankingHome.value = String(preferences.ranking.home);
+  }
+  if (selectors.rankingPopularityValue) {
+    selectors.rankingPopularityValue.textContent = `${formatWeight(preferences.ranking.popularity)}`;
+  }
+  if (selectors.rankingHomeValue) {
+    selectors.rankingHomeValue.textContent = `${formatWeight(preferences.ranking.home)}`;
+  }
+}
+
+function refreshMotionView() {
+  if (selectors.motionForeground) {
+    selectors.motionForeground.value = String(preferences.motion.foreground);
+  }
+  if (selectors.motionBackground) {
+    selectors.motionBackground.value = String(preferences.motion.background);
+  }
+  if (selectors.motionForegroundValue) {
+    selectors.motionForegroundValue.textContent = `${Math.round(preferences.motion.foreground)} ms`;
+  }
+  if (selectors.motionBackgroundValue) {
+    selectors.motionBackgroundValue.textContent = `${Math.round(preferences.motion.background)} s`;
+  }
+  applyMotionPreferences();
+}
+
+function refreshSettingsView() {
+  refreshRankingView();
+  refreshMotionView();
+}
+
+function activateSettingsTab(tabName) {
+  const activeName = tabName || 'general';
+  settingsTabs.forEach((button) => {
+    const isActive = button.dataset.tab === activeName;
+    button.classList.toggle('is-active', isActive);
+    button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+  });
+  settingsPanels.forEach((panel) => {
+    const isActive = panel.dataset.tab === activeName;
+    panel.classList.toggle('is-active', isActive);
+    panel.hidden = !isActive;
+  });
+}
+
+function openSettings(tabName = 'motion') {
+  if (!selectors.settingsOverlay) {
+    return;
+  }
+  settingsOpen = true;
+  lastFocusedElement = document.activeElement;
+  selectors.settingsOverlay.hidden = false;
+  refreshSettingsView();
+  activateSettingsTab(tabName);
+  window.setTimeout(() => {
+    const target = settingsTabs.find((button) => button.dataset.tab === tabName) || settingsTabs[0];
+    if (target) {
+      target.focus();
+    }
+  }, 0);
+}
+
+function closeSettings() {
+  if (!selectors.settingsOverlay) {
+    return;
+  }
+  selectors.settingsOverlay.hidden = true;
+  settingsOpen = false;
+  if (lastFocusedElement && typeof lastFocusedElement.focus === 'function') {
+    lastFocusedElement.focus();
+  }
+  lastFocusedElement = null;
+}
+
+function handleRankingChange(event) {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement)) {
+    return;
+  }
+  const value = Number(target.value);
+  if (Number.isNaN(value)) {
+    return;
+  }
+  if (target === selectors.rankingPopularity) {
+    preferences.ranking.popularity = value;
+  } else if (target === selectors.rankingHome) {
+    preferences.ranking.home = value;
+  }
+  refreshRankingView();
+  savePreferences();
+  rerenderSuggestions();
+}
+
+function handleMotionChange(event) {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement)) {
+    return;
+  }
+  const value = Number(target.value);
+  if (Number.isNaN(value)) {
+    return;
+  }
+  if (target === selectors.motionForeground) {
+    preferences.motion.foreground = value;
+  } else if (target === selectors.motionBackground) {
+    preferences.motion.background = value;
+  }
+  refreshMotionView();
+  savePreferences();
+  rerenderSuggestions();
+}
+
+function handleGlobalKeydown(event) {
+  if (event.key === 'Escape' && settingsOpen) {
+    event.preventDefault();
+    closeSettings();
   }
 }
 
@@ -278,49 +514,108 @@ function renderSuggestions(items) {
   if (!selectors.suggestions) {
     return;
   }
-  selectors.suggestions.innerHTML = '';
-  if (selectors.error) {
-    selectors.error.hidden = true;
-  }
-  if (!items || !items.length) {
-    if (selectors.empty) {
-      selectors.empty.hidden = false;
+  isRendering = true;
+  try {
+    setStage('searching');
+    selectors.suggestions.innerHTML = '';
+    if (selectors.error) {
+      selectors.error.hidden = true;
     }
-    return;
-  }
-  if (selectors.empty) {
-    selectors.empty.hidden = true;
-  }
-  items.slice(0, SEARCH_LIMIT).forEach((item, index) => {
-    const entry = document.createElement('li');
-    entry.className = 'suggestion-item';
-    entry.style.animationDelay = `${index * 25}ms`;
-    entry.setAttribute('tabindex', '0');
-    entry.dataset.value = item.value;
-    entry.dataset.label = item.label || item.value;
-    entry.dataset.type = item.type || 'object';
-
-    const label = document.createElement('div');
-    label.className = 'suggestion-label';
-    label.textContent = item.label || item.value;
-
-    const type = document.createElement('div');
-    type.className = 'suggestion-type';
-    type.textContent = describeType(item.type);
-
-    entry.appendChild(label);
-    entry.appendChild(type);
-
-    entry.addEventListener('click', () => selectSuggestion(entry));
-    entry.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        selectSuggestion(entry);
+    lastSuggestions = Array.isArray(items) ? items.slice() : [];
+    if (!items || !items.length) {
+      if (selectors.empty) {
+        selectors.empty.hidden = false;
       }
-    });
+      return;
+    }
+    if (selectors.empty) {
+      selectors.empty.hidden = true;
+    }
+    const rankedItems = rankSuggestions(items).slice(0, SEARCH_LIMIT);
+    const delayStep = Math.max(10, Math.round(preferences.motion.foreground / 8));
+    rankedItems.forEach((item, index) => {
+      const entry = document.createElement('li');
+      entry.className = 'suggestion-item';
+      entry.style.animationDelay = `${index * delayStep}ms`;
+      entry.setAttribute('tabindex', '0');
+      const value = item.value || '';
+      const labelText = item.label || value;
+      const typeText = (item.type || 'object').toLowerCase();
+      const addresses = Array.isArray(item.addresses) ? item.addresses : [];
+      const primaryAddress = addresses.length ? addresses[0] : '';
+      const contextText = item.context || item.config || '';
+      const homeState = item.home || '';
 
-    selectors.suggestions.appendChild(entry);
-  });
+      entry.dataset.value = value;
+      entry.dataset.label = labelText;
+      entry.dataset.type = typeText;
+      entry.dataset.vendor = item.vendor || '';
+      entry.dataset.config = item.config || '';
+      entry.dataset.os = item.os || '';
+      entry.dataset.version = item.version || '';
+      entry.dataset.context = contextText;
+      entry.dataset.addresses = JSON.stringify(addresses);
+      entry.dataset.selectionKey = [typeText, entry.dataset.vendor, entry.dataset.config, value].join('::');
+      entry.dataset.home = homeState;
+      if (typeof item.score === 'number') {
+        entry.dataset.score = String(item.score);
+      }
+      if (typeof item.popularity === 'number') {
+        entry.dataset.popularity = String(item.popularity);
+      }
+
+      const main = document.createElement('div');
+      main.className = 'suggestion-main';
+
+      const name = document.createElement('span');
+      name.className = 'suggestion-name';
+      name.textContent = labelText;
+
+      const tag = document.createElement('span');
+      tag.className = 'suggestion-tag';
+      tag.dataset.kind = typeText;
+      tag.textContent = describeType(typeText).toUpperCase();
+
+      main.appendChild(name);
+      main.appendChild(tag);
+
+      if (primaryAddress) {
+        const address = document.createElement('span');
+        address.className = 'suggestion-address';
+        address.textContent = primaryAddress;
+        main.appendChild(address);
+      }
+
+      const meta = document.createElement('div');
+      meta.className = 'suggestion-meta';
+      const context = document.createElement('span');
+      context.className = 'suggestion-context';
+      context.textContent = contextText;
+      meta.appendChild(context);
+      if (homeState) {
+        const home = document.createElement('span');
+        home.className = 'suggestion-home';
+        home.dataset.kind = homeState;
+        home.textContent = homeState === 'home' ? 'Home' : homeState === 'probable' ? 'Probable home' : homeState;
+        meta.appendChild(home);
+      }
+
+      entry.appendChild(main);
+      entry.appendChild(meta);
+
+      entry.addEventListener('click', () => selectSuggestion(entry));
+      entry.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          selectSuggestion(entry);
+        }
+      });
+
+      selectors.suggestions.appendChild(entry);
+    });
+  } finally {
+    isRendering = false;
+  }
 }
 
 function buildUrl(base, params) {
@@ -339,57 +634,125 @@ function buildUrl(base, params) {
   return query ? `${base}?${query}` : base;
 }
 
-function wireActionLinks(value) {
-  const shared = {
-    vendor: state.vendor,
-    config: state.config || '',
-  };
-  const inspectUrl = buildUrl('/', {
-    tab: 'rules',
-    mode: 'inspect',
-    vendor: shared.vendor,
-    config: shared.config,
-    inspect: value,
-  });
-  const compareUrl = buildUrl('/', {
-    tab: 'rules',
-    mode: 'compare',
-    vendor: shared.vendor,
-    config: shared.config,
-    old: value,
-  });
-  const packetUrl = buildUrl('/', {
-    tab: 'packet',
-    vendor: shared.vendor,
-    config: shared.config,
-    pkt_src: value,
-  });
-  const findUrl = buildUrl('/', {
-    tab: 'find',
-    vendor: shared.vendor,
-    config: shared.config,
-    find: value,
-  });
-
-  document.querySelectorAll('[data-action="inspect"]').forEach((anchor) => {
-    anchor.href = inspectUrl;
-  });
-  document.querySelectorAll('[data-action="compare"]').forEach((anchor) => {
-    anchor.href = compareUrl;
-  });
-  document.querySelectorAll('[data-action="packet"]').forEach((anchor) => {
-    anchor.href = packetUrl;
-  });
-  document.querySelectorAll('[data-action="find"]').forEach((anchor) => {
-    anchor.href = findUrl;
+function toggleActionVisibility(action, visible) {
+  document.querySelectorAll(`[data-action="${action}"]`).forEach((anchor) => {
+    anchor.classList.toggle('is-hidden', !visible);
+    if (!visible) {
+      anchor.removeAttribute('href');
+    }
   });
 }
 
-async function fetchMeta() {
-  const key = `${state.vendor}:${state.config}`;
-  if (!state.config) {
+function wireActionLinks(selection) {
+  if (!selection) {
+    toggleActionVisibility('inspect', false);
+    toggleActionVisibility('compare', false);
+    toggleActionVisibility('packet', false);
+    toggleActionVisibility('find', false);
+    return;
+  }
+  const vendor = selection.vendor || '';
+  const config = selection.config || '';
+  const value = selection.value || '';
+  const hasScope = Boolean(vendor && config);
+  const isContext = selection.type === 'context';
+  const isObjectLike = !isContext && Boolean(value);
+
+  const inspectParams = {
+    tab: isContext ? 'config' : 'rules',
+    vendor,
+    config,
+  };
+  if (isObjectLike) {
+    inspectParams.mode = 'inspect';
+    inspectParams.inspect = value;
+  }
+  const compareParams = isObjectLike
+    ? { tab: 'rules', mode: 'compare', vendor, config, old: value }
+    : null;
+  const packetParams = isObjectLike
+    ? { tab: 'packet', vendor, config, pkt_src: value }
+    : null;
+  const findParams = {
+    tab: 'find',
+    vendor,
+    config,
+  };
+  if (isObjectLike) {
+    findParams.find = value;
+  }
+
+  document.querySelectorAll('[data-action="inspect"]').forEach((anchor) => {
+    anchor.textContent = isContext ? 'Open configuration' : 'Inspect this object';
+    if (hasScope) {
+      anchor.href = buildUrl('/', inspectParams);
+    } else {
+      anchor.removeAttribute('href');
+    }
+  });
+
+  toggleActionVisibility('inspect', hasScope);
+  toggleActionVisibility('compare', hasScope && Boolean(compareParams));
+  toggleActionVisibility('packet', hasScope && Boolean(packetParams));
+  toggleActionVisibility('find', hasScope);
+
+  if (compareParams) {
+    document.querySelectorAll('[data-action="compare"]').forEach((anchor) => {
+      anchor.href = buildUrl('/', compareParams);
+    });
+  }
+  if (packetParams) {
+    document.querySelectorAll('[data-action="packet"]').forEach((anchor) => {
+      anchor.href = buildUrl('/', packetParams);
+    });
+  }
+  if (hasScope) {
+    document.querySelectorAll('[data-action="find"]').forEach((anchor) => {
+      anchor.textContent = isContext ? 'Search inside this config' : 'Search across configs';
+      anchor.href = buildUrl('/', findParams);
+    });
+  } else {
+    document.querySelectorAll('[data-action="find"]').forEach((anchor) => {
+      anchor.textContent = 'Search across configs';
+      anchor.removeAttribute('href');
+    });
+  }
+}
+
+function collapseSuggestions(selectedElement, selectionKey) {
+  if (!selectors.suggestions || !selectedElement) {
+    return;
+  }
+  const items = Array.from(selectors.suggestions.children);
+  items.forEach((node) => {
+    if (node === selectedElement) {
+      node.classList.add('is-selected');
+    } else {
+      node.classList.add('is-fading');
+    }
+  });
+  const collapseDelay = Math.max(200, Math.round(preferences.motion.foreground + 120));
+  window.setTimeout(() => {
+    if (activeSelection !== selectionKey) {
+      return;
+    }
+    if (selectors.suggestions) {
+      selectors.suggestions.innerHTML = '';
+    }
+    if (selectors.empty) {
+      selectors.empty.hidden = true;
+    }
+    setSuggestionState('idle');
+    setStage('selected');
+    lastSuggestions = [];
+  }, collapseDelay);
+}
+
+async function fetchMeta(selection) {
+  if (!selection || !selection.vendor || !selection.config) {
     return null;
   }
+  const key = `${selection.vendor}:${selection.config}`;
   if (cache.meta.has(key)) {
     return cache.meta.get(key);
   }
@@ -397,8 +760,8 @@ async function fetchMeta() {
     try {
       const response = await fetch(
         buildUrl('/api/meta', {
-          vendor: state.vendor,
-          config: state.config,
+          vendor: selection.vendor,
+          config: selection.config,
         })
       );
       if (!response.ok) {
@@ -413,53 +776,90 @@ async function fetchMeta() {
   return promise;
 }
 
-function describeSelectionMeta(metaPayload) {
+function describeSelectionMeta(selection, metaPayload) {
   const fragments = [];
-  if (state.config) {
-    fragments.push(`From ${state.config}`);
+  if (selection && selection.context) {
+    fragments.push(selection.context);
   }
   if (metaPayload && metaPayload.os) {
     const version = metaPayload.version && metaPayload.version !== 'unknown' ? ` · ${metaPayload.version}` : '';
     fragments.push(`${metaPayload.os}${version}`);
+  } else if (selection && selection.os) {
+    fragments.push(selection.os);
   }
   if (!fragments.length) {
-    return 'Scope not configured yet.';
+    return 'No additional context available.';
   }
   return fragments.join(' — ');
 }
 
 async function selectSuggestion(element) {
   const value = element.dataset.value || '';
-  if (!value) {
+  const type = element.dataset.type || 'object';
+  const vendor = element.dataset.vendor || '';
+  const config = element.dataset.config || '';
+  const context = element.dataset.context || config;
+  const selectionKey = element.dataset.selectionKey || `${type}::${vendor}::${config}::${value}`;
+  if (!value && type !== 'context') {
     return;
   }
-  toggleScopePanel(false);
-  activeSelection = value;
-  wireActionLinks(value);
+  const homeState = element.dataset.home || '';
+  const popularityValue = Number(element.dataset.popularity || '0');
+  let addresses = [];
+  try {
+    addresses = JSON.parse(element.dataset.addresses || '[]');
+  } catch (err) {
+    addresses = [];
+  }
+  const selection = {
+    key: selectionKey,
+    value,
+    label: element.dataset.label || value || context,
+    type,
+    vendor,
+    config,
+    context,
+    addresses,
+    os: element.dataset.os || '',
+    version: element.dataset.version || 'auto',
+    home: homeState,
+    popularity: popularityValue,
+  };
+  state.selection = selection;
+  activeSelection = selectionKey;
+  const displayValue =
+    selection.type === 'context'
+      ? selection.context
+      : [selection.value, selection.addresses[0]].filter(Boolean).join(' ');
+  if (selectors.query) {
+    selectors.query.value = displayValue.trim();
+  }
+  wireActionLinks(selection);
+  collapseSuggestions(element, selectionKey);
   if (selectors.details) {
     selectors.details.hidden = false;
     selectors.details.classList.add('is-visible');
   }
   if (selectors.label) {
-    selectors.label.textContent = element.dataset.label || value;
+    selectors.label.textContent = selection.label;
   }
   if (selectors.type) {
-    selectors.type.textContent = describeType(element.dataset.type);
+    selectors.type.textContent = describeType(selection.type);
   }
   if (selectors.meta) {
     selectors.meta.textContent = 'Gathering device context…';
   }
   if (selectors.copy) {
     selectors.copy.disabled = false;
-    selectors.copy.dataset.value = value;
+    selectors.copy.dataset.value = (displayValue && displayValue.trim()) || selection.label;
   }
 
-  const metaPayload = await fetchMeta();
-  if (activeSelection !== value) {
+  const metaPayload = await fetchMeta(selection);
+  if (activeSelection !== selectionKey) {
     return;
   }
   if (selectors.meta) {
-    selectors.meta.textContent = describeSelectionMeta(metaPayload);
+    selectors.meta.textContent = describeSelectionMeta(selection, metaPayload);
   }
 }
 
@@ -470,25 +870,14 @@ async function requestSuggestions(query) {
     hideDetails();
     return;
   }
-  if (!state.config) {
-    clearSuggestions();
-    if (selectors.error) {
-      selectors.error.hidden = false;
-      selectors.error.textContent = 'Select a configuration to search.';
-    }
-    hideDetails();
-    toggleScopePanel(true);
-    return;
-  }
   const token = ++activeFetchToken;
+  setStage('searching');
   setSuggestionState('loading');
   try {
     const response = await fetch(
       buildUrl('/api/objects', {
-        vendor: state.vendor,
-        os: state.vendor.toUpperCase(),
+        vendor: 'all',
         version: 'auto',
-        config: state.config,
         q: trimmed,
         mode: state.mode,
         limit: String(SEARCH_LIMIT),
@@ -526,7 +915,16 @@ function handleQueryInput(event) {
   if (selectors.error) {
     selectors.error.hidden = true;
   }
-  debouncedRequest(event.target.value);
+  const value = event.target.value || '';
+  if (state.selection) {
+    hideDetails();
+  }
+  if (!value.trim()) {
+    setStage('idle');
+  } else {
+    setStage('searching');
+  }
+  debouncedRequest(value);
 }
 
 function handleCopy() {
@@ -550,33 +948,12 @@ function toggleAdvanced(explicit) {
   selectors.advanced.hidden = !next;
 }
 
-function toggleScopePanel(force) {
-  if (!selectors.scopePanel || !selectors.scopeToggle) {
-    return;
-  }
-  const current = selectors.scopeToggle.getAttribute('aria-expanded') === 'true';
-  const next = typeof force === 'boolean' ? force : !current;
-  selectors.scopeToggle.setAttribute('aria-expanded', String(next));
-  selectors.scopePanel.hidden = !next;
-  if (next && typeof selectors.scopePanel.scrollIntoView === 'function') {
-    const prefersReduced =
-      typeof window !== 'undefined' && window.matchMedia
-        ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
-        : false;
-    try {
-      selectors.scopePanel.scrollIntoView({ behavior: prefersReduced ? 'auto' : 'smooth', block: 'start' });
-    } catch (err) {
-      selectors.scopePanel.scrollIntoView();
-    }
-  }
-}
-
 function initEvents() {
   if (selectors.query) {
     selectors.query.addEventListener('input', handleQueryInput);
     selectors.query.addEventListener('focus', () => {
       if (selectors.hint) {
-        selectors.hint.textContent = 'Try a host, network, or object name. We will suggest the rest.';
+        selectors.hint.textContent = '';
       }
     });
   }
@@ -586,60 +963,49 @@ function initEvents() {
   if (selectors.reveal) {
     selectors.reveal.addEventListener('click', () => toggleAdvanced());
   }
-  if (selectors.scopeToggle) {
-    selectors.scopeToggle.addEventListener('click', () => toggleScopePanel());
+  if (selectors.settingsToggle) {
+    selectors.settingsToggle.addEventListener('click', () => openSettings('motion'));
   }
-  if (selectors.vendor) {
-    selectors.vendor.addEventListener('change', (event) => {
-      state.vendor = event.target.value || 'asa';
-      state.config = '';
-      pickDefaultConfig();
-      populateConfigSelect();
-      invalidateActiveFetch();
-      clearSuggestions();
-      cache.meta.clear();
-      hideDetails();
-    });
-  }
-  if (selectors.config) {
-    selectors.config.addEventListener('change', (event) => {
-      state.config = event.target.value || '';
-      updateConfigChip();
-      invalidateActiveFetch();
-      clearSuggestions();
-      cache.meta.clear();
-      hideDetails();
-    });
-  }
-  if (selectors.mode) {
-    selectors.mode.value = state.mode;
-    selectors.mode.addEventListener('change', (event) => {
-      state.mode = event.target.value || 'fuzzy';
-      if (selectors.query && selectors.query.value) {
-        debouncedRequest(selectors.query.value);
+  if (selectors.settingsOverlay) {
+    selectors.settingsOverlay.addEventListener('click', (event) => {
+      if (event.target === selectors.settingsOverlay) {
+        closeSettings();
       }
     });
   }
+  if (selectors.settingsClose) {
+    selectors.settingsClose.addEventListener('click', () => closeSettings());
+  }
+  settingsTabs.forEach((button) => {
+    button.addEventListener('click', () => activateSettingsTab(button.dataset.tab || 'general'));
+  });
+  if (selectors.rankingPopularity) {
+    selectors.rankingPopularity.addEventListener('input', handleRankingChange);
+  }
+  if (selectors.rankingHome) {
+    selectors.rankingHome.addEventListener('input', handleRankingChange);
+  }
+  if (selectors.motionForeground) {
+    selectors.motionForeground.addEventListener('input', handleMotionChange);
+  }
+  if (selectors.motionBackground) {
+    selectors.motionBackground.addEventListener('input', handleMotionChange);
+  }
+  document.addEventListener('keydown', handleGlobalKeydown);
 }
 
 function init() {
+  setStage('idle');
   initThemeControls();
-  pickDefaultConfig();
-  populateConfigSelect();
-  updateConfigChip();
   initEvents();
   if (selectors.hint) {
-    selectors.hint.textContent = DATA.initialHint || 'Start typing to explore suggestions across your configs.';
+    selectors.hint.textContent = '';
   }
   if (selectors.copy) {
     selectors.copy.disabled = true;
   }
-  if (!state.config) {
-    toggleScopePanel(true);
-    if (selectors.hint) {
-      selectors.hint.textContent = 'Add a config under Scope before searching.';
-    }
-  }
+  refreshSettingsView();
+  activateSettingsTab('general');
 }
 
 init();
