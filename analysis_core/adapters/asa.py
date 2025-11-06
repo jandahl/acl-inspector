@@ -31,9 +31,9 @@ def build_index(text: str) -> Dict[str, object]:
     group_popularity: Dict[str, float] = defaultdict(float)
 
     for name in objects:
-        object_popularity[name] += 1.0
+        object_popularity[name] += OBJECT_BASE_POPULARITY
     for name in groups:
-        group_popularity[name] += 1.0
+        group_popularity[name] += GROUP_BASE_POPULARITY
 
     for members in cfg.network_object_groups.values():
         for member in members:
