@@ -140,7 +140,7 @@ class IndexManager:
     @staticmethod
     def _matches_stat(payload: Dict[str, Any], mtime: float, size: int) -> bool:
         return (
-            abs(float(payload.get("src_mtime", 0.0)) - mtime) < 0.0001
+            math.isclose(float(payload.get("src_mtime", 0.0)), mtime)
             and int(payload.get("src_size", -1)) == size
         )
 
