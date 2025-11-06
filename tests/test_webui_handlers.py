@@ -132,7 +132,7 @@ class APIHandlersTest(unittest.TestCase):
         self.assertEqual(context_entry.get("home"), "context")
 
     def test_index_popularity_handles_acl_errors(self):
-        with mock.patch.object(asa_index.asa_parser.ASAConfig, "flatten_acl", side_effect=RuntimeError("flatten boom")):
+        with mock.patch("analysis_core.adapters.asa.asa_parser.ASAConfig.flatten_acl", side_effect=RuntimeError("flatten boom")):
             index = asa_index.build_index(ASA_SAMPLE)
         self.assertIn("objects", index)
         self.assertIn("popularity", index)
