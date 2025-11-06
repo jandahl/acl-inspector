@@ -57,6 +57,32 @@ Quick start (CLI)
   - Inspect: `./access-list-inspector.py --vendor fortigate --config <ftg.conf> --vdom root --inspect <ip|object>`
   - Compare: `./access-list-inspector.py --vendor fortigate --config <ftg.conf> --vdom root --old <A> --new <B>`
 
+Reading configs from stdin
+--------------------------
+When ACL configs are generated dynamically (for example, pulled from an API, unpacked from an archive, or trimmed on the fly),
+you can pass them straight to the CLI without creating a temporary file. Supplying `--config -` instructs
+`access-list-inspector.py` to read the ASA or FortiGate configuration from standard input. This works for every mode that
+normally accepts `--config <path>`:
+
+- Inspect from stdin:
+  ```bash
+  cat configs/cisco/sample-asa.conf | ./access-list-inspector.py --vendor asa --config - --inspect WebServer01
+  ```
+
+- Compare targets using stdin:
+  ```bash
+  zcat latest-export.asa.gz | ./access-list-inspector.py --vendor asa --config - --old AppSrvA --new AppSrvB
+  ```
+
+- Find host in a streamed config:
+  ```bash
+  curl https://example.com/asa.conf \ 
+    | ./access-list-inspector.py --vendor asa --config - --find-host 10.20.30.40
+  ```
+
+While reading from stdin the script can still emit human-readable text, JSON (`--format json`), or XML (`--format xml`), and
+all protocol/port filters remain available.
+
 Output formats
 --------------
 - Human-friendly text (default), with clearer section names and optional ANSI colors (auto-enabled on TTY).

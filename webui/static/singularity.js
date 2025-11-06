@@ -1,6 +1,8 @@
 const DATA = window.SINGULARITY_DATA || {};
 
 const state = {
+  vendor: (DATA.defaultVendor || 'asa').toLowerCase(),
+  config: DATA.defaultConfig || '',
   mode: (DATA.defaultMode || 'fuzzy').toLowerCase(),
 };
 
@@ -30,13 +32,27 @@ const selectors = {
   copy: document.querySelector('[data-role="copy-value"]'),
   reveal: document.querySelector('[data-role="reveal"]'),
   advanced: document.querySelector('[data-role="advanced"]'),
+  vendor: document.querySelector('[data-role="vendor"]'),
+  config: document.querySelector('[data-role="config"]'),
+  mode: document.querySelector('[data-role="mode"]'),
+  configChip: document.querySelector('[data-role="config-chip"]'),
+  scopeToggle: document.querySelector('[data-role="toggle-advanced"]'),
+  scopePanel: document.querySelector('[data-role="scope-panel"]'),
   themeToggle: document.querySelector('[data-role="theme-toggle"]'),
 };
 
+if (selectors.vendor && state.vendor !== selectors.vendor.value) {
+  selectors.vendor.value = state.vendor;
+}
+
 const SEARCH_LIMIT = Number(DATA.searchLimit || 12) || 12;
+const configOptions = DATA.configOptions || { asa: [], fortigate: [] };
 let activeFetchToken = 0;
 let activeSelection = null;
-let hasActiveQuery = false;
+
+function invalidateActiveFetch() {
+  activeFetchToken += 1;
+}
 
 function setToggleState(kind) {
   if (!selectors.themeToggle) {
@@ -175,23 +191,52 @@ function hideDetails() {
   activeSelection = null;
 }
 
-function setSuggestionState(next) {
-  if (selectors.suggestionBox) {
-    selectors.suggestionBox.dataset.state = next;
+function pickDefaultConfig() {
+  if (state.config) {
+    return;
+  }
+  const options = configOptions[state.vendor] || [];
+  state.config = options.length > 0 ? options[0] : '';
+}
+
+function updateConfigChip() {
+  if (!selectors.configChip) {
+    return;
+  }
+  if (!state.config) {
+    selectors.configChip.textContent = 'No config selected';
+    selectors.configChip.classList.add('is-empty');
+  } else {
+    selectors.configChip.textContent = state.config;
+    selectors.configChip.classList.remove('is-empty');
   }
 }
 
-function updateHint(text) {
-  if (!selectors.hint) {
+function populateConfigSelect() {
+  if (!selectors.config) {
     return;
   }
-  const content = (text || '').trim();
-  if (content) {
-    selectors.hint.textContent = content;
-    selectors.hint.hidden = false;
-  } else {
-    selectors.hint.textContent = '';
-    selectors.hint.hidden = true;
+  const options = configOptions[state.vendor] || [];
+  selectors.config.innerHTML = '';
+  for (const name of options) {
+    const option = document.createElement('option');
+    option.value = name;
+    option.textContent = name;
+    if (name === state.config) {
+      option.selected = true;
+    }
+    selectors.config.appendChild(option);
+  }
+  if (!state.config && options.length) {
+    state.config = options[0];
+  }
+  selectors.config.disabled = options.length === 0;
+  updateConfigChip();
+}
+
+function setSuggestionState(next) {
+  if (selectors.suggestionBox) {
+    selectors.suggestionBox.dataset.state = next;
   }
 }
 
@@ -200,12 +245,12 @@ function clearSuggestions() {
     selectors.suggestions.innerHTML = '';
   }
   if (selectors.empty) {
-    selectors.empty.hidden = true;
+    selectors.empty.hidden = false;
   }
   if (selectors.error) {
     selectors.error.hidden = true;
   }
-  setSuggestionState(hasActiveQuery ? 'empty' : 'idle');
+  setSuggestionState('idle');
 }
 
 function describeType(kind) {
@@ -239,67 +284,32 @@ function renderSuggestions(items) {
   }
   if (!items || !items.length) {
     if (selectors.empty) {
-      selectors.empty.hidden = !hasActiveQuery;
+      selectors.empty.hidden = false;
     }
-    setSuggestionState(hasActiveQuery ? 'empty' : 'idle');
     return;
   }
   if (selectors.empty) {
     selectors.empty.hidden = true;
   }
-  setSuggestionState('results');
   items.slice(0, SEARCH_LIMIT).forEach((item, index) => {
     const entry = document.createElement('li');
     entry.className = 'suggestion-item';
     entry.style.animationDelay = `${index * 25}ms`;
     entry.setAttribute('tabindex', '0');
-    entry.dataset.value = item.value || '';
-    entry.dataset.label = item.label || item.value || '';
+    entry.dataset.value = item.value;
+    entry.dataset.label = item.label || item.value;
     entry.dataset.type = item.type || 'object';
-    entry.dataset.vendor = (item.vendor || '').toLowerCase();
-    entry.dataset.config = item.config || '';
-    entry.dataset.context = item.context || item.config || '';
-    const primary = item.primary || (Array.isArray(item.literals) && item.literals.length ? item.literals[0] : '');
-    entry.dataset.primary = primary || '';
 
-    const main = document.createElement('div');
-    main.className = 'suggestion-main';
+    const label = document.createElement('div');
+    label.className = 'suggestion-label';
+    label.textContent = item.label || item.value;
 
-    const title = document.createElement('div');
-    title.className = 'suggestion-title';
+    const type = document.createElement('div');
+    type.className = 'suggestion-type';
+    type.textContent = describeType(item.type);
 
-    const name = document.createElement('span');
-    name.className = 'suggestion-name';
-    name.textContent = entry.dataset.label;
-
-    const tag = document.createElement('span');
-    tag.className = 'suggestion-tag';
-    tag.textContent = `[ ${describeType(item.type).toUpperCase()} ]`;
-
-    const ip = document.createElement('span');
-    ip.className = 'suggestion-ip';
-    if (primary) {
-      ip.textContent = primary;
-    } else {
-      ip.classList.add('is-empty');
-      ip.textContent = '';
-    }
-
-    title.appendChild(name);
-    title.appendChild(tag);
-    title.appendChild(ip);
-
-    main.appendChild(title);
-
-    const context = document.createElement('div');
-    context.className = 'suggestion-context';
-    context.textContent = entry.dataset.context;
-    if (!context.textContent) {
-      context.classList.add('is-empty');
-    }
-
-    entry.appendChild(main);
-    entry.appendChild(context);
+    entry.appendChild(label);
+    entry.appendChild(type);
 
     entry.addEventListener('click', () => selectSuggestion(entry));
     entry.addEventListener('keydown', (event) => {
@@ -329,33 +339,35 @@ function buildUrl(base, params) {
   return query ? `${base}?${query}` : base;
 }
 
-function wireActionLinks(value, vendor, config) {
-  const sharedVendor = (vendor || '').toLowerCase();
-  const sharedConfig = config || '';
+function wireActionLinks(value) {
+  const shared = {
+    vendor: state.vendor,
+    config: state.config || '',
+  };
   const inspectUrl = buildUrl('/', {
     tab: 'rules',
     mode: 'inspect',
-    vendor: sharedVendor,
-    config: sharedConfig,
+    vendor: shared.vendor,
+    config: shared.config,
     inspect: value,
   });
   const compareUrl = buildUrl('/', {
     tab: 'rules',
     mode: 'compare',
-    vendor: sharedVendor,
-    config: sharedConfig,
+    vendor: shared.vendor,
+    config: shared.config,
     old: value,
   });
   const packetUrl = buildUrl('/', {
     tab: 'packet',
-    vendor: sharedVendor,
-    config: sharedConfig,
+    vendor: shared.vendor,
+    config: shared.config,
     pkt_src: value,
   });
   const findUrl = buildUrl('/', {
     tab: 'find',
-    vendor: sharedVendor,
-    config: sharedConfig,
+    vendor: shared.vendor,
+    config: shared.config,
     find: value,
   });
 
@@ -373,9 +385,9 @@ function wireActionLinks(value, vendor, config) {
   });
 }
 
-async function fetchMeta(vendor, config) {
-  const key = `${vendor}:${config}`;
-  if (!vendor || !config) {
+async function fetchMeta() {
+  const key = `${state.vendor}:${state.config}`;
+  if (!state.config) {
     return null;
   }
   if (cache.meta.has(key)) {
@@ -385,8 +397,8 @@ async function fetchMeta(vendor, config) {
     try {
       const response = await fetch(
         buildUrl('/api/meta', {
-          vendor,
-          config,
+          vendor: state.vendor,
+          config: state.config,
         })
       );
       if (!response.ok) {
@@ -401,19 +413,17 @@ async function fetchMeta(vendor, config) {
   return promise;
 }
 
-function describeSelectionMeta(selection, metaPayload) {
+function describeSelectionMeta(metaPayload) {
   const fragments = [];
-  if (selection && selection.context) {
-    fragments.push(`From ${selection.context}`);
+  if (state.config) {
+    fragments.push(`From ${state.config}`);
   }
   if (metaPayload && metaPayload.os) {
     const version = metaPayload.version && metaPayload.version !== 'unknown' ? ` · ${metaPayload.version}` : '';
     fragments.push(`${metaPayload.os}${version}`);
-  } else if (metaPayload && metaPayload.vendor) {
-    fragments.push(metaPayload.vendor);
   }
   if (!fragments.length) {
-    return 'Context will appear once the inspector opens.';
+    return 'Scope not configured yet.';
   }
   return fragments.join(' — ');
 }
@@ -423,27 +433,18 @@ async function selectSuggestion(element) {
   if (!value) {
     return;
   }
-  const selection = {
-    value,
-    label: element.dataset.label || value,
-    type: element.dataset.type || 'object',
-    vendor: element.dataset.vendor || '',
-    config: element.dataset.config || '',
-    context: element.dataset.context || '',
-    primary: element.dataset.primary || '',
-  };
-  selection.key = `${selection.vendor}:${selection.config}:${selection.value}`;
-  activeSelection = selection;
-  wireActionLinks(value, selection.vendor, selection.config);
+  toggleScopePanel(false);
+  activeSelection = value;
+  wireActionLinks(value);
   if (selectors.details) {
     selectors.details.hidden = false;
     selectors.details.classList.add('is-visible');
   }
   if (selectors.label) {
-    selectors.label.textContent = selection.label;
+    selectors.label.textContent = element.dataset.label || value;
   }
   if (selectors.type) {
-    selectors.type.textContent = describeType(selection.type);
+    selectors.type.textContent = describeType(element.dataset.type);
   }
   if (selectors.meta) {
     selectors.meta.textContent = 'Gathering device context…';
@@ -453,29 +454,41 @@ async function selectSuggestion(element) {
     selectors.copy.dataset.value = value;
   }
 
-  const metaPayload = await fetchMeta(selection.vendor, selection.config);
-  if (!activeSelection || activeSelection.key !== selection.key) {
+  const metaPayload = await fetchMeta();
+  if (activeSelection !== value) {
     return;
   }
   if (selectors.meta) {
-    selectors.meta.textContent = describeSelectionMeta(selection, metaPayload);
+    selectors.meta.textContent = describeSelectionMeta(metaPayload);
   }
 }
 
 async function requestSuggestions(query) {
   const trimmed = (query || '').trim();
   if (!trimmed) {
-    hasActiveQuery = false;
     clearSuggestions();
     hideDetails();
     return;
   }
-  hasActiveQuery = true;
+  if (!state.config) {
+    clearSuggestions();
+    if (selectors.error) {
+      selectors.error.hidden = false;
+      selectors.error.textContent = 'Select a configuration to search.';
+    }
+    hideDetails();
+    toggleScopePanel(true);
+    return;
+  }
   const token = ++activeFetchToken;
   setSuggestionState('loading');
   try {
     const response = await fetch(
-      buildUrl('/api/singularity/suggest', {
+      buildUrl('/api/objects', {
+        vendor: state.vendor,
+        os: state.vendor.toUpperCase(),
+        version: 'auto',
+        config: state.config,
         q: trimmed,
         mode: state.mode,
         limit: String(SEARCH_LIMIT),
@@ -489,13 +502,11 @@ async function requestSuggestions(query) {
         selectors.error.hidden = false;
         selectors.error.textContent = 'Suggestion service is unavailable right now.';
       }
-      if (selectors.empty) {
-        selectors.empty.hidden = true;
-      }
-      setSuggestionState('error');
+      setSuggestionState('idle');
       return;
     }
     const payload = await response.json();
+    setSuggestionState('idle');
     renderSuggestions(payload.items || []);
   } catch (err) {
     if (token !== activeFetchToken) {
@@ -505,10 +516,7 @@ async function requestSuggestions(query) {
       selectors.error.hidden = false;
       selectors.error.textContent = 'Network hiccup. Try again in a moment.';
     }
-    if (selectors.empty) {
-      selectors.empty.hidden = true;
-    }
-    setSuggestionState('error');
+    setSuggestionState('idle');
   }
 }
 
@@ -518,9 +526,7 @@ function handleQueryInput(event) {
   if (selectors.error) {
     selectors.error.hidden = true;
   }
-  const value = event.target.value || '';
-  updateHint('');
-  debouncedRequest(value);
+  debouncedRequest(event.target.value);
 }
 
 function handleCopy() {
@@ -544,17 +550,33 @@ function toggleAdvanced(explicit) {
   selectors.advanced.hidden = !next;
 }
 
+function toggleScopePanel(force) {
+  if (!selectors.scopePanel || !selectors.scopeToggle) {
+    return;
+  }
+  const current = selectors.scopeToggle.getAttribute('aria-expanded') === 'true';
+  const next = typeof force === 'boolean' ? force : !current;
+  selectors.scopeToggle.setAttribute('aria-expanded', String(next));
+  selectors.scopePanel.hidden = !next;
+  if (next && typeof selectors.scopePanel.scrollIntoView === 'function') {
+    const prefersReduced =
+      typeof window !== 'undefined' && window.matchMedia
+        ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        : false;
+    try {
+      selectors.scopePanel.scrollIntoView({ behavior: prefersReduced ? 'auto' : 'smooth', block: 'start' });
+    } catch (err) {
+      selectors.scopePanel.scrollIntoView();
+    }
+  }
+}
+
 function initEvents() {
   if (selectors.query) {
     selectors.query.addEventListener('input', handleQueryInput);
     selectors.query.addEventListener('focus', () => {
-      if (!(selectors.query && (selectors.query.value || '').trim())) {
-        updateHint('Try a host, network, or object name. Results span every config.');
-      }
-    });
-    selectors.query.addEventListener('blur', () => {
-      if (selectors.query && !(selectors.query.value || '').trim()) {
-        updateHint(DATA.initialHint || '');
+      if (selectors.hint) {
+        selectors.hint.textContent = 'Try a host, network, or object name. We will suggest the rest.';
       }
     });
   }
@@ -564,14 +586,59 @@ function initEvents() {
   if (selectors.reveal) {
     selectors.reveal.addEventListener('click', () => toggleAdvanced());
   }
+  if (selectors.scopeToggle) {
+    selectors.scopeToggle.addEventListener('click', () => toggleScopePanel());
+  }
+  if (selectors.vendor) {
+    selectors.vendor.addEventListener('change', (event) => {
+      state.vendor = event.target.value || 'asa';
+      state.config = '';
+      pickDefaultConfig();
+      populateConfigSelect();
+      invalidateActiveFetch();
+      clearSuggestions();
+      cache.meta.clear();
+      hideDetails();
+    });
+  }
+  if (selectors.config) {
+    selectors.config.addEventListener('change', (event) => {
+      state.config = event.target.value || '';
+      updateConfigChip();
+      invalidateActiveFetch();
+      clearSuggestions();
+      cache.meta.clear();
+      hideDetails();
+    });
+  }
+  if (selectors.mode) {
+    selectors.mode.value = state.mode;
+    selectors.mode.addEventListener('change', (event) => {
+      state.mode = event.target.value || 'fuzzy';
+      if (selectors.query && selectors.query.value) {
+        debouncedRequest(selectors.query.value);
+      }
+    });
+  }
 }
 
 function init() {
   initThemeControls();
+  pickDefaultConfig();
+  populateConfigSelect();
+  updateConfigChip();
   initEvents();
-  updateHint(DATA.initialHint || '');
+  if (selectors.hint) {
+    selectors.hint.textContent = DATA.initialHint || 'Start typing to explore suggestions across your configs.';
+  }
   if (selectors.copy) {
     selectors.copy.disabled = true;
+  }
+  if (!state.config) {
+    toggleScopePanel(true);
+    if (selectors.hint) {
+      selectors.hint.textContent = 'Add a config under Scope before searching.';
+    }
   }
 }
 

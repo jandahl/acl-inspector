@@ -61,6 +61,27 @@ def _render_home(state: AppState) -> str:
     return Template(template).substitute(context)
 
 
+def _collect_vendor_options(state: AppState) -> dict[str, list[str]]:
+    vendors = ("asa", "fortigate")
+    options: dict[str, list[str]] = {}
+    for vendor in vendors:
+        listing = api_handlers.config_listing(state, vendor=vendor)
+        options[vendor] = sorted(list(listing.keys()))
+    return options
+
+
+def _default_vendor_selection(options: dict[str, list[str]]) -> tuple[str, str]:
+    priority = ("asa", "fortigate")
+    for vendor in priority:
+        entries = options.get(vendor) or []
+        if entries:
+            return vendor, entries[0]
+    for vendor, entries in options.items():
+        if entries:
+            return vendor, entries[0]
+    return priority[0], ""
+
+
 def _singularity_themes(state: AppState) -> Dict[str, object]:
     palettes: Dict[str, Dict[str, str]] = {}
     names: Dict[str, str] = {}
@@ -89,11 +110,16 @@ def _singularity_themes(state: AppState) -> Dict[str, object]:
 
 def _render_singularity(state: AppState) -> str:
     template = resources.read_text("webui.templates", "singularity.html")
+    config_options = _collect_vendor_options(state)
+    default_vendor, default_config = _default_vendor_selection(config_options)
     theme_payload = _singularity_themes(state)
     payload = {
+        "configOptions": config_options,
         "searchLimit": state.settings.features.predictive_search.limit,
+        "defaultVendor": default_vendor,
+        "defaultConfig": default_config,
         "defaultMode": "fuzzy",
-        "initialHint": "",
+        "initialHint": "We’ll surface results the moment you start typing.",
         "themes": theme_payload["palettes"],
         "themeNames": theme_payload["names"],
         "defaultTheme": theme_payload["default"],
