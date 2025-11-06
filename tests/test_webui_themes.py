@@ -5,7 +5,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from webui.themes import DEFAULT_THEMES, load_iterm_theme, load_themes
+from webui.themes import (
+    DEFAULT_THEMES,
+    build_singularity_palette,
+    load_iterm_theme,
+    load_themes,
+)
 
 
 class ThemeLoaderTest(unittest.TestCase):
@@ -43,6 +48,33 @@ class ThemeLoaderTest(unittest.TestCase):
             self.assertEqual(theme["name"], "Test")
             themes = load_themes(tmpdir)
             self.assertTrue(any(t["name"] == "Test" for t in themes))
+
+
+class SingularityPaletteTest(unittest.TestCase):
+    def test_palette_contains_expected_tokens(self):
+        palette = build_singularity_palette(DEFAULT_THEMES[0])
+        required = {
+            "bg-base",
+            "bg-surface",
+            "bg-overlay",
+            "accent",
+            "accent-contrast",
+            "highlight",
+            "chip-bg",
+            "shadow-color",
+            "focus-ring",
+        }
+        for token in required:
+            self.assertIn(token, palette)
+        self.assertTrue(palette["bg-base"].startswith("#"))
+        self.assertTrue(palette["border"].startswith("rgba"))
+        self.assertTrue(palette["highlight"].startswith("rgba"))
+
+    def test_light_and_dark_palettes_differ(self):
+        dark_palette = build_singularity_palette(DEFAULT_THEMES[0])
+        light_palette = build_singularity_palette(DEFAULT_THEMES[1])
+        self.assertNotEqual(dark_palette["bg-base"], light_palette["bg-base"])
+        self.assertNotEqual(dark_palette["accent"], light_palette["accent"])
 
 
 if __name__ == "__main__":  # pragma: no cover

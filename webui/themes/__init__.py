@@ -49,6 +49,15 @@ def _blend_hex(hex_a: str, hex_b: str, ratio: float) -> str:
     return "#{:02x}{:02x}{:02x}".format(r, g, b)
 
 
+def _rgba_string(color: str, alpha: float) -> str:
+    """Convert a hex color to an rgba() string with the given alpha."""
+
+    r, g, b = _hex_to_rgb(color)
+    alpha = max(0.0, min(1.0, float(alpha)))
+    alpha_text = ("{:.3f}".format(alpha)).rstrip("0").rstrip(".")
+    return f"rgba({r}, {g}, {b}, {alpha_text})"
+
+
 DEFAULT_THEMES: List[Dict[str, object]] = [
     {
         "name": "Builtin Dark",
@@ -183,3 +192,62 @@ def load_themes(theme_dir: str) -> List[Dict[str, object]]:
         if not any(t["kind"] == default["kind"] for t in themes):
             themes.append(default)
     return themes
+
+
+def build_singularity_palette(theme: Dict[str, object]) -> Dict[str, str]:
+    """Derive Singularity UI color tokens from a base theme."""
+
+    vars_map = theme.get("vars", {}) if isinstance(theme, dict) else {}
+    bg = vars_map.get("bg", "#0e1116")
+    muted = vars_map.get("muted", _blend_hex(bg, "#ffffff", 0.08))
+    text = vars_map.get("text", "#e6edf3")
+    sub = vars_map.get("sub", _blend_hex(text, bg, 0.35))
+    accent = vars_map.get("accent") or vars_map.get("link") or text
+    border = vars_map.get("border", _blend_hex(bg, text, 0.22))
+    kind = (theme.get("kind") if isinstance(theme, dict) else "dark") or "dark"
+    is_light = str(kind).lower() == "light"
+
+    accent_soft = _blend_hex(accent, text if is_light else "#ffffff", 0.35 if is_light else 0.2)
+    accent_contrast = _blend_hex(accent, "#ffffff" if not is_light else "#000000", 0.28)
+    bg_surface = _blend_hex(bg, accent, 0.08 if not is_light else 0.12)
+    bg_muted = _blend_hex(bg_surface, bg, 0.4)
+    chip_base = _blend_hex(accent, bg, 0.18 if not is_light else 0.22)
+    hover_base = _blend_hex(bg_surface, accent, 0.25 if not is_light else 0.18)
+    glow_primary = _blend_hex(accent, accent_contrast, 0.3)
+    glow_secondary = _blend_hex(accent, text, 0.35 if is_light else 0.2)
+    glow_tertiary = _blend_hex(accent_contrast, bg, 0.35 if is_light else 0.45)
+    halo = _blend_hex(accent, text if is_light else "#ffffff", 0.25)
+    shadow_base = _blend_hex(bg, "#000000" if not is_light else "#4a5568", 0.45)
+    danger = _blend_hex("#ff6b6b", text, 0.35 if is_light else 0.45)
+    focus_ring = _blend_hex(accent, text if is_light else "#ffffff", 0.32)
+
+    return {
+        "bg-base": bg,
+        "bg-surface": bg_surface,
+        "bg-muted": bg_muted,
+        "bg-overlay": _rgba_string(bg_surface, 0.8 if not is_light else 0.75),
+        "bg-glow-primary": glow_primary,
+        "bg-glow-secondary": glow_secondary,
+        "bg-glow-tertiary": glow_tertiary,
+        "backdrop-primary": _rgba_string(_blend_hex(accent, bg, 0.35), 0.45 if not is_light else 0.35),
+        "backdrop-secondary": _rgba_string(_blend_hex(accent, text, 0.18), 0.16),
+        "halo": _rgba_string(halo, 0.22 if not is_light else 0.28),
+        "text": text,
+        "text-soft": _blend_hex(text, "#ffffff" if not is_light else bg, 0.2),
+        "text-muted": sub,
+        "border": _rgba_string(border, 0.24 if not is_light else 0.35),
+        "border-strong": _rgba_string(_blend_hex(border, accent, 0.25), 0.45 if not is_light else 0.38),
+        "accent": accent,
+        "accent-soft": accent_soft,
+        "accent-contrast": accent_contrast,
+        "pill-bg": _rgba_string(_blend_hex(bg_surface, accent, 0.28), 0.78 if not is_light else 0.72),
+        "pill-border": _rgba_string(_blend_hex(border, accent, 0.35), 0.32 if not is_light else 0.4),
+        "suggestion-bg": _rgba_string(_blend_hex(bg_surface, accent, 0.22), 0.88 if not is_light else 0.82),
+        "suggestion-hover": _rgba_string(hover_base, 0.95 if not is_light else 0.88),
+        "chip-bg": _rgba_string(chip_base, 0.32 if not is_light else 0.28),
+        "chip-text": _blend_hex(accent_soft, text, 0.45 if is_light else 0.6),
+        "highlight": _rgba_string(_blend_hex(accent, text, 0.3), 0.38 if not is_light else 0.32),
+        "shadow-color": _rgba_string(shadow_base, 0.6 if not is_light else 0.45),
+        "danger": danger,
+        "focus-ring": _rgba_string(focus_ring, 0.75 if not is_light else 0.55),
+    }

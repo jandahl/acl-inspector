@@ -14,6 +14,7 @@ from ..router import Request, Response, Router
 from ..state import AppState
 from .. import __version__ as WEBUI_VERSION
 from ..design import dot_to_svg, markdown_to_html, DiagramRenderError, read_text_file
+from ..themes import build_singularity_palette
 
 
 def _options_for_vendor(state: AppState, vendor: str) -> str:
@@ -60,6 +61,51 @@ def _render_home(state: AppState) -> str:
     return Template(template).substitute(context)
 
 
+def _singularity_themes(state: AppState) -> Dict[str, object]:
+    palettes: Dict[str, Dict[str, str]] = {}
+    names: Dict[str, str] = {}
+    for theme in state.themes:
+        kind = str(theme.get("kind", "")).lower()
+        if kind not in ("dark", "light"):
+            continue
+        if kind in palettes:
+            continue
+        palettes[kind] = build_singularity_palette(theme)
+        names[kind] = str(theme.get("name", kind))
+    if "dark" not in palettes and state.themes:
+        fallback = state.themes[0]
+        palettes["dark"] = build_singularity_palette(fallback)
+        names.setdefault("dark", str(fallback.get("name", "Default")))
+    if "light" not in palettes and len(state.themes) > 1:
+        for theme in state.themes:
+            kind = str(theme.get("kind", "")).lower()
+            if kind == "light":
+                palettes["light"] = build_singularity_palette(theme)
+                names.setdefault("light", str(theme.get("name", "Light")))
+                break
+    default_kind = "dark" if "dark" in palettes else next(iter(palettes), "dark")
+    return {"palettes": palettes, "names": names, "default": default_kind}
+
+
+def _render_singularity(state: AppState) -> str:
+    template = resources.read_text("webui.templates", "singularity.html")
+    theme_payload = _singularity_themes(state)
+    payload = {
+        "searchLimit": state.settings.features.predictive_search.limit,
+        "defaultMode": "fuzzy",
+        "initialHint": "Search every config with a single query.",
+        "themes": theme_payload["palettes"],
+        "themeNames": theme_payload["names"],
+        "defaultTheme": theme_payload["default"],
+        "themeStorageKey": "acl.singularity.theme",
+    }
+    context = {
+        "singularity_payload": json.dumps(payload).replace("</", "<\\/"),
+        "singularity_default_theme": theme_payload["default"],
+    }
+    return Template(template).substitute(context)
+
+
 def register_pages(router: Router, state: AppState) -> None:
     """Register HTML page routes."""
 
@@ -76,6 +122,15 @@ def register_pages(router: Router, state: AppState) -> None:
 
     def handle_root(_request: Request) -> Response:
         body = _render_home(state).encode("utf-8")
+        headers = {
+            "Content-Type": "text/html; charset=utf-8",
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "Content-Length": str(len(body)),
+        }
+        return Response(status=200, headers=headers, body=body)
+
+    def handle_singularity(_request: Request) -> Response:
+        body = _render_singularity(state).encode("utf-8")
         headers = {
             "Content-Type": "text/html; charset=utf-8",
             "Cache-Control": "no-store, no-cache, must-revalidate",
@@ -172,6 +227,8 @@ def register_pages(router: Router, state: AppState) -> None:
         return render_design_page("Design Index", content)
 
     router.add("GET", "/", handle_root)
+    router.add("GET", "/singularity", handle_singularity)
+    router.add("GET", "/singularity/", handle_singularity)
     router.add("GET", "/design", handle_design_index)
     for path in design_docs:
         router.add("GET", path, handle_design_doc)
