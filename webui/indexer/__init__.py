@@ -125,10 +125,12 @@ class IndexManager:
             return []
         mode = (mode or "fuzzy").lower()
         if mode == "prefix":
-            return self._match_prefix(index, q, limit)
-        if mode == "substring":
-            return self._match_substring(index, q, limit)
-        return self._match_fuzzy(index, q, limit)
+            results = self._match_prefix(index, q, limit)
+        elif mode == "substring":
+            results = self._match_substring(index, q, limit)
+        else:
+            results = self._match_fuzzy(index, q, limit)
+        return [self._attach_metadata(index, item) for item in results]
 
     # ------------------------- internals -------------------------
     @staticmethod
@@ -165,7 +167,8 @@ class IndexManager:
             for value in values:
                 if value.lower().startswith(ql):
                     label = f"{value} (group)" if typ == "group" else value
-                    out.append({"value": value, "label": label, "type": typ})
+                    score = (0, len(value), value.lower())
+                    out.append({"value": value, "label": label, "type": typ, "score": score})
                     if len(out) >= limit:
                         return True
             return False
@@ -186,7 +189,9 @@ class IndexManager:
             for value in values:
                 if ql in value.lower():
                     label = f"{value} (group)" if typ == "group" else value
-                    out.append({"value": value, "label": label, "type": typ})
+                    start = value.lower().find(ql)
+                    score = (1, start if start >= 0 else len(value), len(value), value.lower())
+                    out.append({"value": value, "label": label, "type": typ, "score": score})
                     if len(out) >= limit:
                         return True
             return False
@@ -208,7 +213,7 @@ class IndexManager:
                 if score is None:
                     continue
                 label = f"{value} (group)" if typ == "group" else value
-                candidates.append((score, {"value": value, "label": label, "type": typ}))
+                candidates.append((score, {"value": value, "label": label, "type": typ, "score": score}))
 
         consider(index.get("objects", []), "object")
         consider(index.get("groups", []), "group")
@@ -247,3 +252,22 @@ class IndexManager:
             return None
         length = (last_match - start + 1) if start != -1 else len(t)
         return (gaps, start if start != -1 else 0, length)
+
+    @staticmethod
+    def _attach_metadata(index: Dict[str, Any], suggestion: Dict[str, Any]) -> Dict[str, Any]:
+        meta = index.get("meta") if isinstance(index, dict) else None
+        if not meta:
+            return suggestion
+        suggestion_type = suggestion.get("type")
+        if not suggestion_type:
+            return suggestion
+        bucket = meta.get(suggestion_type)
+        if not isinstance(bucket, dict):
+            return suggestion
+        details = bucket.get(suggestion.get("value"))
+        if not isinstance(details, dict):
+            return suggestion
+        enriched = dict(suggestion)
+        for key, value in details.items():
+            enriched.setdefault(key, value)
+        return enriched
