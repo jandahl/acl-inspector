@@ -93,7 +93,7 @@ def _render_singularity(state: AppState) -> str:
     payload = {
         "searchLimit": state.settings.features.predictive_search.limit,
         "defaultMode": "fuzzy",
-        "initialHint": "Search every config with a single query.",
+        "initialHint": "",
         "themes": theme_payload["palettes"],
         "themeNames": theme_payload["names"],
         "defaultTheme": theme_payload["default"],
