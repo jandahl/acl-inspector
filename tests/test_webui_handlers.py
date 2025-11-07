@@ -4,10 +4,12 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from webui import settings as settings_mod
 from webui.handlers import api as api_handlers
 from webui.handlers import pages as page_handlers
+from webui.indexer import asa as asa_index
 from webui.state import AppState
 
 
@@ -51,8 +53,12 @@ class APIHandlersTest(unittest.TestCase):
             limit=10,
         )
         self.assertEqual(status, 200)
-        values = {item["value"] for item in payload["items"]}
-        self.assertIn("OBJ_WEB", values)
+        obj_entry = next((item for item in payload["items"] if item["value"] == "OBJ_WEB"), None)
+        self.assertIsNotNone(obj_entry)
+        self.assertEqual(obj_entry["context"], "sample.cfg")
+        self.assertIn("192.0.2.10", obj_entry.get("addresses", []))
+        self.assertEqual(obj_entry.get("home"), "home")
+        self.assertIn("popularity", obj_entry)
 
     def test_objects_invalid_config(self):
         status, payload = api_handlers.objects(
@@ -67,6 +73,70 @@ class APIHandlersTest(unittest.TestCase):
         )
         self.assertEqual(status, 400)
         self.assertEqual(payload["error"], "invalid_config")
+
+    def test_objects_handles_non_utf8_config(self):
+        bad_name = "non_utf8.cfg"
+        (self.config_root / bad_name).write_bytes(ASA_SAMPLE.encode("utf-8") + b"\xff")
+        status, payload = api_handlers.objects(
+            self.state,
+            vendor="asa",
+            os_tag="ASA",
+            version="auto",
+            filename=bad_name,
+            query="OBJ",
+            mode="prefix",
+            limit=10,
+        )
+        self.assertEqual(status, 200)
+        obj_entry = next((item for item in payload["items"] if item["value"] == "OBJ_WEB"), None)
+        self.assertIsNotNone(obj_entry)
+        self.assertIn("192.0.2.10", obj_entry.get("addresses", []))
+        self.assertEqual(obj_entry.get("home"), "home")
+
+    def test_objects_global_search_aggregates_across_configs(self):
+        status, payload = api_handlers.objects(
+            self.state,
+            vendor="all",
+            os_tag="",
+            version="auto",
+            filename="",
+            query="OBJ",
+            mode="prefix",
+            limit=5,
+        )
+        self.assertEqual(status, 200)
+        obj_entry = next((item for item in payload["items"] if item["value"] == "OBJ_WEB"), None)
+        self.assertIsNotNone(obj_entry)
+        self.assertEqual(obj_entry["vendor"], "asa")
+        self.assertEqual(obj_entry["context"], "sample.cfg")
+        self.assertIn("192.0.2.10", obj_entry.get("addresses", []))
+        self.assertEqual(obj_entry.get("home"), "home")
+        self.assertIn("popularity", obj_entry)
+
+    def test_objects_global_search_includes_context_matches(self):
+        status, payload = api_handlers.objects(
+            self.state,
+            vendor="all",
+            os_tag="",
+            version="auto",
+            filename="",
+            query="sample",
+            mode="substring",
+            limit=5,
+        )
+        self.assertEqual(status, 200)
+        context_entry = next((item for item in payload["items"] if item["type"] == "context"), None)
+        self.assertIsNotNone(context_entry)
+        self.assertEqual(context_entry["context"], "sample.cfg")
+        self.assertEqual(context_entry["vendor"], "asa")
+        self.assertEqual(context_entry.get("home"), "context")
+
+    def test_index_popularity_handles_acl_errors(self):
+        with mock.patch("analysis_core.adapters.asa.asa_parser.ASAConfig.flatten_acl", side_effect=RuntimeError("flatten boom")):
+            index = asa_index.build_index(ASA_SAMPLE)
+        self.assertIn("objects", index)
+        self.assertIn("popularity", index)
+        self.assertIn("object", index["popularity"])
 
     def test_meta_and_config(self):
         status, meta = api_handlers.meta(self.state, vendor="asa", filename="sample.cfg")
