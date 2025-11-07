@@ -221,6 +221,11 @@ def build_singularity_palette(theme: Dict[str, object]) -> Dict[str, str]:
     danger = _blend_hex("#ff6b6b", text, 0.35 if is_light else 0.45)
     focus_ring = _blend_hex(accent, text if is_light else "#ffffff", 0.32)
 
+    object_tone = _blend_hex(accent, "#2ec27e", 0.4 if not is_light else 0.55)
+    group_tone = _blend_hex(accent, "#3b82f6", 0.45 if not is_light else 0.5)
+    literal_tone = _blend_hex(accent, "#f59e0b", 0.45 if not is_light else 0.5)
+    context_tone = _blend_hex(accent, sub, 0.35 if not is_light else 0.4)
+
     return {
         "bg-base": bg,
         "bg-surface": bg_surface,
@@ -250,4 +255,12 @@ def build_singularity_palette(theme: Dict[str, object]) -> Dict[str, str]:
         "shadow-color": _rgba_string(shadow_base, 0.6 if not is_light else 0.45),
         "danger": danger,
         "focus-ring": _rgba_string(focus_ring, 0.75 if not is_light else 0.55),
+        "tag-object-bg": _rgba_string(object_tone, 0.32 if not is_light else 0.38),
+        "tag-object-text": _blend_hex(object_tone, text, 0.65 if not is_light else 0.45),
+        "tag-group-bg": _rgba_string(group_tone, 0.3 if not is_light else 0.36),
+        "tag-group-text": _blend_hex(group_tone, text, 0.6 if not is_light else 0.42),
+        "tag-literal-bg": _rgba_string(literal_tone, 0.34 if not is_light else 0.4),
+        "tag-literal-text": _blend_hex(literal_tone, text, 0.6 if not is_light else 0.45),
+        "tag-context-bg": _rgba_string(context_tone, 0.3 if not is_light else 0.35),
+        "tag-context-text": _blend_hex(context_tone, text, 0.55 if not is_light else 0.4),
     }
