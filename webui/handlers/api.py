@@ -11,6 +11,8 @@ from ..state import AppState
 from utils.config import clean_config_text, load_config_text
 
 TYPE_PRIORITY = {"context": -1, "object": 0, "group": 1, "literal": 2}
+CONTEXT_EXACT_MATCH_SCORE = -10.0
+CONTEXT_SUBSTRING_MATCH_SCORE = -5.0
 
 
 def _vendor_os_tag(vendor: str) -> str:
