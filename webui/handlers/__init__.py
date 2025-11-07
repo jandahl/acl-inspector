@@ -54,6 +54,23 @@ def register_api(router: Router, state: AppState) -> None:
         )
         return json_response(payload, status)
 
+    def handle_singularity_suggest(request: Request) -> Response:
+        q = request.query
+        query = _get_param(q, "q", "")
+        mode = _get_param(q, "mode", "fuzzy")
+        limit_raw = _get_param(q, "limit", "")
+        try:
+            limit = int(limit_raw) if limit_raw else state.settings.features.predictive_search.limit
+        except Exception:
+            limit = state.settings.features.predictive_search.limit
+        status, payload = api_handlers.singularity_suggestions(
+            state,
+            query=query,
+            mode=mode,
+            limit=limit,
+        )
+        return json_response(payload, status)
+
     def handle_meta(request: Request) -> Response:
         q = request.query
         vendor = _get_param(q, "vendor", "asa").lower()
@@ -147,6 +164,7 @@ def register_api(router: Router, state: AppState) -> None:
         return json_response(payload, status)
 
     router.add("GET", "/api/objects", handle_objects)
+    router.add("GET", "/api/singularity/suggest", handle_singularity_suggest)
     router.add("GET", "/api/meta", handle_meta)
     router.add("GET", "/api/aliases", handle_aliases)
     router.add("GET", "/api/config", handle_config)
