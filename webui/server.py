@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
 from urllib.parse import parse_qs, urlparse
 
+from . import logging_utils
 from . import settings as settings_mod
 from .state import AppState
 from .router import Request, RouteNotFound, Router
@@ -187,6 +188,9 @@ def build_httpd(settings: settings_mod.Settings, state: AppState, router: Router
 def run_server(settings: settings_mod.Settings) -> None:
     """Launch the HTTP server, mirroring the legacy main behaviour."""
 
+    log_path = logging_utils.setup_logging(settings.paths.logs_dir)
+    if log_path:
+        print(f"Logging to {log_path}")
     state = AppState.create(settings)
     router = Router()
     register_api(router, state)

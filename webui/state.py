@@ -204,7 +204,15 @@ class AppState:
     def create(cls, settings: settings_mod.Settings) -> "AppState":
         disk_cache = DiskCache(settings.paths.cache_dir)
         if settings.features.disk_cache.enabled:
-            disk_cache.ensure_ready()
+            try:
+                disk_cache.ensure_ready()
+            except Exception as exc:  # pragma: no cover - filesystem errors
+                logger.warning(
+                    "Unable to prepare cache directory '%s': %s; continuing without disk cache.",
+                    settings.paths.cache_dir,
+                    exc,
+                )
+                disk_cache = DiskCache(None)
         history = HistoryTracker(
             enabled=settings.features.history_tracking,
             limit=settings.features.predictive_search.limit,
