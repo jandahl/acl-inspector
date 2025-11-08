@@ -3,6 +3,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from webui import settings as settings_mod
 from webui.state import AppState, DiskCache, HistoryTracker, IndexEntry, SearchIndex
@@ -89,6 +90,16 @@ class AppStateTest(unittest.TestCase):
             names = {theme["name"] for theme in state.themes}
             self.assertIn("Builtin Dark", names)
             self.assertIn("Builtin Light", names)
+
+    def test_disk_cache_failure_disables_gracefully(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            settings = settings_mod.load_settings(
+                Path(tmpdir) / "settings.json",
+                env={"ACLINSPECTOR_CONFIGS_CISCO": str(Path(tmpdir) / "configs" / "asa")},
+            )
+            with mock.patch("webui.state.DiskCache.ensure_ready", side_effect=OSError("boom")):
+                state = AppState.create(settings)
+        self.assertFalse(state.disk_cache.enabled)
 
 
 if __name__ == "__main__":  # pragma: no cover

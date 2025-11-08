@@ -26,6 +26,7 @@ class SettingsLoaderTest(unittest.TestCase):
                 loaded.paths.configs["fortigate"],
                 str((base / "configs/fortigate").resolve()),
             )
+            self.assertTrue(loaded.features.disk_cache.enabled)
             self.assertIn("packet-check", loaded.beta.enabled_modules)
 
     def test_json_overrides_merge_with_defaults(self):
@@ -76,6 +77,13 @@ class SettingsLoaderTest(unittest.TestCase):
         self.assertEqual(loaded.features.predictive_search.limit, 75)
         self.assertTrue(loaded.features.disk_cache.enabled)
         self.assertEqual(tuple(sorted(loaded.beta.enabled_modules)), ("foo", "packet-probe"))
+
+    def test_cache_and_logs_paths_resolve_relative_to_settings(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            settings_file = Path(tmpdir) / "settings.json"
+            loaded = settings_mod.load_settings(settings_file, env={})
+        self.assertTrue(loaded.paths.cache_dir.endswith("cache"))
+        self.assertTrue(loaded.paths.logs_dir.endswith("logs"))
 
     def test_cli_overrides_merge_last(self):
         overrides = {

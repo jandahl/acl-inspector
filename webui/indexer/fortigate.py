@@ -1,4 +1,4 @@
-"""Compatibility wrapper for FortiGate adapter."""
+"""Compatibility wrapper for Fortigate adapter."""
 
 from analysis_core.adapters.fortigate import build_index
 
