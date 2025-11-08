@@ -3,6 +3,27 @@
 from __future__ import annotations
 
 import html
+import logging
+from pathlib import Path
+from typing import Union
+
+logger = logging.getLogger(__name__)
+
+
+def load_config_text(path: Union[str, Path]) -> str:
+    """Read config text with a tolerant decoder.
+
+    We prefer UTF-8 but fall back to ignoring invalid sequences so configs with
+    stray bytes do not break predictive search or metadata endpoints.
+    """
+
+    target = Path(path)
+    try:
+        return target.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        logger.debug("UTF-8 decode failed for %s: %s; stripping invalid bytes.", target, exc)
+        data = target.read_bytes()
+        return data.decode("utf-8", errors="ignore")
 
 
 def clean_config_text(text: str) -> str:
@@ -49,4 +70,4 @@ def clean_config_text(text: str) -> str:
     return cleaned
 
 
-__all__ = ["clean_config_text"]
+__all__ = ["clean_config_text", "load_config_text"]
