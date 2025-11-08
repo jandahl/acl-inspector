@@ -1,15 +1,18 @@
-"""Compatibility shim for legacy imports.
+"""Search index management."""
 
-Presentation layers should depend on :mod:`analysis_core.index` instead.
-"""
+from __future__ import annotations
 
-from analysis_core.index import IndexEntry, IndexManager  # re-export
-from analysis_core.adapters.asa import build_index as build_asa_index
-from analysis_core.adapters.fortigate import build_index as build_fortigate_index
+import hashlib
+import math
+import os
+import threading
+import time
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from . import asa as asa_adapter
-from . import fortigate as fortigate_adapter
-from utils.config import clean_config_text
+from utils.config import clean_config_text, load_config_text
+
+from .adapters import build_asa_index, build_fortigate_index
 
 
 @dataclass
@@ -74,8 +77,7 @@ class IndexManager:
                     self.search_cache.set(key, entry)
                     return entry
 
-            with open(path, "r", encoding="utf-8") as handle:
-                text = clean_config_text(handle.read())
+            text = clean_config_text(load_config_text(path))
             index = self._build_index(vendor, text)
             entry = IndexEntry(
                 key=key,
@@ -123,12 +125,12 @@ class IndexManager:
             return []
         mode = (mode or "fuzzy").lower()
         if mode == "prefix":
-            results = self._match_prefix(index, q, limit)
+            matches = self._match_prefix(index, q, limit)
         elif mode == "substring":
-            results = self._match_substring(index, q, limit)
+            matches = self._match_substring(index, q, limit)
         else:
-            results = self._match_fuzzy(index, q, limit)
-        return [self._attach_metadata(index, item) for item in results]
+            matches = self._match_fuzzy(index, q, limit)
+        return self._enrich_matches(index, matches, limit)
 
     # ------------------------- internals -------------------------
     @staticmethod
@@ -139,20 +141,20 @@ class IndexManager:
     @staticmethod
     def _matches_stat(payload: Dict[str, Any], mtime: float, size: int) -> bool:
         return (
-            abs(float(payload.get("src_mtime", 0.0)) - mtime) < 0.0001
+            math.isclose(float(payload.get("src_mtime", 0.0)), mtime)
             and int(payload.get("src_size", -1)) == size
         )
 
     @staticmethod
     def _is_fresh(entry: IndexEntry, mtime: float, size: int) -> bool:
-        return abs(entry.src_mtime - mtime) < 0.0001 and entry.src_size == size
+        return math.isclose(entry.src_mtime, mtime) and entry.src_size == size
 
     def _build_index(self, vendor: str, text: str) -> Dict[str, Any]:
         vendor = (vendor or "").lower()
         if vendor == "asa":
-            return asa_adapter.build_index(text)
+            return build_asa_index(text)
         if vendor == "fortigate":
-            return fortigate_adapter.build_index(text)
+            return build_fortigate_index(text)
         return {"objects": [], "groups": [], "literals": []}
 
     # ------------------------- matching helpers -------------------------
@@ -165,8 +167,7 @@ class IndexManager:
             for value in values:
                 if value.lower().startswith(ql):
                     label = f"{value} (group)" if typ == "group" else value
-                    score = (0, len(value), value.lower())
-                    out.append({"value": value, "label": label, "type": typ, "score": score})
+                    out.append({"value": value, "label": label, "type": typ})
                     if len(out) >= limit:
                         return True
             return False
@@ -187,9 +188,7 @@ class IndexManager:
             for value in values:
                 if ql in value.lower():
                     label = f"{value} (group)" if typ == "group" else value
-                    start = value.lower().find(ql)
-                    score = (1, start if start >= 0 else len(value), len(value), value.lower())
-                    out.append({"value": value, "label": label, "type": typ, "score": score})
+                    out.append({"value": value, "label": label, "type": typ})
                     if len(out) >= limit:
                         return True
             return False
@@ -211,7 +210,7 @@ class IndexManager:
                 if score is None:
                     continue
                 label = f"{value} (group)" if typ == "group" else value
-                candidates.append((score, {"value": value, "label": label, "type": typ, "score": score}))
+                candidates.append((score, {"value": value, "label": label, "type": typ}))
 
         consider(index.get("objects", []), "object")
         consider(index.get("groups", []), "group")
@@ -227,6 +226,45 @@ class IndexManager:
             )
         )
         return [candidate[1] for candidate in candidates[:limit]]
+
+    def _enrich_matches(
+        self, index: Dict[str, Any], matches: List[Dict[str, Any]], limit: int
+    ) -> List[Dict[str, Any]]:
+        popularity_map: Dict[str, Dict[str, float]] = {}
+        if isinstance(index, dict):
+            raw_popularity = index.get("popularity")
+            if isinstance(raw_popularity, dict):
+                popularity_map = {
+                    key: dict(value) if isinstance(value, dict) else {}
+                    for key, value in raw_popularity.items()
+                }
+        type_priority = {"object": 0, "group": 1, "literal": 2}
+        default_popularity_weight = 0.6
+        enriched: List[Dict[str, Any]] = []
+        for position, item in enumerate(matches):
+            entry = dict(item)
+            kind = (entry.get("type") or "object").lower()
+            value = entry.get("value")
+            popularity = 0.0
+            if popularity_map and isinstance(value, str):
+                popularity = float(popularity_map.get(kind, {}).get(value, 0.0) or 0.0)
+            score = position - (popularity * default_popularity_weight)
+            entry["rank"] = position
+            entry["score"] = score
+            entry.setdefault("label", str(value) if value is not None else "")
+            entry["signals"] = {
+                "popularity": popularity,
+                "typePriority": type_priority.get(kind, 99),
+            }
+            enriched.append(entry)
+        enriched.sort(
+            key=lambda item: (
+                item.get("score", 0.0),
+                item.get("signals", {}).get("typePriority", 99),
+                str(item.get("value") or ""),
+            )
+        )
+        return enriched[:limit]
 
     @staticmethod
     def _fuzzy_score(text: str, pattern: str) -> Optional[Tuple[int, int, int]]:
@@ -250,22 +288,3 @@ class IndexManager:
             return None
         length = (last_match - start + 1) if start != -1 else len(t)
         return (gaps, start if start != -1 else 0, length)
-
-    @staticmethod
-    def _attach_metadata(index: Dict[str, Any], suggestion: Dict[str, Any]) -> Dict[str, Any]:
-        meta = index.get("meta") if isinstance(index, dict) else None
-        if not meta:
-            return suggestion
-        suggestion_type = suggestion.get("type")
-        if not suggestion_type:
-            return suggestion
-        bucket = meta.get(suggestion_type)
-        if not isinstance(bucket, dict):
-            return suggestion
-        details = bucket.get(suggestion.get("value"))
-        if not isinstance(details, dict):
-            return suggestion
-        enriched = dict(suggestion)
-        for key, value in details.items():
-            enriched.setdefault(key, value)
-        return enriched
