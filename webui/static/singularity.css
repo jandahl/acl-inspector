@@ -111,25 +111,25 @@ body.singularity-body[data-theme='light'] {
 
 @keyframes backdrop-float {
   0% {
-    transform: translate3d(-2%, -1%, 0) scale(1);
+    transform: translate3d(-6%, -3%, 0) scale(0.98);
   }
   50% {
-    transform: translate3d(2%, 1%, 0) scale(1.04);
+    transform: translate3d(6%, 3%, 0) scale(1.08);
   }
   100% {
-    transform: translate3d(-2%, -1%, 0) scale(1);
+    transform: translate3d(-6%, -3%, 0) scale(0.98);
   }
 }
 
 @keyframes halo-drift {
   0% {
-    transform: translate3d(0, 0, 0) scale(1);
+    transform: translate3d(-2%, 1%, 0) scale(0.97);
   }
   50% {
-    transform: translate3d(1%, -1.5%, 0) scale(1.07);
+    transform: translate3d(4%, -4%, 0) scale(1.09);
   }
   100% {
-    transform: translate3d(0, 0, 0) scale(1);
+    transform: translate3d(-2%, 1%, 0) scale(0.97);
   }
 }
 
@@ -311,6 +311,7 @@ body.singularity-body[data-theme='dark'] .singularity-theme .theme-icon-light {
 .search-field input[type='search'] {
   width: 100%;
   padding: clamp(18px, 2vw, 22px) clamp(18px, 5vw, 28px);
+  padding-right: calc(clamp(18px, 5vw, 28px) + 52px);
   border-radius: 24px;
   border: 1px solid var(--sg-border);
   font-size: clamp(1.1rem, 2vw, 1.35rem);
@@ -347,6 +348,48 @@ body.singularity-body[data-theme='dark'] .singularity-theme .theme-icon-light {
 
 .search-field input[type='search']:focus-visible + .search-glow {
   opacity: 0.6;
+}
+
+.search-reset {
+  position: absolute;
+  top: 50%;
+  inset-inline-end: clamp(16px, 4vw, 32px);
+  transform: translateY(-50%);
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid var(--sg-border);
+  background: var(--sg-bg-overlay);
+  background: color-mix(in srgb, var(--sg-bg-overlay) 85%, transparent);
+  color: var(--sg-text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition:
+    border-color var(--sg-motion-foreground, 260ms) ease,
+    color var(--sg-motion-foreground, 260ms) ease,
+    background var(--sg-motion-foreground, 260ms) ease,
+    box-shadow var(--sg-motion-foreground, 260ms) ease;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.18);
+}
+
+.search-reset svg {
+  width: 16px;
+  height: 16px;
+}
+
+.search-reset:hover,
+.search-reset:focus-visible {
+  border-color: var(--sg-border-strong);
+  color: var(--sg-text);
+  outline: none;
+  background: color-mix(in srgb, var(--sg-bg-overlay) 70%, transparent);
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.24);
+}
+
+.search-reset[hidden] {
+  display: none;
 }
 
 .search-hint {

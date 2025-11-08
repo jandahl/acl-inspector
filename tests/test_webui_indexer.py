@@ -18,6 +18,15 @@ object-group network OG-SERVERS
  network-object object OBJ_DB
 """
 
+RANKING_SAMPLE = """!
+object network TEST
+ host 203.0.113.10
+object network TEST-NODE
+ host 203.0.113.20
+object network NET-GUESTS
+ host 203.0.113.30
+"""
+
 
 class IndexManagerTest(unittest.TestCase):
     def test_builds_and_caches_indexes(self):
@@ -47,6 +56,22 @@ class IndexManagerTest(unittest.TestCase):
             manager2 = IndexManager(disk_cache=disk_cache, search_cache=new_cache)
             entry2 = manager2.get_index("asa", "ASA", "auto", str(cfg_path))
             self.assertEqual(entry2.index, entry.index)
+
+    def test_exact_matches_outrank_fuzzy_matches(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cfg_dir = Path(tmpdir)
+            cfg_path = cfg_dir / "rank.cfg"
+            cfg_path.write_text(RANKING_SAMPLE, encoding="utf-8")
+
+            disk_cache = DiskCache(tmpdir)
+            search_cache = SearchIndex()
+            manager = IndexManager(disk_cache=disk_cache, search_cache=search_cache)
+            entry = manager.get_index("asa", "ASA", "auto", str(cfg_path))
+
+            suggestions = manager.suggest(entry.index, "test", "fuzzy", 5)
+            ordered = [item["value"] for item in suggestions]
+            self.assertEqual(ordered[0], "TEST")
+            self.assertIn("NET-GUESTS", ordered)
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -8,12 +8,17 @@ from unittest import mock
 
 from webui import settings as settings_mod
 from webui.handlers import api as api_handlers
-from webui.handlers import pages as page_handlers
 from webui.indexer import asa as asa_index
 from webui.state import AppState
+from webui.v1_legacy import pages as legacy_pages
+from webui.v2_singularity import pages as singularity_pages
 
 
 ASA_SAMPLE = """!
+interface GigabitEthernet0/0
+ nameif outside
+ security-level 0
+ ip address 192.0.2.1 255.255.255.0
 object network OBJ_WEB
  host 192.0.2.10
 object network OBJ_DB
@@ -162,7 +167,7 @@ class APIHandlersTest(unittest.TestCase):
         self.assertIn("in_memory", payload)
 
     def test_render_home_template(self):
-        html = page_handlers._render_home(self.state)
+        html = legacy_pages._render_home(self.state)
         self.assertIn("/static/app.css", html)
         self.assertIn("<select name=\"vendor\"", html)
         self.assertIn("ACL_BETA_MODULES", html)
@@ -177,7 +182,7 @@ class APIHandlersTest(unittest.TestCase):
         return json.loads(raw)
 
     def test_render_singularity_payload_includes_themes(self):
-        html = page_handlers._render_singularity(self.state)
+        html = singularity_pages._render_singularity(self.state)
         payload = self._extract_singularity_payload(html)
         self.assertEqual(payload["defaultVendor"], "asa")
         self.assertEqual(payload["defaultConfig"], "sample.cfg")
@@ -206,7 +211,7 @@ class APIHandlersTest(unittest.TestCase):
                 },
             )
             alt_state = AppState.create(settings)
-            html = page_handlers._render_singularity(alt_state)
+            html = singularity_pages._render_singularity(alt_state)
             payload = self._extract_singularity_payload(html)
             self.assertEqual(payload["defaultVendor"], "fortigate")
             self.assertEqual(payload["defaultConfig"], "ftg.conf")

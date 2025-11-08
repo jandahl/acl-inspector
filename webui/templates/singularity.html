@@ -71,6 +71,18 @@
             placeholder="Start typing…"
             data-role="query"
           >
+          <button
+            type="button"
+            class="search-reset"
+            data-role="query-reset"
+            aria-label="Clear search"
+            hidden
+          >
+            <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+              <circle cx="10" cy="10" r="9" fill="none" stroke="currentColor" stroke-width="1.4" />
+              <path d="M7 7l6 6M13 7l-6 6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+            </svg>
+          </button>
           <div class="search-glow" aria-hidden="true"></div>
         </div>
         <p class="search-hint" data-role="search-hint"></p>
@@ -171,8 +183,8 @@
               <input
                 id="motion-foreground"
                 type="range"
-                min="150"
-                max="600"
+                min="0"
+                max="3000"
                 step="10"
                 value="260"
                 data-role="motion-foreground"
@@ -184,9 +196,9 @@
               <input
                 id="motion-background"
                 type="range"
-                min="60"
-                max="240"
-                step="10"
+                min="30"
+                max="600"
+                step="5"
                 value="120"
                 data-role="motion-background"
               >

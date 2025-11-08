@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import os
 import threading
 import time
@@ -64,34 +65,44 @@ class IndexManager:
         key = self._cache_key(vendor, path)
         stat = os.stat(path)
 
-        with self._lock:
+        def _load_cached() -> Optional[IndexEntry]:
             entry = self.search_cache.get(key)
             if entry and self._is_fresh(entry, stat.st_mtime, stat.st_size):
                 return entry
-
             if self.disk_cache.enabled:
                 payload = self.disk_cache.read(key)
                 if payload and self._matches_stat(payload, stat.st_mtime, stat.st_size):
                     entry = IndexEntry.from_payload(key, payload)
                     self.search_cache.set(key, entry)
                     return entry
+            return None
 
-            text = clean_config_text(load_config_text(path))
-            index = self._build_index(vendor, text)
-            entry = IndexEntry(
-                key=key,
-                vendor=vendor,
-                os_tag=os_tag,
-                version=version,
-                built_at=time.time(),
-                src_mtime=stat.st_mtime,
-                src_size=stat.st_size,
-                index=index,
-            )
-            self.search_cache.set(key, entry)
+        with self._lock:
+            cached = _load_cached()
+        if cached:
+            return cached
+
+        text = clean_config_text(load_config_text(path))
+        index = self._build_index(vendor, text)
+        fresh_entry = IndexEntry(
+            key=key,
+            vendor=vendor,
+            os_tag=os_tag,
+            version=version,
+            built_at=time.time(),
+            src_mtime=stat.st_mtime,
+            src_size=stat.st_size,
+            index=index,
+        )
+
+        with self._lock:
+            cached = _load_cached()
+            if cached:
+                return cached
+            self.search_cache.set(key, fresh_entry)
             if self.disk_cache.enabled:
-                self.disk_cache.write(key, entry.to_payload())
-            return entry
+                self.disk_cache.write(key, fresh_entry.to_payload())
+        return fresh_entry
 
     def status(self) -> Dict[str, Any]:
         with self._lock:
@@ -201,7 +212,8 @@ class IndexManager:
 
     @classmethod
     def _match_fuzzy(cls, index: Dict[str, Any], query: str, limit: int) -> List[Dict[str, Any]]:
-        candidates: List[Tuple[Tuple[int, int, int], Dict[str, Any]]] = []
+        candidates: List[Tuple[Tuple[int, int, int, int], Dict[str, Any]]] = []
+        query_lower = (query or "").lower()
 
         def consider(values: Sequence[str], typ: str) -> None:
             for value in values:
@@ -209,7 +221,14 @@ class IndexManager:
                 if score is None:
                     continue
                 label = f"{value} (group)" if typ == "group" else value
-                candidates.append((score, {"value": value, "label": label, "type": typ}))
+                value_lower = value.lower()
+                priority = 0
+                if value_lower == query_lower:
+                    priority = -2
+                elif value_lower.startswith(query_lower):
+                    priority = -1
+                enriched_score = (priority, score[0], score[1], score[2])
+                candidates.append((enriched_score, {"value": value, "label": label, "type": typ}))
 
         consider(index.get("objects", []), "object")
         consider(index.get("groups", []), "group")
@@ -219,6 +238,7 @@ class IndexManager:
                 item[0][0],
                 item[0][1],
                 item[0][2],
+                item[0][3],
                 item[1]["type"] != "object",
                 item[1]["type"] != "group",
                 item[1]["value"],

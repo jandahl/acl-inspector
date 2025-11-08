@@ -3,6 +3,7 @@ const DATA = window.SINGULARITY_DATA || {};
 const state = {
   mode: (DATA.defaultMode || 'fuzzy').toLowerCase(),
   selection: null,
+  lastQuery: '',
 };
 
 const cache = {
@@ -18,6 +19,7 @@ let storedPreference = null;
 
 const selectors = {
   query: document.querySelector('[data-role="query"]'),
+  queryReset: document.querySelector('[data-role="query-reset"]'),
   hint: document.querySelector('[data-role="search-hint"]'),
   suggestions: document.querySelector('[data-role="suggestions"]'),
   suggestionBox: document.querySelector('.singularity-suggestions'),
@@ -83,6 +85,32 @@ function setStage(next) {
 
 function invalidateActiveFetch() {
   activeFetchToken += 1;
+}
+
+function updateQueryResetVisibility(hasValue) {
+  if (!selectors.queryReset) {
+    return;
+  }
+  selectors.queryReset.hidden = !hasValue;
+}
+
+function clearQuery(event) {
+  if (event) {
+    event.preventDefault();
+  }
+  if (!selectors.query) {
+    return;
+  }
+  selectors.query.value = '';
+  updateQueryResetVisibility(false);
+  if (typeof debouncedRequest?.cancel === 'function') {
+    debouncedRequest.cancel();
+  }
+  invalidateActiveFetch();
+  clearSuggestions();
+  hideDetails();
+  setStage('idle');
+  selectors.query.focus();
 }
 
 function setToggleState(kind) {
@@ -330,7 +358,19 @@ function computeItemScore(item, index) {
   } else if (item.home === 'probable') {
     scopeBoost = weights.home * 0.5;
   }
-  return baseScore + popularitySignal * weights.popularity + scopeBoost;
+  let queryBoost = 0;
+  const query = (state.lastQuery || '').toLowerCase();
+  if (query) {
+    const label = String(item.label || item.value || '').toLowerCase();
+    if (label === query) {
+      queryBoost = 5;
+    } else if (label.startsWith(query)) {
+      queryBoost = 3;
+    } else if (label.includes(query)) {
+      queryBoost = 1.5;
+    }
+  }
+  return baseScore + popularitySignal * weights.popularity + scopeBoost + queryBoost;
 }
 
 function rankSuggestions(items) {
@@ -502,12 +542,22 @@ function handleGlobalKeydown(event) {
 
 function debounce(fn, delay) {
   let timer = null;
-  return function debounced(...args) {
+  function debounced(...args) {
     if (timer) {
       window.clearTimeout(timer);
     }
-    timer = window.setTimeout(() => fn.apply(this, args), delay);
+    timer = window.setTimeout(() => {
+      timer = null;
+      fn.apply(this, args);
+    }, delay);
+  }
+  debounced.cancel = () => {
+    if (timer) {
+      window.clearTimeout(timer);
+      timer = null;
+    }
   };
+  return debounced;
 }
 
 function renderSuggestions(items) {
@@ -833,6 +883,7 @@ async function selectSuggestion(element) {
       : [selection.value, selection.addresses[0]].filter(Boolean).join(' ');
   if (selectors.query) {
     selectors.query.value = displayValue.trim();
+    updateQueryResetVisibility(Boolean(selectors.query.value.length));
   }
   wireActionLinks(selection);
   collapseSuggestions(element, selectionKey);
@@ -865,6 +916,7 @@ async function selectSuggestion(element) {
 
 async function requestSuggestions(query) {
   const trimmed = (query || '').trim();
+  state.lastQuery = trimmed;
   if (!trimmed) {
     clearSuggestions();
     hideDetails();
@@ -916,6 +968,7 @@ function handleQueryInput(event) {
     selectors.error.hidden = true;
   }
   const value = event.target.value || '';
+  updateQueryResetVisibility(Boolean(value.trim().length));
   if (state.selection) {
     hideDetails();
   }
@@ -957,6 +1010,9 @@ function initEvents() {
       }
     });
   }
+  if (selectors.queryReset) {
+    selectors.queryReset.addEventListener('click', clearQuery);
+  }
   if (selectors.copy) {
     selectors.copy.addEventListener('click', handleCopy);
   }
@@ -991,6 +1047,7 @@ function initEvents() {
   if (selectors.motionBackground) {
     selectors.motionBackground.addEventListener('input', handleMotionChange);
   }
+  updateQueryResetVisibility(Boolean(selectors.query && selectors.query.value && selectors.query.value.trim().length));
   document.addEventListener('keydown', handleGlobalKeydown);
 }
 

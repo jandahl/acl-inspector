@@ -6,15 +6,19 @@ services:
       context: ..
       dockerfile: ./Dockersetup/Dockerfile
     ports:
-      - "8083:8083"
+      # Host port 8084 keeps the container isolated from the default CLI port (8083).
+      - "8084:8083"
     volumes:
       - ../configs:/app/configs
       - aclinspector_cache:/app/cache
+      # Example: uncomment to persist logs on the host
+      # - ../logs:/app/logs
     # Command to override the Dockerfile CMD if needed, but for now, it's good.
     # command: ["python", "access-list-web.py", "--port", "8083", "--host", "0.0.0.0"]
     environment:
       - ACLINSPECTOR_CACHE_DIR=/app/cache
       - ACLINSPECTOR_SEARCH_LIMIT=${ACLINSPECTOR_SEARCH_LIMIT}
+      - ACLINSPECTOR_LOG_DIR=${ACLINSPECTOR_LOG_DIR:-/app/logs}
       # Optional per-vendor config roots (can be the same path)
       - ACLINSPECTOR_CONFIGS_CISCO=${ACLINSPECTOR_CONFIGS_CISCO:-/app/configs/cisco}
       - ACLINSPECTOR_CONFIGS_FORTIGATE=${ACLINSPECTOR_CONFIGS_FORTIGATE:-/app/configs/fortigate}

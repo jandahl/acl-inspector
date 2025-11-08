@@ -1,5 +1,6 @@
 SHELL := /bin/bash
 WEB_PORT ?= 8083
+WEB_WATCH_PORT ?= 8090
 THEMES_REPO ?= https://github.com/mbadolato/iTerm2-Color-Schemes.git
 THEMES_DIR ?= themes
 
@@ -50,7 +51,7 @@ web:
 	./access-list-web.py --port $(WEB_PORT)
 
 web-watch:
-	PYTHONPYCACHEPREFIX=.pyc_cache python3 scripts/web_autoreload.py --port $(WEB_PORT) \
+	PYTHONPYCACHEPREFIX=.pyc_cache python3 scripts/web_autoreload.py --port $(WEB_WATCH_PORT) \
 		$(if $(CONFIGS_CISCO),--configs-cisco $(CONFIGS_CISCO),) \
 		$(if $(CONFIGS_FORTIGATE),--configs-fortigate $(CONFIGS_FORTIGATE),) \
 		$(if $(POLL),--poll $(POLL),)

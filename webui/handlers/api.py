@@ -7,10 +7,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from parsers.cisco import asa as asa_parser
-from ..state import AppState
+from webui.shared.state import AppState
 from utils.config import clean_config_text, load_config_text
 
 TYPE_PRIORITY = {"context": -1, "object": 0, "group": 1, "literal": 2}
+CONTEXT_EXACT_MATCH_SCORE = -1.0
+CONTEXT_SUBSTRING_MATCH_SCORE = -0.5
 
 
 def _vendor_os_tag(vendor: str) -> str:
@@ -75,6 +77,7 @@ def _decorate_item(
     version: str = "auto",
 ) -> Dict[str, Any]:
     details = index_payload.get("object_details", {}) or {}
+    object_homes = index_payload.get("object_homes", {}) or {}
     addresses: List[str] = []
     if item.get("type") == "object":
         meta = details.get(item.get("value"))
@@ -103,12 +106,15 @@ def _decorate_item(
         signals.update(item["signals"])  # type: ignore[index]
     signals.setdefault("popularity", popularity)
     enriched["signals"] = signals
+    home_tag = ""
     if item.get("type") == "context":
-        enriched["home"] = "context"
-    elif addresses:
-        enriched["home"] = "home"
-    else:
-        enriched["home"] = "probable"
+        home_tag = "context"
+    elif item.get("type") == "object":
+        if object_homes.get(item.get("value")):
+            home_tag = "home"
+        elif addresses:
+            home_tag = "probable"
+    enriched["home"] = home_tag
     return enriched
 
 

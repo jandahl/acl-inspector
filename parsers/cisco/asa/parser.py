@@ -966,10 +966,11 @@ class ASAConfig:
                 return nets
             if token in self.network_object_groups:
                 if token in visited:
-                    self._network_cache[cache_key] = set()
-                    return set()
+                    cached_cycle = self._network_cache.get(cache_key)
+                    return set(cached_cycle) if cached_cycle is not None else set()
                 visited.add(token)
                 resolved: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]] = set()
+                self._network_cache[cache_key] = resolved
                 for m in self.network_object_groups[token]:
                     if isinstance(m, dict):
                         if 'group-object' in m:
@@ -978,8 +979,8 @@ class ASAConfig:
                             resolved.update(self.resolve_network(m['object'], visited))
                     elif isinstance(m, (ipaddress.IPv4Address, ipaddress.IPv4Network)):
                         resolved.add(m)
-                self._network_cache[cache_key] = set(resolved)
-                return resolved
+                visited.discard(token)
+                return set(resolved)
             try:
                 result = {to_ip_network(token)}
             except Exception:

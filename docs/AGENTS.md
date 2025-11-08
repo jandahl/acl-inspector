@@ -3,7 +3,7 @@ Agent Guidelines
 
 Migration Plan
 --------------
-- Factor the web UI into modular packages (`webui/server.py`, `webui/handlers`, `webui/templates`, `webui/themes`, `webui/indexer`, `webui/state`, `webui/settings`) to keep responsibilities focused and tests targeted.
+- Factor the web UI into modular packages (`analysis_core/`, `webui/shared/`, `webui/v1_legacy/`, `webui/v2_singularity/`, `webui/server.py`) to keep responsibilities focused and tests targeted.
 - Add a JSON settings loader that feeds both local CLI runs and Docker builds while allowing CLI/env overrides.
 - Ship experimental features as opt-in modules under `webui/beta/`, controlled via the settings file.
 - Remove the monolithic `access-list-web.py` once the refactor lands; the new, slimmer entrypoint will simply bootstrap the modular server.
@@ -55,7 +55,8 @@ Future abstractions and goals
 - Vendor abstraction: introduce a pluggable parser layer to support FortiGate (with VDOMs) and others
 - Cross-vendor diff: normalize flattened entries to a common model for comparison
 - Port-aware matching and richer rule reporting (service/ports) [in progress: basic filtering via --proto/--dport]
- - Fuzzy predictive search (UI toggle) and a minimal repo indexer (`scripts/index_repo.py`) to prebuild indices for production repos (e.g., RANCID)
+- Fuzzy predictive search (UI toggle) and a minimal repo indexer (`scripts/index_repo.py`) to prebuild indices for production repos (e.g., RANCID)
+- Explore an interactive "Singularity TUI" to bring the v2 search experience to CLI workflows
 
 Near-term roadmap (execution order)
 -----------------------------------

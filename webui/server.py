@@ -10,14 +10,16 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
-from http.server import HTTPServer
+from http.server import ThreadingHTTPServer
 from importlib import import_module
 from pathlib import Path
+import threading
 from typing import Any, Dict, Optional, Sequence
 from urllib.parse import parse_qs, urlparse
 
-from . import settings as settings_mod
-from .state import AppState
+from .shared import logging as logging_mod
+from .shared import settings as settings_mod
+from .shared.state import AppState
 from .router import Request, RouteNotFound, Router
 from .handlers import register_api, register_pages
 from .handlers.static import register_static
@@ -168,11 +170,12 @@ def _make_handler(router: Router):
     return ModularHandler
 
 
-def build_httpd(settings: settings_mod.Settings, state: AppState, router: Router) -> HTTPServer:
-    """Construct an `HTTPServer` instance with modular routing and legacy fallback."""
+def build_httpd(settings: settings_mod.Settings, state: AppState, router: Router) -> ThreadingHTTPServer:
+    """Construct a multi-threaded HTTP server with modular routing and legacy fallback."""
 
     handler_cls = _make_handler(router)
-    server = HTTPServer((settings.server.host, settings.server.port), handler_cls)
+    server = ThreadingHTTPServer((settings.server.host, settings.server.port), handler_cls)
+    server.daemon_threads = True
     server.config_dirs = dict(settings.paths.configs)
     server.index_cache = {}
     server.cache_dir = settings.paths.cache_dir
@@ -184,6 +187,24 @@ def build_httpd(settings: settings_mod.Settings, state: AppState, router: Router
     return server
 
 
+def _start_prewarm_thread(server: ThreadingHTTPServer) -> Optional[threading.Thread]:
+    """Kick off config prewarming in the background to avoid blocking startup."""
+
+    if not hasattr(_legacy, "prewarm_all_configs"):
+        return None
+
+    def _worker() -> None:
+        try:
+            count = _legacy.prewarm_all_configs(server)
+            print(f"Prewarmed indices for {count} config(s).")
+        except Exception as exc:  # pragma: no cover - defensive logging
+            print(f"Prewarm failed: {exc}")
+
+    thread = threading.Thread(target=_worker, name="acl-prewarm", daemon=True)
+    thread.start()
+    return thread
+
+
 def run_server(settings: settings_mod.Settings) -> None:
     """Launch the HTTP server, mirroring the legacy main behaviour."""
 
@@ -193,14 +214,17 @@ def run_server(settings: settings_mod.Settings) -> None:
     register_pages(router, state)
     register_static(router, state)
     server = build_httpd(settings, state, router)
+    prewarm_thread: Optional[threading.Thread] = None
     if settings.server.prewarm_all and hasattr(_legacy, "prewarm_all_configs"):
-        count = _legacy.prewarm_all_configs(server)
-        print(f"Prewarmed indices for {count} config(s).")
+        print("Prewarming config indices in background...")
+        prewarm_thread = _start_prewarm_thread(server)
     print(f"Web UI running at http://{settings.server.host}:{settings.server.port}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         print("\nShutting down...")
+    finally:
+        server.server_close()
 
 
 def run(argv: Optional[Sequence[str]] = None) -> None:
@@ -232,3 +256,6 @@ def run(argv: Optional[Sequence[str]] = None) -> None:
         cli_overrides=overrides,
     )
     run_server(settings)
+    log_path = logging_mod.setup_logging(settings.paths.logs_dir)
+    if log_path:
+        print(f"Logging to {log_path}")

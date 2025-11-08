@@ -2,30 +2,65 @@
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 import re
 from collections import defaultdict
-from typing import Dict, Set
+from typing import Dict, List, Set, Union
 
 from parsers.cisco import asa as asa_parser
 
 logger = logging.getLogger(__name__)
+
+OBJECT_BASE_POPULARITY = 1.0
+GROUP_BASE_POPULARITY = 1.0
+
+NetworkLike = Union[ipaddress.IPv4Network, ipaddress.IPv6Network]
+AddressLike = Union[ipaddress.IPv4Address, ipaddress.IPv6Address]
+
+
+def _collect_interface_networks(cfg: asa_parser.ASAConfig) -> List[NetworkLike]:
+    nets: List[NetworkLike] = []
+    for meta in getattr(cfg, "interfaces", {}).values():
+        candidate = meta.get("ipv4")
+        if isinstance(candidate, (ipaddress.IPv4Network, ipaddress.IPv6Network)):
+            nets.append(candidate)
+    return nets
+
+
+def _value_lives_on_interface(
+    value: Union[AddressLike, NetworkLike], interfaces: List[NetworkLike]
+) -> bool:
+    if not interfaces:
+        return False
+    if isinstance(value, (ipaddress.IPv4Address, ipaddress.IPv6Address)):
+        return any(value in net for net in interfaces if net.version == value.version)
+    if isinstance(value, (ipaddress.IPv4Network, ipaddress.IPv6Network)):
+        return any(
+            value.subnet_of(net) or value == net for net in interfaces if net.version == value.version
+        )
+    return False
 
 
 def build_index(text: str) -> Dict[str, object]:
     """Build predictive-search index for ASA configs."""
 
     cfg = asa_parser.ASAConfig(text)
+    interface_networks = _collect_interface_networks(cfg)
     objects = sorted(cfg.network_objects.keys())
     groups = sorted(cfg.network_object_groups.keys())
     literals: Set[str] = set()
     details: Dict[str, Dict[str, object]] = {}
+    object_homes: Dict[str, bool] = {}
     for name, members in cfg.network_objects.items():
         if not members:
             continue
         addresses = sorted(str(entry) for entry in members)
         literals.update(addresses)
         details[name] = {"addresses": addresses}
+        object_homes[name] = any(
+            _value_lives_on_interface(member, interface_networks) for member in members
+        )
 
     object_popularity: Dict[str, float] = defaultdict(float)
     group_popularity: Dict[str, float] = defaultdict(float)
@@ -68,5 +103,6 @@ def build_index(text: str) -> Dict[str, object]:
         "groups": groups,
         "literals": sorted(literals),
         "object_details": details,
+        "object_homes": object_homes,
         "popularity": popularity,
     }
