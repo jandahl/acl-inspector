@@ -44,9 +44,26 @@ access-list OUT extended permit tcp any object OBJ_HOST eq 443
         self.assertEqual(j.get('count'), count)
         self.assertIn('vendor_counts', j)
         self.assertIn('asa', j.get('vendor_counts', {}))
+
+        # Verify enhanced manifest metadata
+        self.assertIn('confidence_counts', j)
+        self.assertIsInstance(j.get('confidence_counts'), dict)
+        self.assertIn('files', j)
+        files_list = j.get('files', [])
+        self.assertGreaterEqual(len(files_list), 1)
+
+        # Verify file entry has new metadata
+        first_file = files_list[0]
+        self.assertIn('vendor', first_file)
+        self.assertIn('os', first_file)
+        self.assertIn('score', first_file)
+        self.assertIn('reason', first_file)
+        self.assertIn('confidence', first_file)
+        self.assertIn(first_file['confidence'], ['high', 'medium', 'low'])
+
         # at least one cache file besides manifest
-        files = [f for f in os.listdir(self.tmp_cache) if f.endswith('.json') and f != 'manifest.json']
-        self.assertGreaterEqual(len(files), 1)
+        cache_files = [f for f in os.listdir(self.tmp_cache) if f.endswith('.json') and f != 'manifest.json']
+        self.assertGreaterEqual(len(cache_files), 1)
 
 
 if __name__ == '__main__':

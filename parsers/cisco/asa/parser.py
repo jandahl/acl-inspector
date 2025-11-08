@@ -42,6 +42,15 @@ from .nat import (
     match_nat_interface,
     evaluate_nat,
 )
+from .utils import to_ip_network, nets_overlap
+from .acl_matching import (
+    _has_any_endpoint,
+    _pick_preferred_address,
+    _entry_summary,
+    _binding_applicable,
+    _evaluate_acl_flow,
+)
+from . import ir_export
 
 __all__ = [
     "ASAConfig",
@@ -117,14 +126,6 @@ re_acl = re.compile(
 re_tokenized = re.compile(r"\S+")
 
 
-def to_ip_network(ip: str, mask: Optional[str] = None) -> Union[ipaddress.IPv4Address, ipaddress.IPv4Network]:
-    if mask is not None:
-        return ipaddress.ip_network(f"{ip}/{mask}", strict=False)
-    if "/" in ip:
-        return ipaddress.ip_network(ip, strict=False)
-    return ipaddress.ip_address(ip)
-
-
 class ASAConfig:
     def __init__(self, text: str) -> None:
         self.lines = [line.rstrip() for line in text.splitlines()]
@@ -141,6 +142,9 @@ class ASAConfig:
         self.interfaces: Dict[str, dict] = {}
         self.acl_bindings: Dict[str, Dict[str, Optional[str]]] = {}
         self.nat_rules: List[dict] = []
+        # Routing (static and dynamic)
+        self.static_routes: List[dict] = []
+        self.dynamic_routing: Dict[str, dict] = {}  # key: protocol_processid
         self._network_cache: Dict[str, Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]]] = {}
         self._service_group_cache: Dict[str, Tuple[dict, ...]] = {}
         self.parse()
@@ -150,165 +154,20 @@ class ASAConfig:
     def to_ir(self, device_name: Optional[str] = None) -> "ir.Device":
         """Map the parsed ASA config to the common IR.Device shape.
 
-        This preserves both raw and normalized views of ACLs, includes basic
-        interface context, network objects and groups, service groups, and NAT
-        rules parsed by this module. Routes are not parsed yet.
+        Delegates to ir_export.to_ir() for the actual conversion. This preserves
+        both raw and normalized views of ACLs, includes basic interface context,
+        network objects and groups, service groups, and NAT rules.
+
+        Args:
+            device_name: Optional device name to include in IR
+
+        Returns:
+            ir.Device object representing the configuration
+
+        See Also:
+            parsers.cisco.asa.ir_export.to_ir: Full documentation of IR export process
         """
-        if ir is None:
-            raise RuntimeError("IR module not available")
-        # Version detection best-effort from banner lines
-        version = 'unknown'
-        for ln in self.lines:
-            m = re.search(r"ASA\s+Version\s+([^\s]+)", ln, flags=re.IGNORECASE)
-            if m:
-                version = m.group(1)
-                break
-            m2 = re.search(r"Adaptive Security Appliance Software\s+Version\s+([^\s]+)", ln, flags=re.IGNORECASE)
-            if m2:
-                version = m2.group(1)
-                break
-        # Interfaces
-        interfaces: List[ir.Interface] = []
-        for name, meta in self.interfaces.items():
-            ipv4 = meta.get('ipv4')
-            interfaces.append(ir.Interface(
-                name=name,
-                physical=meta.get('phys'),
-                ipv4=str(ipv4) if ipv4 else None,
-                security_level=meta.get('security_level'),
-            ))
-        # Objects
-        objects: List[ir.Object] = []
-        for name, nets in self.network_objects.items():
-            literals = []
-            for n in nets:
-                try:
-                    literals.append(str(n))
-                except Exception:
-                    pass
-            objects.append(ir.Object(name=name, literals=sorted(literals)))
-        # Groups (network)
-        groups: List[ir.Group] = []
-        for name, members in self.network_object_groups.items():
-            mlist: List[ir.GroupMember] = []
-            for m in members:
-                if isinstance(m, dict):
-                    if 'group-object' in m:
-                        mlist.append(ir.GroupMember(kind='group', ref=m['group-object']))
-                    elif 'object' in m:
-                        mlist.append(ir.GroupMember(kind='object', ref=m['object']))
-                else:
-                    mlist.append(ir.GroupMember(kind='literal', literal=str(m)))
-            groups.append(ir.Group(name=name, members=mlist))
-        # Service groups
-        svc_groups: List[ir.ServiceGroup] = []
-        if hasattr(self, 'service_object_groups'):
-            for name, members in getattr(self, 'service_object_groups').items():
-                out: List[dict] = []
-                for m in members:
-                    if isinstance(m, dict) and 'group-object' in m:
-                        out.append({'group': m['group-object']})
-                    elif isinstance(m, dict) and 'object' in m:
-                        out.append({'object': m['object']})
-                    elif isinstance(m, dict) and 'proto' in m:
-                        spec = {'proto': m.get('proto')}
-                        if m.get('op'):
-                            spec.update({'op': m.get('op'), 'v1': m.get('v1'), 'v2': m.get('v2')})
-                        out.append(spec)
-                svc_groups.append(ir.ServiceGroup(name=name, members=out))
-        # ACLs and entries (flattened)
-        flattened = self.flatten_acl()
-        acl_map: Dict[str, List[ir.ACLEntry]] = {}
-        for e in flattened:
-            src = sorted([str(s) for s in e.get('src', [])])
-            dst = sorted([str(d) for d in e.get('dst', [])])
-            svc = e.get('svc') or {}
-            # normalize sets to lists for IR
-            svc_norm = {
-                'proto': svc.get('proto'),
-                'service_group_at_proto': svc.get('service_group_at_proto'),
-                'dst_ports': [
-                    {'op': op, 'start': rng[0], 'end': rng[1]}
-                    for (op, rng) in svc.get('dst_ports', [])
-                ],
-                'dst_service_groups': sorted(list(svc.get('dst_service_groups') or [])),
-                'dst_service_objects': sorted(list(svc.get('dst_service_objects') or [])),
-            }
-            acl_name = e.get('acl')
-            binding = self.acl_bindings.get(acl_name) if acl_name else None
-            bound_to = self._binding_target_value(binding)
-            # Extract direction from binding for IR export
-            direction = None
-            if binding:
-                scope = (binding.get('scope') or '').lower()
-                if scope == 'global':
-                    direction = 'global'
-                elif scope == 'control-plane':
-                    direction = binding.get('direction') or 'any'
-                else:
-                    direction = binding.get('direction') or 'any'
-            entry = ir.ACLEntry(
-                action=e.get('action'),
-                proto=e.get('proto'),
-                src=src,
-                dst=dst,
-                svc=svc_norm,
-                raw=e.get('raw'),
-                acl=acl_name,
-                bound_to=bound_to,
-                binding=binding,
-                direction=direction,
-            )
-            acl_map.setdefault(acl_name or 'UNNAMED', []).append(entry)
-        ir_acls: List[ir.ACL] = []
-        for name, entries in acl_map.items():
-            binding = self.acl_bindings.get(name)
-            bound_to = self._binding_target_value(binding)
-            ir_acls.append(ir.ACL(name=name, bound_to=bound_to, entries=entries, binding=binding))
-        # NAT rules
-        ir_nats: List[ir.NAT] = []
-        for idx, r in enumerate(self.nat_rules):
-            kind = r.get('type') or 'manual'
-            detail: Dict[str, Union[str, int, dict, None]] = {}
-            section = r.get('section')
-            sequence = r.get('sequence')
-            precedence = self._nat_precedence_key(section if section is not None else (2 if kind == 'auto' else 1), sequence, idx)
-            if r.get('type') == 'auto':
-                detail = {
-                    'real_object': r.get('real_object'),
-                    'kind': r.get('kind'),
-                    'mapped': r.get('mapped'),
-                    'service': r.get('service'),
-                    'sequence': sequence,
-                    'precedence': precedence,
-                }
-            else:
-                detail = {
-                    'source': r.get('source'),
-                    'destination': r.get('destination'),
-                    'service': r.get('service'),
-                    'sequence': sequence,
-                    'precedence': precedence,
-                }
-            ir_nats.append(ir.NAT(
-                kind=kind,
-                src_if=r.get('src_if'),
-                dst_if=r.get('dst_if'),
-                section=section,
-                detail=detail,
-                raw=r.get('raw')
-            ))
-        dev = ir.Device(
-            vendor='asa', os='ASA', version=version, name=device_name or None,
-            interfaces=interfaces,
-            objects=objects,
-            groups=groups,
-            service_groups=svc_groups,
-            acls=ir_acls,
-            nats=ir_nats,
-            routes=[],
-        )
-        return dev
+        return ir_export.to_ir(self, device_name)
 
     def _consume_endpoint(self, tokens: List[str]) -> Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]]:
         nets: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]] = set()
@@ -621,6 +480,252 @@ class ASAConfig:
                     })
                     i += 1
                     continue
+
+            # Static routes: route <interface> <destination> <netmask> <gateway> [distance] [track N]
+            m_route = re.match(r"^route\s+(?P<iface>\S+)\s+(?P<dest>\S+)\s+(?P<mask>\S+)\s+(?P<gw>\S+)(?:\s+(?P<rest>.*))?$", line, re.IGNORECASE)
+            if m_route:
+                iface = m_route.group('iface')
+                dest_ip = m_route.group('dest')
+                mask = m_route.group('mask')
+                gateway = m_route.group('gw')
+                rest = (m_route.group('rest') or '').strip()
+
+                # Parse optional distance and track
+                distance = None
+                track = None
+                tunneled = False
+                rest_tokens = rest.split() if rest else []
+                if rest_tokens:
+                    # First token after gateway is usually distance
+                    if rest_tokens[0].isdigit():
+                        distance = int(rest_tokens[0])
+                        rest_tokens = rest_tokens[1:]
+                    # Check for 'tunneled' keyword
+                    if 'tunneled' in [t.lower() for t in rest_tokens]:
+                        tunneled = True
+                    # Check for 'track N'
+                    for idx, token in enumerate(rest_tokens):
+                        if token.lower() == 'track' and idx + 1 < len(rest_tokens):
+                            try:
+                                track = int(rest_tokens[idx + 1])
+                            except ValueError:
+                                pass
+
+                # Convert to CIDR
+                try:
+                    net = to_ip_network(dest_ip, mask)
+                    dest_cidr = str(net)
+                except Exception:
+                    dest_cidr = f"{dest_ip}/{mask}"
+
+                self.static_routes.append({
+                    'destination': dest_cidr,
+                    'next_hop': gateway if gateway.lower() != 'dhcp' else None,
+                    'interface': iface,
+                    'distance': distance,
+                    'track': track,
+                    'tunneled': tunneled,
+                    'raw': line.strip(),
+                })
+                i += 1
+                continue
+
+            # Dynamic routing protocols: router <protocol> <process-id>
+            m_router = re.match(r"^router\s+(?P<protocol>ospf|eigrp|bgp|rip)\s*(?P<pid>\d*)$", line, re.IGNORECASE)
+            if m_router:
+                protocol = m_router.group('protocol').lower()
+                process_id = m_router.group('pid') or None
+                key = f"{protocol}_{process_id}" if process_id else protocol
+
+                routing_config = {
+                    'protocol': protocol,
+                    'process_id': process_id,
+                    'router_id': None,
+                    'networks': [],
+                    'neighbors': [],
+                    'redistribute': [],
+                    'areas': [],
+                    'passive_interfaces': [],
+                    'timers': {},
+                    'authentication': {},
+                    'distance': {},
+                    'config': {},
+                    'raw_lines': [line.strip()],
+                }
+
+                # Parse routing protocol block
+                i += 1
+                while i < L and (self.lines[i].startswith(' ') or self.lines[i].strip() == ''):
+                    if not self.lines[i].strip():
+                        i += 1
+                        continue
+                    rline = self.lines[i]
+                    routing_config['raw_lines'].append(rline.strip())
+
+                    # Router ID
+                    m_rid = re.match(r"^\s*router-id\s+(?P<rid>\S+)", rline, re.IGNORECASE)
+                    if m_rid:
+                        routing_config['router_id'] = m_rid.group('rid')
+                        i += 1
+                        continue
+
+                    # Network statement
+                    m_net = re.match(r"^\s*network\s+(?P<net>\S+)(?:\s+(?P<mask>\S+))?(?:\s+area\s+(?P<area>\S+))?", rline, re.IGNORECASE)
+                    if m_net:
+                        network = m_net.group('net')
+                        mask = m_net.group('mask')
+                        area = m_net.group('area')
+                        net_entry = {'network': network}
+                        if mask:
+                            net_entry['mask'] = mask
+                        if area:
+                            net_entry['area'] = area
+                        routing_config['networks'].append(net_entry)
+                        i += 1
+                        continue
+
+                    # Neighbor (BGP)
+                    m_neigh = re.match(r"^\s*neighbor\s+(?P<ip>\S+)\s+remote-as\s+(?P<as>\d+)", rline, re.IGNORECASE)
+                    if m_neigh:
+                        routing_config['neighbors'].append({
+                            'ip': m_neigh.group('ip'),
+                            'remote_as': m_neigh.group('as'),
+                        })
+                        i += 1
+                        continue
+
+                    # Redistribute
+                    m_redis = re.match(r"^\s*redistribute\s+(?P<source>\S+)(?:\s+(?P<options>.*))?", rline, re.IGNORECASE)
+                    if m_redis:
+                        redis_entry = {'source': m_redis.group('source')}
+                        options = m_redis.group('options')
+                        if options:
+                            if 'subnets' in options.lower():
+                                redis_entry['subnets'] = True
+                            if 'metric' in options.lower():
+                                m_metric = re.search(r"metric\s+(\d+)", options, re.IGNORECASE)
+                                if m_metric:
+                                    redis_entry['metric'] = int(m_metric.group(1))
+                        routing_config['redistribute'].append(redis_entry)
+                        i += 1
+                        continue
+
+                    # Passive interface
+                    m_passive = re.match(r"^\s*passive-interface\s+(?P<iface>\S+)", rline, re.IGNORECASE)
+                    if m_passive:
+                        routing_config['passive_interfaces'].append(m_passive.group('iface'))
+                        i += 1
+                        continue
+
+                    # Distance (administrative distance)
+                    m_dist = re.match(r"^\s*distance\s+(?P<value>\d+)", rline, re.IGNORECASE)
+                    if m_dist:
+                        routing_config['distance']['default'] = int(m_dist.group('value'))
+                        i += 1
+                        continue
+
+                    # OSPF area authentication
+                    m_area_auth = re.match(r"^\s*area\s+(?P<area>\S+)\s+authentication(?:\s+(?P<type>message-digest))?", rline, re.IGNORECASE)
+                    if m_area_auth:
+                        area_id = m_area_auth.group('area')
+                        auth_type = m_area_auth.group('type') or 'simple'
+                        if 'areas_config' not in routing_config:
+                            routing_config['areas_config'] = {}
+                        if area_id not in routing_config['areas_config']:
+                            routing_config['areas_config'][area_id] = {}
+                        routing_config['areas_config'][area_id]['authentication'] = auth_type
+                        i += 1
+                        continue
+
+                    # OSPF area stub/nssa
+                    m_area_stub = re.match(r"^\s*area\s+(?P<area>\S+)\s+(?P<type>stub|nssa)(?:\s+(?P<opts>.*))?", rline, re.IGNORECASE)
+                    if m_area_stub:
+                        area_id = m_area_stub.group('area')
+                        area_type = m_area_stub.group('type')
+                        opts = m_area_stub.group('opts') or ''
+                        if 'areas_config' not in routing_config:
+                            routing_config['areas_config'] = {}
+                        if area_id not in routing_config['areas_config']:
+                            routing_config['areas_config'][area_id] = {}
+                        routing_config['areas_config'][area_id]['type'] = area_type
+                        if 'no-summary' in opts.lower():
+                            routing_config['areas_config'][area_id]['no_summary'] = True
+                        i += 1
+                        continue
+
+                    # Timers (BGP/OSPF)
+                    m_timers = re.match(r"^\s*timers\s+(?P<type>\S+)\s+(?P<val1>\d+)(?:\s+(?P<val2>\d+))?", rline, re.IGNORECASE)
+                    if m_timers:
+                        timer_type = m_timers.group('type')
+                        routing_config['timers'][timer_type] = {
+                            'value1': int(m_timers.group('val1')),
+                            'value2': int(m_timers.group('val2')) if m_timers.group('val2') else None
+                        }
+                        i += 1
+                        continue
+
+                    # BGP neighbor password
+                    m_nbr_pass = re.match(r"^\s*neighbor\s+(?P<ip>\S+)\s+password\s+(?P<pwd>.+)", rline, re.IGNORECASE)
+                    if m_nbr_pass:
+                        nbr_ip = m_nbr_pass.group('ip')
+                        # Find existing neighbor or create new
+                        for nbr in routing_config['neighbors']:
+                            if nbr.get('ip') == nbr_ip:
+                                nbr['password'] = True  # Don't store actual password
+                                break
+                        i += 1
+                        continue
+
+                    # BGP neighbor description
+                    m_nbr_desc = re.match(r"^\s*neighbor\s+(?P<ip>\S+)\s+description\s+(?P<desc>.+)", rline, re.IGNORECASE)
+                    if m_nbr_desc:
+                        nbr_ip = m_nbr_desc.group('ip')
+                        desc = m_nbr_desc.group('desc').strip()
+                        for nbr in routing_config['neighbors']:
+                            if nbr.get('ip') == nbr_ip:
+                                nbr['description'] = desc
+                                break
+                        i += 1
+                        continue
+
+                    # BGP neighbor timers
+                    m_nbr_timers = re.match(r"^\s*neighbor\s+(?P<ip>\S+)\s+timers\s+(?P<keepalive>\d+)\s+(?P<holdtime>\d+)", rline, re.IGNORECASE)
+                    if m_nbr_timers:
+                        nbr_ip = m_nbr_timers.group('ip')
+                        for nbr in routing_config['neighbors']:
+                            if nbr.get('ip') == nbr_ip:
+                                nbr['timers'] = {
+                                    'keepalive': int(m_nbr_timers.group('keepalive')),
+                                    'holdtime': int(m_nbr_timers.group('holdtime'))
+                                }
+                                break
+                        i += 1
+                        continue
+
+                    # Default information originate (OSPF)
+                    if re.match(r"^\s*default-information\s+originate", rline, re.IGNORECASE):
+                        routing_config['config']['default_information_originate'] = True
+                        i += 1
+                        continue
+
+                    # Log adjacency changes
+                    if re.match(r"^\s*log-adjacency-changes", rline, re.IGNORECASE):
+                        routing_config['config']['log_adjacency_changes'] = True
+                        i += 1
+                        continue
+
+                    # Auto-cost reference bandwidth (OSPF)
+                    m_autocost = re.match(r"^\s*auto-cost\s+reference-bandwidth\s+(?P<bw>\d+)", rline, re.IGNORECASE)
+                    if m_autocost:
+                        routing_config['config']['auto_cost_reference_bandwidth'] = int(m_autocost.group('bw'))
+                        i += 1
+                        continue
+
+                    i += 1
+
+                self.dynamic_routing[key] = routing_config
+                continue
+
             i += 1
 
     def _build_reverse_indexes(self) -> None:
@@ -826,30 +931,33 @@ class ASAConfig:
         # Global ACLs always apply
         acls.extend(self.acls_for_global())
 
-        # Store physical interfaces in vendor context for reference
-        ingress_zone = physical_ingress
-        egress_zone = physical_egress
+        # ingress_zone/egress_zone represent IP ownership, not physical packet path
+        # ingress_zone = interface where source IP resides (None if external)
+        # egress_zone = interface where destination IP resides (None if external)
+        ingress_zone = src_local_if
+        egress_zone = dst_local_if
 
         # Collect applicable NAT rules
-        # NAT rules are evaluated based on interface pair (src_if, dst_if)
+        # NAT rules are evaluated based on interface pair (physical path)
         nat_candidates = []
         for rule in self.nat_rules:
-            if self._nat_applies_to_flow(rule, ingress_zone, egress_zone):
+            if self._nat_applies_to_flow(rule, physical_ingress, physical_egress):
                 # Include raw config line as identifier
                 nat_id = rule.get('raw', f"NAT-{rule.get('type', 'unknown')}")
                 nat_candidates.append(nat_id)
 
         # Build vendor-specific context
-        ingress_sec = self.security_level_for_interface(ingress_zone) or 0
-        egress_sec = self.security_level_for_interface(egress_zone) or 0
+        # Security levels are based on physical path, not IP ownership
+        ingress_sec = self.security_level_for_interface(physical_ingress) or 0
+        egress_sec = self.security_level_for_interface(physical_egress) or 0
 
         vendor_ctx = {
             'ingress_security_level': ingress_sec,
             'egress_security_level': egress_sec,
             # ASA implicit permit: higher sec to lower sec (no ACL needed)
-            'implicit_permit': ingress_zone and egress_zone and ingress_sec > egress_sec,
-            'ingress_interface': ingress_zone,
-            'egress_interface': egress_zone,
+            'implicit_permit': physical_ingress and physical_egress and ingress_sec > egress_sec,
+            'physical_ingress_interface': physical_ingress,
+            'physical_egress_interface': physical_egress,
             'src_local_interface': src_local_if,
             'dst_local_interface': dst_local_if,
         }
@@ -860,8 +968,8 @@ class ASAConfig:
             proto=proto,
             src_port=src_port,
             dst_port=dst_port,
-            ingress_zone=ingress_zone,  # Physical ingress interface
-            egress_zone=egress_zone,     # Physical egress interface
+            ingress_zone=ingress_zone,  # Interface where src IP resides
+            egress_zone=egress_zone,     # Interface where dst IP resides
             flow_direction=direction,
             applicable_policies=acls,
             applicable_nats=nat_candidates,
@@ -1266,158 +1374,247 @@ class ASAConfig:
                 })
         return entries
 
+    def _packet_matches_acl_entry(
+        self,
+        packet: dict,
+        entry: dict
+    ) -> bool:
+        """Check if a packet matches an ACL entry.
 
-def nets_overlap(set_a: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]], set_b: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]]) -> bool:
-    for net_a in set_a:
-        if not isinstance(net_a, (ipaddress.IPv4Address, ipaddress.IPv4Network)):
-            continue
-        for net_b in set_b:
-            if not isinstance(net_b, (ipaddress.IPv4Address, ipaddress.IPv4Network)):
-                continue
-            if isinstance(net_a, ipaddress.IPv4Address) and isinstance(net_b, ipaddress.IPv4Address):
-                if net_a == net_b:
-                    return True
-            elif isinstance(net_a, ipaddress.IPv4Network) and isinstance(net_b, ipaddress.IPv4Address):
-                if net_b in net_a:
-                    return True
-            elif isinstance(net_a, ipaddress.IPv4Address) and isinstance(net_b, ipaddress.IPv4Network):
-                if net_a in net_b:
-                    return True
-            elif isinstance(net_a, ipaddress.IPv4Network) and isinstance(net_b, ipaddress.IPv4Network):
-                if net_a.overlaps(net_b):
-                    return True
-    return False
+        Args:
+            packet: Dict with src_ip, dst_ip, proto, src_port, dst_port (all as objects)
+            entry: Flattened ACL entry dict
 
+        Returns:
+            True if packet matches all criteria in the entry
+        """
+        # Match protocol
+        entry_proto = entry.get('proto', '').lower()
+        packet_proto = packet.get('proto', '').lower()
 
-def _has_any_endpoint(e: dict) -> bool:
-    any4 = ipaddress.ip_network('0.0.0.0/0')
-    try:
-        any6 = ipaddress.ip_network('::/0')
-    except Exception:
-        any6 = None
-    for side in ('src', 'dst'):
-        for n in e.get(side, set()):
-            if isinstance(n, ipaddress.IPv4Network) and n == any4:
-                return True
-            if any6 is not None and isinstance(n, type(any6)) and n == any6:  # type: ignore
-                return True
-    return False
+        # Handle service-group at proto position
+        if entry.get('svc', {}).get('service_group_at_proto'):
+            # Service group matching not fully implemented yet
+            # For now, consider it a match if packet has a protocol
+            pass
+        elif entry_proto and entry_proto not in ('ip', 'any'):
+            if packet_proto != entry_proto:
+                return False
 
+        # Match source IP
+        src_ip = packet.get('src_ip')
+        entry_srcs = entry.get('src', [])
+        if src_ip and entry_srcs:
+            src_match = False
+            for src_spec in entry_srcs:
+                if isinstance(src_spec, str):
+                    if src_spec in ('any', 'any4'):
+                        src_match = True
+                        break
+                    # Try resolving object/group names
+                    resolved = self.resolve_object_or_group(src_spec)
+                    if nets_overlap({src_ip}, resolved):
+                        src_match = True
+                        break
+                elif isinstance(src_spec, (ipaddress.IPv4Address, ipaddress.IPv4Network)):
+                    if isinstance(src_ip, ipaddress.IPv4Address):
+                        if src_spec == src_ip or (isinstance(src_spec, ipaddress.IPv4Network) and src_ip in src_spec):
+                            src_match = True
+                            break
+            if not src_match:
+                return False
 
-def _pick_preferred_address(nets: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network, str]]) -> Optional[ipaddress.IPv4Address]:
-    addresses = sorted([n for n in nets if isinstance(n, ipaddress.IPv4Address)])
-    if addresses:
-        return addresses[0]
-    networks = sorted([n for n in nets if isinstance(n, ipaddress.IPv4Network)], key=lambda n: (-n.prefixlen, str(n)))
-    if networks:
-        return networks[0].network_address
-    return None
+        # Match destination IP
+        dst_ip = packet.get('dst_ip')
+        entry_dsts = entry.get('dst', [])
+        if dst_ip and entry_dsts:
+            dst_match = False
+            for dst_spec in entry_dsts:
+                if isinstance(dst_spec, str):
+                    if dst_spec in ('any', 'any4'):
+                        dst_match = True
+                        break
+                    # Try resolving object/group names
+                    resolved = self.resolve_object_or_group(dst_spec)
+                    if nets_overlap({dst_ip}, resolved):
+                        dst_match = True
+                        break
+                elif isinstance(dst_spec, (ipaddress.IPv4Address, ipaddress.IPv4Network)):
+                    if isinstance(dst_ip, ipaddress.IPv4Address):
+                        if dst_spec == dst_ip or (isinstance(dst_spec, ipaddress.IPv4Network) and dst_ip in dst_spec):
+                            dst_match = True
+                            break
+            if not dst_match:
+                return False
 
+        # Match destination port (if protocol is tcp/udp)
+        if packet_proto in ('tcp', 'udp'):
+            dst_port = packet.get('dst_port')
+            svc = entry.get('svc', {})
+            dst_ports = svc.get('dst_ports', [])
 
-def _entry_summary(entry: dict) -> str:
-    src_str = ', '.join(sorted(str(s) for s in entry.get('src', [])))
-    dst_str = ', '.join(sorted(str(s) for s in entry.get('dst', [])))
-    svc = entry.get('svc') or {}
-    parts = []
-    proto = svc.get('proto') or entry.get('proto')
-    if proto:
-        parts.append(str(proto))
-    sg = svc.get('service_group_at_proto')
-    if sg and sg.get('name'):
-        parts.append(f"{sg.get('kind')}:{sg.get('name')}")
-    port_parts = []
-    for op, (p1, p2) in svc.get('dst_ports', []):
-        if op == 'range':
-            port_parts.append(f"{p1}-{p2}")
-        else:
-            port_parts.append(f"{op} {p1}")
-    for g in sorted(list(svc.get('dst_service_groups', []))):
-        port_parts.append(f"group:{g}")
-    for o in sorted(list(svc.get('dst_service_objects', []))):
-        port_parts.append(f"object:{o}")
-    svc_str = ''
-    if parts or port_parts:
-        head = ' '.join(parts) if parts else ''
-        tail = (' ports=' + ','.join(port_parts)) if port_parts else ''
-        svc_str = f" {head}{tail}".rstrip()
-    binding = entry.get('binding') or {}
-    bind_str = ''
-    if binding:
-        scope = (binding.get('scope') or '').lower()
-        direction = binding.get('direction')
-        interface = binding.get('interface')
-        if scope == 'global':
-            bind_str = ' bind=global'
-        elif interface:
-            bind_str = f" bind={interface}{f'({direction})' if direction else ''}"
-        elif scope:
-            bind_str = f" bind={scope}"
-    return f"{entry['action']}{(' ' + entry['proto']) if entry.get('proto') else ''}{svc_str} src=[{src_str}] dst=[{dst_str}]{bind_str}"
+            if dst_port is not None and dst_ports:
+                port_match = False
+                for op, (p1, p2) in dst_ports:
+                    if op == 'eq' and p1 == dst_port:
+                        port_match = True
+                        break
+                    elif op == 'range' and p1 is not None and p2 is not None:
+                        if p1 <= dst_port <= p2:
+                            port_match = True
+                            break
+                    elif op == 'lt' and p1 is not None and dst_port < p1:
+                        port_match = True
+                        break
+                    elif op == 'gt' and p1 is not None and dst_port > p1:
+                        port_match = True
+                        break
+                    elif op == 'neq' and p1 is not None and dst_port != p1:
+                        port_match = True
+                        break
 
+                if not port_match:
+                    return False
 
-def _binding_applicable(binding: Optional[dict], context: Optional[dict], acl_name: Optional[str] = None) -> bool:
-    if not context:
         return True
-    if not binding:
-        return True
-    scope = (binding.get('scope') or '').lower()
-    if scope in ('global', 'control-plane'):
-        return True
-    candidates = context.get('candidates') or []
-    if not candidates:
-        return True
-    interface = (binding.get('interface') or '').lower() or None
-    direction = (binding.get('direction') or '').lower() or None
-    acl_lower = acl_name.lower() if acl_name else None
-    for cand in candidates:
-        cand_iface = (cand.get('interface') or '').lower() or None
-        cand_dir = (cand.get('direction') or '').lower() or None
-        if interface is not None:
-            if cand_iface is None or cand_iface != interface:
-                continue
-        else:
-            if cand_iface is not None:
-                continue
-        if direction is not None:
-            if cand_dir is None or cand_dir != direction:
-                continue
-        if acl_lower:
-            cand_acls = [name.lower() for name in cand.get('acls', [])]
-            if cand_acls and acl_lower not in cand_acls:
-                continue
-        return True
-    return False if candidates else True
 
+    def evaluate_packet(
+        self,
+        src_ip: str,
+        dst_ip: str,
+        proto: Optional[str] = None,
+        src_port: Optional[int] = None,
+        dst_port: Optional[int] = None
+    ) -> dict:
+        """Evaluate whether a packet is permitted or denied.
 
-def _evaluate_acl_flow(cfg: ASAConfig, src_ip: ipaddress.IPv4Address, dst_ip: ipaddress.IPv4Address, svc_filter: Optional[dict], include_any: bool, iface_context: Optional[dict] = None) -> dict:
-    entries = cfg.flatten_acl()
-    src_set = {src_ip}
-    dst_set = {dst_ip}
-    matches: List[dict] = []
-    inspected = 0
-    for entry in entries:
-        inspected += 1
-        if not include_any and _has_any_endpoint(entry):
-            continue
-        if iface_context and not _binding_applicable(entry.get('binding'), iface_context, entry.get('acl')):
-            continue
-        if not nets_overlap(entry['src'], src_set):
-            continue
-        if not nets_overlap(entry['dst'], dst_set):
-            continue
-        if svc_filter and not _service_matches(cfg, entry, svc_filter):
-            continue
-        matches.append({
-            'raw': entry['raw'],
-            'summary': _entry_summary(entry),
-            'acl': entry.get('acl'),
-            'action': entry.get('action'),
-            'binding': entry.get('binding'),
+        Uses build_flow_context() to determine applicable ACLs, then evaluates
+        them in order to find the first match. Returns detailed result with
+        hop-by-hop explanation.
+
+        Args:
+            src_ip: Source IP address (string)
+            dst_ip: Destination IP address (string)
+            proto: Optional protocol (tcp/udp/icmp/etc.)
+            src_port: Optional source port
+            dst_port: Optional destination port
+
+        Returns:
+            Dict with:
+                - verdict: 'permit' | 'deny' | 'implicit-permit' | 'implicit-deny'
+                - matched_acl: Name of ACL that matched (or None)
+                - matched_entry: The ACL entry that matched (or None)
+                - flow_context: The FlowContext object
+                - explanation: Human-readable explanation
+                - steps: List of evaluation steps
+        """
+        if ir is None:
+            raise RuntimeError("IR module not available")
+
+        # Build flow context
+        try:
+            ctx = self.build_flow_context(src_ip, dst_ip, proto, src_port, dst_port)
+        except ValueError as e:
+            return {
+                'verdict': 'error',
+                'error': str(e),
+                'explanation': f"Failed to build flow context: {e}"
+            }
+
+        # Prepare packet object for matching
+        try:
+            src_ip_obj = ipaddress.ip_address(src_ip)
+            dst_ip_obj = ipaddress.ip_address(dst_ip)
+        except ValueError as e:
+            return {
+                'verdict': 'error',
+                'error': str(e),
+                'explanation': f"Invalid IP address: {e}"
+            }
+
+        packet = {
+            'src_ip': src_ip_obj,
+            'dst_ip': dst_ip_obj,
+            'proto': (proto or 'ip').lower(),
+            'src_port': src_port,
+            'dst_port': dst_port,
+        }
+
+        steps = []
+
+        # Step 1: Flow classification
+        steps.append({
+            'step': 'flow_classification',
+            'description': f"Flow classified as {ctx.flow_direction}",
+            'details': {
+                'direction': ctx.flow_direction,
+                'ingress_zone': ctx.ingress_zone,
+                'egress_zone': ctx.egress_zone,
+            }
         })
-        if len(matches) >= 10:
-            break
-    if matches:
-        decision = matches[0]['action']
-    else:
-        decision = 'no-match'
-    return {'decision': decision, 'matches': matches, 'inspected': inspected}
+
+        # Step 2: Check implicit permit (ASA allows higher→lower security)
+        if ctx.vendor_context.get('implicit_permit'):
+            steps.append({
+                'step': 'implicit_permit_check',
+                'description': 'Traffic permitted by security level (higher→lower)',
+                'details': {
+                    'ingress_security': ctx.vendor_context.get('ingress_security_level'),
+                    'egress_security': ctx.vendor_context.get('egress_security_level'),
+                }
+            })
+
+        # Step 3: Evaluate applicable ACLs
+        all_entries = self.flatten_acl()
+
+        for acl_name in ctx.applicable_policies:
+            acl_entries = [e for e in all_entries if e.get('acl') == acl_name]
+
+            steps.append({
+                'step': 'acl_evaluation',
+                'description': f"Evaluating ACL '{acl_name}' ({len(acl_entries)} entries)",
+                'acl_name': acl_name,
+            })
+
+            for entry in acl_entries:
+                if self._packet_matches_acl_entry(packet, entry):
+                    action = entry.get('action', '').lower()
+                    verdict = 'permit' if action == 'permit' else 'deny'
+
+                    steps.append({
+                        'step': 'acl_match',
+                        'description': f"Matched ACL entry: {action}",
+                        'entry': entry.get('raw'),
+                        'line': entry.get('line'),
+                    })
+
+                    return {
+                        'verdict': verdict,
+                        'matched_acl': acl_name,
+                        'matched_entry': entry,
+                        'flow_context': ctx,
+                        'explanation': f"Traffic {verdict}ted by ACL '{acl_name}' at line {entry.get('line')}",
+                        'steps': steps,
+                    }
+
+        # No explicit match found
+        if ctx.vendor_context.get('implicit_permit'):
+            verdict = 'implicit-permit'
+            explanation = "No explicit ACL match; permitted by security level policy"
+        else:
+            verdict = 'implicit-deny'
+            explanation = "No explicit ACL match; denied by default"
+
+        steps.append({
+            'step': 'implicit_action',
+            'description': explanation,
+        })
+
+        return {
+            'verdict': verdict,
+            'matched_acl': None,
+            'matched_entry': None,
+            'flow_context': ctx,
+            'explanation': explanation,
+            'steps': steps,
+        }
