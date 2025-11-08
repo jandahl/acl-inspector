@@ -4,6 +4,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from webui import settings as settings_mod
@@ -160,6 +161,54 @@ class APIHandlersTest(unittest.TestCase):
         status, payload = api_handlers.index_status(self.state)
         self.assertEqual(status, 200)
         self.assertIn("in_memory", payload)
+
+    def test_global_search_short_circuits_large_repos(self):
+        class FakeIndexManager:
+            def __init__(self):
+                self.calls = []
+
+            def get_index(self, vendor, os_tag, version, path):
+                self.calls.append(path)
+                return SimpleNamespace(
+                    index={"objects": [f"obj-{len(self.calls)}"], "object_details": {}, "popularity": {}}
+                )
+
+            def suggest(self, index, query, mode, limit):
+                return [
+                    {
+                        "value": f"obj-{len(self.calls)}",
+                        "label": f"obj-{len(self.calls)}",
+                        "type": "object",
+                        "score": 0,
+                    }
+                ]
+
+        fake_state = SimpleNamespace(
+            settings=SimpleNamespace(
+                paths=SimpleNamespace(configs={"asa": "/tmp/fake"}),
+                features=SimpleNamespace(predictive_search=SimpleNamespace(limit=25)),
+            ),
+            index_manager=FakeIndexManager(),
+        )
+        large_listing = {f"cfg{i}": f"/tmp/cfg{i}" for i in range(200)}
+        with mock.patch("webui.handlers.api.config_listing", return_value=large_listing):
+            status, payload = api_handlers.objects(
+                fake_state,
+                vendor="all",
+                os_tag="",
+                version="auto",
+                filename="",
+                query="foo",
+                mode="fuzzy",
+                limit=5,
+            )
+        self.assertEqual(status, 200)
+        self.assertGreater(len(payload["items"]), 0)
+        self.assertLessEqual(
+            len(fake_state.index_manager.calls),
+            5 * 4,
+            msg="Global search scanned too many configs despite limit.",
+        )
 
     def test_render_home_template(self):
         html = page_handlers._render_home(self.state)

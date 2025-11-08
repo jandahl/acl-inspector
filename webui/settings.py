@@ -25,7 +25,8 @@ class PathsSettings:
         default_factory=lambda: {"asa": "configs/cisco", "fortigate": "configs/fortigate"}
     )
     themes_dir: str = "themes"
-    cache_dir: Optional[str] = None
+    cache_dir: Optional[str] = "cache"
+    logs_dir: str = "logs"
     settings_file: str = "settings.json"
 
 
@@ -38,7 +39,7 @@ class PredictiveSearchSettings:
 
 @dataclass(frozen=True)
 class DiskCacheSettings:
-    enabled: bool = False
+    enabled: bool = True
     manifest: str = "manifest.json"
 
 
@@ -118,7 +119,8 @@ def _default_dict() -> Dict[str, Any]:
                 "fortigate": "configs/fortigate",
             },
             "themes_dir": "themes",
-            "cache_dir": None,
+            "cache_dir": "cache",
+            "logs_dir": "logs",
             "settings_file": str(DEFAULT_SETTINGS_PATH),
         },
         "features": {
@@ -130,7 +132,7 @@ def _default_dict() -> Dict[str, Any]:
             "history_tracking": True,
             "asa_highlighting": True,
             "disk_cache": {
-                "enabled": False,
+                "enabled": True,
                 "manifest": "manifest.json",
             },
         },
@@ -149,6 +151,7 @@ _LEGACY_ENV_MAP: Dict[str, Sequence[str]] = {
     "CONFIGS_FORTIGATE": ("paths", "configs", "fortigate"),
     "THEME_DIR": ("paths", "themes_dir"),
     "CACHE_DIR": ("paths", "cache_dir"),
+    "LOG_DIR": ("paths", "logs_dir"),
     "SEARCH_LIMIT": ("features", "predictive_search", "limit"),
     "SEARCH_MODE": ("features", "predictive_search", "mode"),
     "SEARCH_ENABLED": ("features", "predictive_search", "enabled"),
@@ -242,6 +245,7 @@ def _build_settings(config: Mapping[str, Any], settings_path: Path) -> Settings:
         },
         themes_dir=str(paths_conf.get("themes_dir", "themes")),
         cache_dir=str(paths_conf.get("cache_dir")) if paths_conf.get("cache_dir") else None,
+        logs_dir=str(paths_conf.get("logs_dir", "logs")),
         settings_file=str(settings_path),
     )
 
@@ -290,16 +294,25 @@ def _build_settings(config: Mapping[str, Any], settings_path: Path) -> Settings:
     ui = UISettings(theme_preview_speed=preview_speed)
 
     # Resolve any relative paths relative to base_dir.
+    def _resolve_path(value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        candidate = Path(value)
+        if candidate.is_absolute():
+            return str(candidate)
+        return str((base_dir / candidate).resolve())
+
+    resolved_configs = {
+        vendor: str(Path(location).resolve())
+        if Path(location).is_absolute()
+        else str((base_dir / Path(location)).resolve())
+        for vendor, location in paths.configs.items()
+    }
     paths = PathsSettings(
-        configs={vendor: str((base_dir / Path(rel)).resolve()) for vendor, rel in paths.configs.items()},
-        themes_dir=str((base_dir / Path(paths.themes_dir)).resolve())
-        if not Path(paths.themes_dir).is_absolute()
-        else paths.themes_dir,
-        cache_dir=(
-            str((base_dir / Path(paths.cache_dir)).resolve())
-            if paths.cache_dir and not Path(paths.cache_dir).is_absolute()
-            else paths.cache_dir
-        ),
+        configs=resolved_configs,
+        themes_dir=_resolve_path(paths.themes_dir) or paths.themes_dir,
+        cache_dir=_resolve_path(paths.cache_dir) if paths.cache_dir else None,
+        logs_dir=_resolve_path(paths.logs_dir) or paths.logs_dir,
         settings_file=str(settings_path),
     )
 

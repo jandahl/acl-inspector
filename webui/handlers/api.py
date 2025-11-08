@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 import os
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
@@ -13,6 +15,8 @@ from utils.config import clean_config_text, load_config_text
 TYPE_PRIORITY = {"context": -1, "object": 0, "group": 1, "literal": 2}
 CONTEXT_EXACT_MATCH_SCORE = -10.0
 CONTEXT_SUBSTRING_MATCH_SCORE = -5.0
+
+logger = logging.getLogger(__name__)
 
 
 def _vendor_os_tag(vendor: str) -> str:
@@ -134,6 +138,8 @@ def _aggregate_suggestions(
     if not trimmed_query:
         return []
     results: List[Dict[str, Any]] = []
+    max_candidates = max(limit * 4, limit + 5)
+    stop_scanning = False
     q_lower = trimmed_query.lower()
     for vendor in vendors:
         os_tag = _vendor_os_tag(vendor)
@@ -170,6 +176,17 @@ def _aggregate_suggestions(
                         },
                     }
                 )
+            if len(results) >= max_candidates:
+                stop_scanning = True
+                break
+        if stop_scanning:
+            logger.info(
+                "Stopping global scan early for query '%s' after %d candidates (vendor=%s).",
+                trimmed_query,
+                len(results),
+                vendor,
+            )
+            break
     if not results:
         return []
     # Stable ordering: better rank first, then type priority, then context/value.
@@ -211,12 +228,13 @@ def objects(
     limit: int,
 ) -> Tuple[int, Dict[str, Any]]:
     vendor_norm = (vendor or "").lower()
+    trimmed_query = (query or "").strip()
     if filename:
         path = _resolve_config(state, vendor_norm, filename)
         if not path:
             return 400, {"items": [], "error": "invalid_config"}
         entry = state.index_manager.get_index(vendor_norm, os_tag, version, str(path))
-        suggestions = state.index_manager.suggest(entry.index, query, mode, limit)
+        suggestions = state.index_manager.suggest(entry.index, trimmed_query, mode, limit)
         items = [
             _decorate_item(
                 suggestion,
@@ -233,7 +251,17 @@ def objects(
     vendors = _resolve_vendors(state, vendor_norm)
     if not vendors:
         return 200, {"items": []}
-    items = _aggregate_suggestions(state, vendors, query, mode, limit)
+    start = time.perf_counter()
+    items = _aggregate_suggestions(state, vendors, trimmed_query, mode, limit)
+    duration = time.perf_counter() - start
+    logger.info(
+        "Global search q='%s' mode=%s vendors=%d -> %d item(s) in %.2fs",
+        trimmed_query,
+        mode,
+        len(vendors),
+        len(items),
+        duration,
+    )
     return 200, {"items": items}
 
 

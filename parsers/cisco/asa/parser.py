@@ -237,6 +237,16 @@ class ASAConfig:
             acl_name = e.get('acl')
             binding = self.acl_bindings.get(acl_name) if acl_name else None
             bound_to = self._binding_target_value(binding)
+            # Extract direction from binding for IR export
+            direction = None
+            if binding:
+                scope = (binding.get('scope') or '').lower()
+                if scope == 'global':
+                    direction = 'global'
+                elif scope == 'control-plane':
+                    direction = binding.get('direction') or 'any'
+                else:
+                    direction = binding.get('direction') or 'any'
             entry = ir.ACLEntry(
                 action=e.get('action'),
                 proto=e.get('proto'),
@@ -247,6 +257,7 @@ class ASAConfig:
                 acl=acl_name,
                 bound_to=bound_to,
                 binding=binding,
+                direction=direction,
             )
             acl_map.setdefault(acl_name or 'UNNAMED', []).append(entry)
         ir_acls: List[ir.ACL] = []
@@ -717,6 +728,202 @@ class ASAConfig:
             return None
         return meta.get('security_level')
 
+    def build_flow_context(
+        self,
+        src_ip: str,
+        dst_ip: str,
+        proto: Optional[str] = None,
+        src_port: Optional[int] = None,
+        dst_port: Optional[int] = None
+    ) -> "ir.FlowContext":
+        """Build vendor-agnostic flow context for packet flow analysis.
+
+        This method determines which interfaces, ACLs, and NAT rules apply to
+        a specific packet flow, providing vendor-neutral abstractions for path
+        checking and policy evaluation.
+
+        Args:
+            src_ip: Source IP address (string format)
+            dst_ip: Destination IP address (string format)
+            proto: Optional protocol (tcp/udp/icmp/etc.)
+            src_port: Optional source port number
+            dst_port: Optional destination port number
+
+        Returns:
+            ir.FlowContext with ingress/egress zones, applicable policies,
+            and vendor-specific metadata.
+
+        Raises:
+            ValueError: If IP addresses are malformed
+        """
+        if ir is None:
+            raise RuntimeError("IR module not available")
+
+        # Resolve IPs to ipaddress objects
+        try:
+            src_ip_obj = ipaddress.ip_address(src_ip)
+            dst_ip_obj = ipaddress.ip_address(dst_ip)
+        except ValueError as e:
+            raise ValueError(f"Invalid IP address: {e}")
+
+        # Determine which interface owns each IP (if any)
+        src_local_if = self.interface_for_ip(src_ip_obj)  # Interface where src IP lives
+        dst_local_if = self.interface_for_ip(dst_ip_obj)  # Interface where dst IP lives
+
+        # Determine physical ingress/egress interfaces and flow direction
+        # For ASA, we need to consider:
+        # - If src is local (has interface), packet exits via that interface (outbound)
+        # - If dst is local (has interface), packet enters via... we need routing!
+        # - For now, simplified: assume all non-local traffic uses a default interface
+
+        # Simplified model (without full routing table):
+        # - src_local + dst_local = lateral (between interfaces)
+        # - src_local + dst_external = outbound (from local to internet)
+        # - src_external + dst_local = inbound (from internet to local)
+        # - src_external + dst_external = transit (unlikely without routing)
+
+        if src_local_if and dst_local_if:
+            direction = 'lateral' if src_local_if != dst_local_if else 'loopback'
+            physical_ingress = src_local_if  # Packet leaves source interface
+            physical_egress = dst_local_if   # Packet arrives at destination interface
+        elif src_local_if and not dst_local_if:
+            direction = 'outbound'
+            physical_ingress = src_local_if  # Packet leaves this interface
+            physical_egress = None           # Unknown external path
+        elif not src_local_if and dst_local_if:
+            direction = 'inbound'
+            # For inbound, we need to determine which interface the packet enters
+            # Without full routing, we assume it enters via the "lowest security" interface
+            # that's NOT the destination interface
+            physical_ingress = self._guess_ingress_interface(dst_local_if)
+            physical_egress = dst_local_if   # Packet routed to this interface
+        else:
+            direction = 'transit'
+            physical_ingress = None
+            physical_egress = None
+
+        # Collect applicable ACLs based on physical interfaces and direction
+        # ASA evaluates ACLs at the interface where packet physically arrives/departs
+        acls = []
+
+        if direction == 'inbound' and physical_ingress:
+            # Packet enters via physical_ingress, apply 'in' ACL
+            acls.extend(self.acls_for_interface(physical_ingress, 'in'))
+        elif direction == 'outbound' and physical_ingress:
+            # Packet exits via physical_ingress, apply 'out' ACL
+            acls.extend(self.acls_for_interface(physical_ingress, 'out'))
+        elif direction == 'lateral':
+            # Packet traverses both interfaces
+            if physical_ingress:
+                acls.extend(self.acls_for_interface(physical_ingress, 'out'))
+            if physical_egress:
+                acls.extend(self.acls_for_interface(physical_egress, 'in'))
+        elif direction == 'loopback' and physical_ingress:
+            # Same interface, check both directions
+            acls.extend(self.acls_for_interface(physical_ingress, 'in'))
+            acls.extend(self.acls_for_interface(physical_ingress, 'out'))
+
+        # Global ACLs always apply
+        acls.extend(self.acls_for_global())
+
+        # Store physical interfaces in vendor context for reference
+        ingress_zone = physical_ingress
+        egress_zone = physical_egress
+
+        # Collect applicable NAT rules
+        # NAT rules are evaluated based on interface pair (src_if, dst_if)
+        nat_candidates = []
+        for rule in self.nat_rules:
+            if self._nat_applies_to_flow(rule, ingress_zone, egress_zone):
+                # Include raw config line as identifier
+                nat_id = rule.get('raw', f"NAT-{rule.get('type', 'unknown')}")
+                nat_candidates.append(nat_id)
+
+        # Build vendor-specific context
+        ingress_sec = self.security_level_for_interface(ingress_zone) or 0
+        egress_sec = self.security_level_for_interface(egress_zone) or 0
+
+        vendor_ctx = {
+            'ingress_security_level': ingress_sec,
+            'egress_security_level': egress_sec,
+            # ASA implicit permit: higher sec to lower sec (no ACL needed)
+            'implicit_permit': ingress_zone and egress_zone and ingress_sec > egress_sec,
+            'ingress_interface': ingress_zone,
+            'egress_interface': egress_zone,
+            'src_local_interface': src_local_if,
+            'dst_local_interface': dst_local_if,
+        }
+
+        return ir.FlowContext(
+            src_ip=src_ip,
+            dst_ip=dst_ip,
+            proto=proto,
+            src_port=src_port,
+            dst_port=dst_port,
+            ingress_zone=ingress_zone,  # Physical ingress interface
+            egress_zone=egress_zone,     # Physical egress interface
+            flow_direction=direction,
+            applicable_policies=acls,
+            applicable_nats=nat_candidates,
+            vendor_context=vendor_ctx,
+        )
+
+    def _guess_ingress_interface(self, dst_interface: str) -> Optional[str]:
+        """Guess which interface an inbound packet enters through.
+
+        Without full routing information, we use a heuristic:
+        - Return the interface with the lowest security level
+        - Exclude the destination interface
+
+        Args:
+            dst_interface: The destination interface (to exclude)
+
+        Returns:
+            Name of the likely ingress interface, or None if cannot determine
+        """
+        candidates = []
+        for name, meta in self.interfaces.items():
+            if name == dst_interface:
+                continue
+            sec_level = meta.get('security_level')
+            if sec_level is not None:
+                candidates.append((sec_level, name))
+
+        if not candidates:
+            return None
+
+        # Return interface with lowest security level (most likely "outside")
+        candidates.sort()
+        return candidates[0][1]
+
+    def _nat_applies_to_flow(
+        self,
+        nat_rule: dict,
+        ingress_if: Optional[str],
+        egress_if: Optional[str]
+    ) -> bool:
+        """Check if NAT rule applies to this interface pair.
+
+        Args:
+            nat_rule: Parsed NAT rule dict
+            ingress_if: Ingress interface name (or None)
+            egress_if: Egress interface name (or None)
+
+        Returns:
+            True if the NAT rule's src_if/dst_if match the flow interfaces.
+        """
+        src_if = (nat_rule.get('src_if') or '').lower()
+        dst_if = (nat_rule.get('dst_if') or '').lower()
+
+        if not src_if or not dst_if:
+            return False
+
+        # Match interface names (case-insensitive)
+        ingress_match = not ingress_if or ingress_if.lower() == src_if
+        egress_match = not egress_if or egress_if.lower() == dst_if
+
+        return ingress_match and egress_match
+
     def _parse_access_group_binding(self, body: str, line: str) -> Dict[str, Optional[str]]:
         binding: Dict[str, Optional[str]] = {
             'scope': 'interface',
@@ -966,10 +1173,11 @@ class ASAConfig:
                 return nets
             if token in self.network_object_groups:
                 if token in visited:
-                    self._network_cache[cache_key] = set()
-                    return set()
+                    cached_cycle = self._network_cache.get(cache_key)
+                    return set(cached_cycle) if cached_cycle is not None else set()
                 visited.add(token)
                 resolved: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]] = set()
+                self._network_cache[cache_key] = resolved
                 for m in self.network_object_groups[token]:
                     if isinstance(m, dict):
                         if 'group-object' in m:
@@ -978,8 +1186,8 @@ class ASAConfig:
                             resolved.update(self.resolve_network(m['object'], visited))
                     elif isinstance(m, (ipaddress.IPv4Address, ipaddress.IPv4Network)):
                         resolved.add(m)
-                self._network_cache[cache_key] = set(resolved)
-                return resolved
+                visited.discard(token)
+                return set(resolved)
             try:
                 result = {to_ip_network(token)}
             except Exception:
@@ -1026,6 +1234,23 @@ class ASAConfig:
                 dsts = self._consume_endpoint(tokens)
                 svc_tail = self._consume_service_tail(tokens, entry_svc["proto"]) if tokens else {"dst_ports": [], "dst_ops": set(), "dst_service_groups": set(), "dst_service_objects": set()}
                 binding = self.acl_bindings.get(acl_name)
+
+                # Extract bound_to and direction from binding for easier access
+                bound_to = None
+                direction = None
+                if binding:
+                    scope = (binding.get('scope') or '').lower()
+                    if scope == 'global':
+                        bound_to = 'global'
+                        direction = 'global'
+                    elif scope == 'control-plane':
+                        bound_to = 'control-plane'
+                        direction = binding.get('direction') or 'any'
+                    else:
+                        # Interface binding
+                        bound_to = binding.get('interface')
+                        direction = binding.get('direction') or 'any'
+
                 entries.append({
                     'acl': acl_name,
                     'action': action,
@@ -1034,6 +1259,8 @@ class ASAConfig:
                     'dst': dsts,
                     'svc': {**entry_svc, **svc_tail},
                     'binding': binding,
+                    'bound_to': bound_to,
+                    'direction': direction,
                     'raw': ln.strip(),
                     'line': lineno,
                 })

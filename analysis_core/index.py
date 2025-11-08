@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import math
 import os
 import threading
@@ -13,6 +14,8 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from utils.config import clean_config_text, load_config_text
 
 from .adapters import build_asa_index, build_fortigate_index
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -65,34 +68,59 @@ class IndexManager:
         key = self._cache_key(vendor, path)
         stat = os.stat(path)
 
-        with self._lock:
+        def _load_cached() -> Optional[IndexEntry]:
             entry = self.search_cache.get(key)
             if entry and self._is_fresh(entry, stat.st_mtime, stat.st_size):
                 return entry
-
             if self.disk_cache.enabled:
                 payload = self.disk_cache.read(key)
                 if payload and self._matches_stat(payload, stat.st_mtime, stat.st_size):
                     entry = IndexEntry.from_payload(key, payload)
                     self.search_cache.set(key, entry)
                     return entry
+            return None
 
+        with self._lock:
+            cached = _load_cached()
+        if cached:
+            return cached
+
+        logger.info("Building index for %s (%s)", vendor, path)
+        start = time.time()
+        try:
             text = clean_config_text(load_config_text(path))
             index = self._build_index(vendor, text)
-            entry = IndexEntry(
-                key=key,
-                vendor=vendor,
-                os_tag=os_tag,
-                version=version,
-                built_at=time.time(),
-                src_mtime=stat.st_mtime,
-                src_size=stat.st_size,
-                index=index,
-            )
-            self.search_cache.set(key, entry)
+        except Exception:  # pragma: no cover - defensive logging
+            logger.exception("Failed building index for %s (%s)", vendor, path)
+            raise
+        duration = time.time() - start
+        logger.info(
+            "Finished index for %s (%s) in %.2fs (objects=%d groups=%d)",
+            vendor,
+            path,
+            duration,
+            len(index.get("objects") or []),
+            len(index.get("groups") or []),
+        )
+        fresh_entry = IndexEntry(
+            key=key,
+            vendor=vendor,
+            os_tag=os_tag,
+            version=version,
+            built_at=time.time(),
+            src_mtime=stat.st_mtime,
+            src_size=stat.st_size,
+            index=index,
+        )
+
+        with self._lock:
+            cached = _load_cached()
+            if cached:
+                return cached
+            self.search_cache.set(key, fresh_entry)
             if self.disk_cache.enabled:
-                self.disk_cache.write(key, entry.to_payload())
-            return entry
+                self.disk_cache.write(key, fresh_entry.to_payload())
+        return fresh_entry
 
     def status(self) -> Dict[str, Any]:
         with self._lock:

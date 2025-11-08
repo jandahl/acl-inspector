@@ -87,6 +87,7 @@ class ACLEntry:
     acl: Optional[str] = None
     bound_to: Optional[str] = None  # interface name if bound
     binding: Optional[Dict[str, Any]] = None
+    direction: Optional[str] = None  # 'in' | 'out' | 'global' | 'control-plane'
 
 
 @dataclass
@@ -112,6 +113,36 @@ class Route:
     dest: str
     via: str
     interface: Optional[str] = None
+
+
+@dataclass
+class FlowContext:
+    """Vendor-agnostic representation of packet flow evaluation context.
+
+    Captures which ACLs, NAT rules, and routing decisions apply to a specific
+    packet flow, abstracting vendor-specific details for cross-vendor analysis.
+    """
+    src_ip: str
+    dst_ip: str
+    proto: Optional[str] = None
+    src_port: Optional[int] = None
+    dst_port: Optional[int] = None
+
+    # Topology context (vendor-neutral: ASA uses interfaces, FortiGate uses zones)
+    ingress_zone: Optional[str] = None
+    egress_zone: Optional[str] = None
+    flow_direction: Optional[str] = None  # 'inbound' | 'outbound' | 'lateral' | 'transit'
+
+    # Policy context (ordered by evaluation priority)
+    applicable_policies: List[str] = field(default_factory=list)  # ACL/policy names
+    applicable_nats: List[str] = field(default_factory=list)  # NAT rule identifiers
+
+    # Routing (if available)
+    route_matched: Optional[str] = None
+    next_hop: Optional[str] = None
+
+    # Vendor-specific metadata (extensible dict for vendor differences)
+    vendor_context: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
