@@ -1,6 +1,6 @@
-"""ASA index adapter."""
+"""Compatibility wrapper for ASA adapter."""
 
-from __future__ import annotations
+from analysis_core.adapters.asa import build_index
 
 from typing import Dict, Set
 
