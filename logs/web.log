@@ -1064,3 +1064,18 @@
 2025-11-08 12:04:33,549 INFO webui.handlers.api: Global search q='bravo' mode=fuzzy vendors=1 -> 1 item(s) in 0.02s
 2025-11-08 12:05:34,576 INFO webui.handlers.api: Global search q='bravo' mode=fuzzy vendors=1 -> 1 item(s) in 0.01s
 2025-11-08 12:05:43,459 INFO webui.handlers.api: Global search q='bravo' mode=fuzzy vendors=1 -> 1 item(s) in 0.02s
+2025-11-08 16:39:10,663 INFO analysis_core.index: Building index for asa (/Users/jangronemann/code/ACL-inspector/configs/cisco/cisco-asa-example)
+2025-11-08 16:39:10,669 INFO analysis_core.index: Finished index for asa (/Users/jangronemann/code/ACL-inspector/configs/cisco/cisco-asa-example) in 0.01s (objects=33 groups=9)
+2025-11-08 16:39:10,670 INFO analysis_core.index: Building index for fortigate (/Users/jangronemann/code/ACL-inspector/configs/fortigate/fortigate7-4-example)
+2025-11-08 16:39:10,671 INFO analysis_core.index: Finished index for fortigate (/Users/jangronemann/code/ACL-inspector/configs/fortigate/fortigate7-4-example) in 0.00s (objects=0 groups=0)
+2025-11-08 16:39:10,671 INFO webui.handlers.api: Global search q='test' mode=fuzzy vendors=2 -> 0 item(s) in 0.01s
+2025-11-08 16:39:13,511 INFO webui.handlers.api: Global search q='b' mode=fuzzy vendors=2 -> 20 item(s) in 0.00s
+2025-11-08 16:39:13,835 INFO webui.handlers.api: Global search q='bra' mode=fuzzy vendors=2 -> 14 item(s) in 0.00s
+2025-11-08 16:39:14,141 INFO webui.handlers.api: Global search q='brave' mode=fuzzy vendors=2 -> 12 item(s) in 0.00s
+2025-11-08 16:39:14,515 INFO webui.handlers.api: Global search q='bravo' mode=fuzzy vendors=2 -> 14 item(s) in 0.00s
+2025-11-08 16:39:16,649 INFO webui.handlers.api: Global search q='asdf' mode=fuzzy vendors=2 -> 0 item(s) in 0.00s
+2025-11-08 16:39:16,984 INFO webui.handlers.api: Global search q='asdfa' mode=fuzzy vendors=2 -> 0 item(s) in 0.00s
+2025-11-08 16:39:22,452 INFO webui.handlers.api: Global search q='b' mode=fuzzy vendors=2 -> 20 item(s) in 0.00s
+2025-11-08 16:39:22,984 INFO webui.handlers.api: Global search q='br' mode=fuzzy vendors=2 -> 14 item(s) in 0.00s
+2025-11-08 16:39:23,341 INFO webui.handlers.api: Global search q='bra' mode=fuzzy vendors=2 -> 14 item(s) in 0.00s
+2025-11-08 16:39:23,667 INFO webui.handlers.api: Global search q='brav' mode=fuzzy vendors=2 -> 14 item(s) in 0.00s

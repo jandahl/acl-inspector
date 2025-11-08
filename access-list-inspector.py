@@ -190,7 +190,10 @@ def main() -> None:
     group.add_argument('--inspect', help='IP, network (CIDR), or object name for inspection')
     group.add_argument('--find-host', dest='find_host', help='Find an object/IP across configs (set --config to a file or a directory)')
     group.add_argument('--packet', action='store_true', help='Evaluate a single packet path (requires --packet-src/--packet-dst)')
+    group.add_argument('--translate', action='store_true', help='Translate config to another vendor format (requires --target-vendor)')
     parser.add_argument('--new', help='New IP, network (CIDR), or object name for comparison')
+    parser.add_argument('--target-vendor', dest='target_vendor', choices=['asa', 'fortigate'], help='Target vendor for translation (use with --translate)')
+    parser.add_argument('--device-name', dest='device_name', help='Device name for IR export (optional)')
     parser.add_argument('--proto', choices=['ip', 'tcp', 'udp', 'icmp'], help='Filter by protocol for matching (optional)')
     parser.add_argument('--dport', type=int, action='append', help='Filter by destination port (repeatable, optional)')
     parser.add_argument('--examples', action='store_true', help='Print example usage and exit')
@@ -280,12 +283,14 @@ def main() -> None:
                 print(f"  {r['file']} -> {'; '.join(parts) if parts else 'match'}")
         return
 
-    if not (args.old or args.inspect or args.packet):
-        parser.error('either --old (with --new), --inspect, or --packet is required')
+    if not (args.old or args.inspect or args.packet or args.translate):
+        parser.error('either --old (with --new), --inspect, --packet, or --translate is required')
     if args.old and not args.new:
         parser.error('--new is required when --old is provided')
     if args.packet and (not args.packet_src or not args.packet_dst):
         parser.error('--packet-src and --packet-dst are required with --packet')
+    if args.translate and not args.target_vendor:
+        parser.error('--target-vendor is required with --translate')
 
     try:
         cfg_text = read_config_text(args.config)
@@ -295,6 +300,47 @@ def main() -> None:
     except OSError as exc:
         print(f"Error reading config {args.config}: {exc}", file=sys.stderr)
         sys.exit(1)
+
+    # Handle translation mode
+    if args.translate:
+        if args.vendor == args.target_vendor:
+            print(f"Error: Source and target vendors are the same ({args.vendor})", file=sys.stderr)
+            sys.exit(1)
+
+        # Parse source config and convert to IR
+        if args.vendor == 'asa':
+            cfg = cisco_asa.ASAConfig(cfg_text)
+            from parsers.cisco.asa import ir_export
+            ir_device = ir_export.to_ir(cfg, device_name=args.device_name)
+        elif args.vendor == 'fortigate':
+            from parsers.fortigate.config import FTGConfig
+            cfg = FTGConfig(cfg_text, vdom=args.vdom)
+            from parsers.fortigate import ir_export
+            ir_device = ir_export.to_ir(cfg, device_name=args.device_name)
+        else:
+            print(f"Error: Unsupported source vendor: {args.vendor}", file=sys.stderr)
+            sys.exit(1)
+
+        # Convert IR to target format
+        if args.target_vendor == 'asa':
+            from parsers.cisco.asa import ir_import
+            output = ir_import.from_ir(ir_device, hostname=args.device_name)
+        elif args.target_vendor == 'fortigate':
+            from parsers.fortigate import ir_import
+            vdom_name = args.vdom or 'root'
+            output = ir_import.from_ir(ir_device, vdom=vdom_name)
+        else:
+            print(f"Error: Unsupported target vendor: {args.target_vendor}", file=sys.stderr)
+            sys.exit(1)
+
+        # Output translated config
+        if args.format == 'json':
+            # Output IR as JSON for inspection
+            print(json.dumps(ir_device.to_dict(), indent=2))
+        else:
+            # Output translated config
+            print(output)
+        return
 
     svc_filter = None
     if args.proto or args.dport:
