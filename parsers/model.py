@@ -109,10 +109,48 @@ class NAT:
 
 
 @dataclass
-class Route:
-    dest: str
-    via: str
-    interface: Optional[str] = None
+class StaticRoute:
+    """Static route entry.
+
+    Represents a manually configured route entry.
+    """
+    destination: str  # Network in CIDR notation (e.g., "0.0.0.0/0", "192.168.1.0/24")
+    next_hop: Optional[str] = None  # Next-hop IP (None for connected/interface routes)
+    interface: Optional[str] = None  # Outbound interface
+    distance: Optional[int] = None  # Administrative distance
+    metric: Optional[int] = None  # Route metric
+    track: Optional[int] = None  # Track object ID (for reliability)
+    tunneled: Optional[bool] = None  # VPN/tunnel route flag
+
+
+@dataclass
+class DynamicRoutingProcess:
+    """Dynamic routing protocol configuration.
+
+    Represents OSPF, EIGRP, BGP, or RIP configuration.
+
+    Note: This captures essential production features but NOT advanced policy:
+    - Included: passive interfaces, authentication, timers, area types, distance
+    - Excluded: route-maps, prefix-lists, AS-path filters, community lists,
+                distribute-lists, policy routing, advanced redistribution
+    """
+    protocol: str  # 'ospf' | 'eigrp' | 'bgp' | 'rip'
+    process_id: Optional[str] = None  # Process ID or AS number
+    router_id: Optional[str] = None  # Router ID
+    networks: List[Dict[str, Any]] = field(default_factory=list)  # Advertised networks
+    neighbors: List[Dict[str, Any]] = field(default_factory=list)  # BGP neighbors with timers, auth, description
+    redistribute: List[Dict[str, Any]] = field(default_factory=list)  # Redistribution (source, metric, subnets)
+    passive_interfaces: List[str] = field(default_factory=list)  # Interfaces not sending routing updates
+    areas: List[Dict[str, Any]] = field(default_factory=list)  # OSPF areas (deprecated, use areas_config)
+    areas_config: Dict[str, Dict[str, Any]] = field(default_factory=dict)  # OSPF area config (type, auth, no-summary)
+    timers: Dict[str, Any] = field(default_factory=dict)  # Protocol timers (hello, dead, keepalive, holdtime)
+    authentication: Dict[str, Any] = field(default_factory=dict)  # Authentication config
+    distance: Dict[str, Any] = field(default_factory=dict)  # Administrative distance settings
+    config: Dict[str, Any] = field(default_factory=dict)  # Other protocol-specific config
+
+
+# Backward compatibility alias
+Route = StaticRoute
 
 
 @dataclass
@@ -158,7 +196,9 @@ class Device:
     service_groups: List[ServiceGroup] = field(default_factory=list)
     acls: List[ACL] = field(default_factory=list)
     nats: List[NAT] = field(default_factory=list)
-    routes: List[Route] = field(default_factory=list)
+    static_routes: List[StaticRoute] = field(default_factory=list)
+    dynamic_routing: List[DynamicRoutingProcess] = field(default_factory=list)
+    routes: List[Route] = field(default_factory=list)  # Backward compat, deprecated
 
     def to_dict(self) -> Dict[str, Any]:
         return _jsonable(self)

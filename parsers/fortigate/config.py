@@ -62,6 +62,8 @@ class FTGConfig:
         self.services: Dict[str, dict] = {}
         self.service_groups: Dict[str, Set[str]] = {}
         self.policies: List[dict] = []
+        self.static_routes: List[dict] = []
+        self.dynamic_routing: Dict[str, dict] = {}  # key: protocol_processid
         self._parse()
         self._build_reverse_indexes()
 
@@ -85,6 +87,15 @@ class FTGConfig:
                 continue
             if line.startswith('config firewall policy'):
                 i = self._parse_policy(i + 1)
+                continue
+            if line.startswith('config router static'):
+                i = self._parse_static_routes(i + 1)
+                continue
+            if line.startswith('config router ospf'):
+                i = self._parse_router_ospf(i + 1)
+                continue
+            if line.startswith('config router bgp'):
+                i = self._parse_router_bgp(i + 1)
                 continue
             i += 1
 
@@ -346,6 +357,172 @@ class FTGConfig:
             raw = f"policy action {p.get('action','permit')} srcaddr {p.get('srcaddr',[])} dstaddr {p.get('dstaddr',[])} service {p.get('service',[])}"
             entries.append({'acl': 'policy', 'action': p.get('action', 'permit'), 'proto': 'ip', 'src': srcs, 'dst': dsts, 'svc': svc, 'raw': raw})
         return entries
+
+    def _parse_static_routes(self, i: int) -> int:
+        """Parse FortiGate static routes: config router static."""
+        i, blk = self._parse_block(i)
+        cur_route: Optional[dict] = None
+        for line in blk:
+            s = line.strip()
+            if s.startswith('edit '):
+                seq = s.split('edit', 1)[1].strip().strip('"')
+                cur_route = {'seq': seq, 'destination': None, 'gateway': None, 'device': None, 'distance': None}
+            elif s.startswith('set dst ') and cur_route:
+                dst = s.split('set dst', 1)[1].strip()
+                cur_route['destination'] = dst
+            elif s.startswith('set gateway ') and cur_route:
+                gw = s.split('set gateway', 1)[1].strip()
+                cur_route['gateway'] = gw
+            elif s.startswith('set device ') and cur_route:
+                dev = s.split('set device', 1)[1].strip().strip('"')
+                cur_route['device'] = dev
+            elif s.startswith('set distance ') and cur_route:
+                try:
+                    dist = int(s.split('set distance', 1)[1].strip())
+                    cur_route['distance'] = dist
+                except ValueError:
+                    pass
+            elif s.startswith('next') and cur_route:
+                if cur_route.get('destination'):
+                    self.static_routes.append(cur_route.copy())
+                cur_route = None
+        return i
+
+    def _parse_router_ospf(self, i: int) -> int:
+        """Parse FortiGate OSPF config: config router ospf."""
+        i, blk = self._parse_block(i)
+        routing_config = {
+            'protocol': 'ospf',
+            'process_id': None,
+            'router_id': None,
+            'networks': [],
+            'redistribute': [],
+            'passive_interfaces': [],
+            'areas': [],
+            'areas_config': {},
+            'timers': {},
+            'authentication': {},
+            'distance': {},
+            'config': {},
+        }
+
+        j = 0
+        while j < len(blk):
+            line = blk[j]
+            s = line.strip()
+
+            if s.startswith('set router-id '):
+                routing_config['router_id'] = s.split('set router-id', 1)[1].strip()
+            elif s.startswith('set distance '):
+                try:
+                    routing_config['distance']['default'] = int(s.split('set distance', 1)[1].strip())
+                except ValueError:
+                    pass
+            elif s.startswith('config passive-interface'):
+                # Parse passive interface sub-block
+                j += 1
+                while j < len(blk) and (blk[j].startswith('    ') or blk[j].strip() == ''):
+                    if not blk[j].strip():
+                        j += 1
+                        continue
+                    ps = blk[j].strip()
+                    if ps.startswith('edit '):
+                        iface = ps.split('edit', 1)[1].strip().strip('"')
+                        routing_config['passive_interfaces'].append(iface)
+                    elif ps == 'end':
+                        break
+                    j += 1
+            elif s.startswith('config network'):
+                # Parse network sub-block
+                j += 1
+                while j < len(blk) and (blk[j].startswith('    ') or blk[j].strip() == ''):
+                    if not blk[j].strip():
+                        j += 1
+                        continue
+                    ns = blk[j].strip()
+                    if ns.startswith('edit '):
+                        net_id = ns.split('edit', 1)[1].strip().strip('"')
+                        net_entry = {'id': net_id}
+                        j += 1
+                        while j < len(blk) and blk[j].startswith('        '):
+                            nns = blk[j].strip()
+                            if nns.startswith('set prefix '):
+                                net_entry['prefix'] = nns.split('set prefix', 1)[1].strip()
+                            elif nns.startswith('set area '):
+                                net_entry['area'] = nns.split('set area', 1)[1].strip()
+                            j += 1
+                        routing_config['networks'].append(net_entry)
+                        continue
+                    elif ns == 'end':
+                        break
+                    j += 1
+            elif s.startswith('config redistribute'):
+                # Parse redistribute sub-block
+                j += 1
+                while j < len(blk) and (blk[j].startswith('    ') or blk[j].strip() == ''):
+                    if not blk[j].strip():
+                        j += 1
+                        continue
+                    rs = blk[j].strip()
+                    if rs.startswith('edit '):
+                        redis_source = rs.split('edit', 1)[1].strip().strip('"')
+                        routing_config['redistribute'].append({'source': redis_source})
+                    elif rs == 'end':
+                        break
+                    j += 1
+            j += 1
+
+        self.dynamic_routing['ospf'] = routing_config
+        return i
+
+    def _parse_router_bgp(self, i: int) -> int:
+        """Parse FortiGate BGP config: config router bgp."""
+        i, blk = self._parse_block(i)
+        routing_config = {
+            'protocol': 'bgp',
+            'process_id': None,
+            'router_id': None,
+            'networks': [],
+            'neighbors': [],
+            'redistribute': [],
+            'config': {},
+        }
+
+        j = 0
+        while j < len(blk):
+            line = blk[j]
+            s = line.strip()
+
+            if s.startswith('set as '):
+                routing_config['process_id'] = s.split('set as', 1)[1].strip()
+            elif s.startswith('set router-id '):
+                routing_config['router_id'] = s.split('set router-id', 1)[1].strip()
+            elif s.startswith('config neighbor'):
+                # Parse neighbor sub-block
+                j += 1
+                while j < len(blk) and (blk[j].startswith('    ') or blk[j].strip() == ''):
+                    if not blk[j].strip():
+                        j += 1
+                        continue
+                    ns = blk[j].strip()
+                    if ns.startswith('edit '):
+                        neighbor_ip = ns.split('edit', 1)[1].strip().strip('"')
+                        neighbor_entry = {'ip': neighbor_ip}
+                        j += 1
+                        while j < len(blk) and blk[j].startswith('        '):
+                            nns = blk[j].strip()
+                            if nns.startswith('set remote-as '):
+                                neighbor_entry['remote_as'] = nns.split('set remote-as', 1)[1].strip()
+                            j += 1
+                        routing_config['neighbors'].append(neighbor_entry)
+                        continue
+                    elif ns == 'end':
+                        break
+                    j += 1
+            j += 1
+
+        self.dynamic_routing['bgp'] = routing_config
+        return i
 
 
 def nets_overlap(set_a: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network, str]], set_b: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network, str]]) -> bool:

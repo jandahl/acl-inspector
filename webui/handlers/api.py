@@ -374,8 +374,33 @@ def aliases(
 
 
 def index_status(state: AppState) -> Tuple[int, Dict[str, Any]]:
+    """Get index status including manifest summary.
+
+    Returns index cache statistics and manifest metadata including:
+    - In-memory cache status
+    - Disk cache status with manifest if available
+    - Manifest summary with vendor distribution and confidence levels
+    - History snapshot
+
+    Returns:
+        Tuple of (status_code, payload_dict)
+    """
     payload = state.index_manager.status()
     payload["history"] = state.history.snapshot()
+
+    # Enhance manifest data if present
+    manifest = payload.get("disk", {}).get("manifest")
+    if manifest and isinstance(manifest, dict):
+        payload["manifest_summary"] = {
+            "count": manifest.get("count", 0),
+            "errors": manifest.get("errors", 0),
+            "vendor_counts": manifest.get("vendor_counts", {}),
+            "confidence_counts": manifest.get("confidence_counts", {}),
+            "generated_at": manifest.get("generated_at"),
+            "root": manifest.get("root"),
+            "vendors": manifest.get("vendors", []),
+        }
+
     return 200, payload
 
 
