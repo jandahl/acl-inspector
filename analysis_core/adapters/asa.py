@@ -11,6 +11,9 @@ from parsers.cisco import asa as asa_parser
 
 logger = logging.getLogger(__name__)
 
+OBJECT_BASE_POPULARITY = 1.0
+GROUP_BASE_POPULARITY = 1.0
+
 
 def build_index(text: str) -> Dict[str, object]:
     """Build predictive-search index for ASA configs."""
