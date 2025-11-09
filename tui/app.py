@@ -268,6 +268,38 @@ class SingularityApp(App):
         # Focus search bar on startup
         self.query_one(SearchBar).focus()
 
+    def on_key(self, event) -> None:
+        """Smart keyboard routing based on context."""
+        key = event.key
+
+        # Printable characters go to search bar (unless already focused)
+        if len(key) == 1 and key.isprintable():
+            search_bar = self.query_one(SearchBar)
+            if not search_bar.has_focus:
+                search_bar.focus()
+                # Let the event propagate to SearchBar
+                return
+
+        # Up/Down arrows: route to suggestions list if visible and has results
+        if key in ("up", "down", "j", "k"):
+            suggestions_container = self.query_one("#suggestions-container")
+            if "collapsed" not in suggestions_container.classes:
+                # Results are visible, route to suggestions list
+                suggestions = self.query_one(SuggestionList)
+                if not suggestions.has_focus and suggestions.results:
+                    suggestions.focus()
+                    # Manually trigger the key on SuggestionList
+                    return
+
+        # Left/Right arrows: route to action tabs if in drill-down mode
+        if key in ("left", "right"):
+            if self.drill_down_active:
+                action_tabs = self.query_one(ActionTabs)
+                if not action_tabs.has_focus:
+                    action_tabs.focus()
+                    # Let the event propagate to ActionTabs
+                    return
+
     def _load_config(self) -> None:
         """Load and parse the firewall config."""
         try:
