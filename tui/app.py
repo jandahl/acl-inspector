@@ -84,7 +84,6 @@ class SingularityApp(App):
         height: 1fr;
         padding: 0 1;
         background: $surface;
-        transition: height 300ms ease-in-out;
     }
 
     #suggestions-container.collapsed {
