@@ -32,6 +32,7 @@ class ActionTabs(Horizontal):
             {"id": "acls", "label": "Used in ACLs"},
         ]
         self.classes = "action-tabs"
+        self.can_focus = True
 
     def compose(self):
         """Compose tab buttons."""
@@ -64,6 +65,27 @@ class ActionTabs(Horizontal):
 
         # Post message
         self.post_message(self.TabSelected(tab_id, tab_label))
+
+    def on_key(self, event) -> None:
+        """Handle Left/Right arrow keys for tab navigation."""
+        if event.key == "left":
+            self._select_previous_tab()
+            event.prevent_default()
+        elif event.key == "right":
+            self._select_next_tab()
+            event.prevent_default()
+
+    def _select_previous_tab(self) -> None:
+        """Select the previous tab (wrap around)."""
+        current_idx = next((i for i, t in enumerate(self.tabs) if t["id"] == self.selected_tab), 0)
+        prev_idx = (current_idx - 1) % len(self.tabs)
+        self._select_tab(self.tabs[prev_idx]["id"])
+
+    def _select_next_tab(self) -> None:
+        """Select the next tab (wrap around)."""
+        current_idx = next((i for i, t in enumerate(self.tabs) if t["id"] == self.selected_tab), 0)
+        next_idx = (current_idx + 1) % len(self.tabs)
+        self._select_tab(self.tabs[next_idx]["id"])
 
     def watch_selected_tab(self, old_value: str, new_value: str) -> None:
         """Update UI when selected tab changes."""
