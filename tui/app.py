@@ -87,8 +87,12 @@ class SingularityApp(App):
     }
 
     #suggestions-container.collapsed {
-        height: auto;
-        max-height: 5;
+        display: none;
+    }
+
+    SuggestionList.collapsed {
+        /* Prevent focus when hidden */
+        can-focus: false;
     }
 
     #actions-container {
@@ -97,10 +101,15 @@ class SingularityApp(App):
         padding: 0 2 1 2;
         background: $surface;
         display: none;
+        border: solid transparent;
     }
 
     #actions-container.visible {
         display: block;
+    }
+
+    #actions-container:focus-within {
+        border: solid $accent;
     }
 
     #detail-container {
@@ -217,6 +226,7 @@ class SingularityApp(App):
         self.all_objects: List[Dict[str, Any]] = []
         self.selected_object: Optional[Dict[str, Any]] = None
         self.drill_down_active = False
+        self.last_selected_index = 0  # Track which item was selected
 
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
@@ -352,6 +362,10 @@ class SingularityApp(App):
         self.selected_object = message.item
         self.drill_down_active = True
 
+        # Save the current selection index from SuggestionList
+        suggestions = self.query_one(SuggestionList)
+        self.last_selected_index = suggestions.selected_index
+
         # Update breadcrumb
         breadcrumb = self.query_one("#breadcrumb", Static)
         obj_type = message.item.get("type", "object").upper()
@@ -361,12 +375,9 @@ class SingularityApp(App):
         self.query_one("#breadcrumb-container").add_class("visible")
         self.query_one("#actions-container").add_class("visible")
 
-        # Collapse results container and show only selected item
+        # Hide results container (don't show empty list)
         suggestions_container = self.query_one("#suggestions-container")
         suggestions_container.add_class("collapsed")
-
-        suggestions = self.query_one(SuggestionList)
-        suggestions.update_results([message.item])
 
         # Show detail view with default tab (details)
         detail_view = self.query_one(DetailView)
@@ -426,7 +437,7 @@ class SingularityApp(App):
             self.query_one("#actions-container").remove_class("visible")
             self.query_one("#detail-container").remove_class("visible")
 
-            # Expand suggestions container back to full height
+            # Show suggestions container again
             suggestions_container = self.query_one("#suggestions-container")
             suggestions_container.remove_class("collapsed")
 
@@ -443,6 +454,11 @@ class SingularityApp(App):
                             break
                 suggestions = self.query_one(SuggestionList)
                 suggestions.update_results(results)
+
+                # Restore the previous selection
+                if 0 <= self.last_selected_index < len(results):
+                    suggestions.selected_index = self.last_selected_index
+
                 suggestions.focus()
             else:
                 self.clear_results()
@@ -468,25 +484,23 @@ class SingularityApp(App):
             self.notify("Dark theme activated", timeout=2)
 
     def action_menu(self) -> None:
-        """Show main menu modal."""
-        # TODO: Create proper modal menu
+        """Show main menu help."""
+        # TODO: Create proper modal screen instead of notification
         current_theme = "Light" if self.theme == "textual-light" else "Dark"
         menu_text = (
-            "ACL-inspector Menu\n\n"
-            "1. Help - Key bindings and usage\n"
-            "2. About - Version and info\n"
-            "3. Settings - Configure TUI\n\n"
-            f"Current theme: {current_theme}\n\n"
-            "Ctrl+Q: Quit\n"
-            "Ctrl+M: Toggle this menu\n"
-            "Ctrl+T: Toggle dark/light theme\n"
-            "ESC: Clear search\n"
-            "Tab: Navigate between widgets\n"
-            "Enter: Select result (coming soon)\n"
-            "Type to search objects and groups\n\n"
-            "Drill-down view: Coming soon!"
+            "ACL-inspector TUI - Quick Help\n\n"
+            f"Theme: {current_theme}\n\n"
+            "Search mode:\n"
+            "  Type to search • Up/Down/j/k to navigate\n"
+            "  Enter to drill down • ESC to clear\n\n"
+            "Drill-down mode:\n"
+            "  Left/Right arrows to switch tabs\n"
+            "  ESC to exit drill-down\n\n"
+            "Global:\n"
+            "  Ctrl+Q: Quit • Ctrl+M: Help\n"
+            "  Ctrl+T: Toggle theme • Tab: Navigate\n"
         )
-        self.notify(menu_text, timeout=12)
+        self.notify(menu_text, timeout=10)
 
     def clear_results(self) -> None:
         """Clear search results."""
