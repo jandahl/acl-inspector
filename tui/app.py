@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from typing import Dict, List, Any
+
 from textual.app import App, ComposeResult
 from textual.containers import Container, Vertical, Horizontal
 from textual.widgets import Header, Footer, Static, Input
@@ -23,12 +26,13 @@ class SingularityApp(App):
     #main-container {
         width: 100%;
         height: 100%;
-        background: $surface;
+        layout: vertical;
     }
 
     #search-container {
         width: 100%;
-        height: 3;
+        height: auto;
+        layout: vertical;
         padding: 1 2;
         background: $panel;
     }
@@ -36,21 +40,37 @@ class SingularityApp(App):
     #suggestions-container {
         width: 100%;
         height: 1fr;
-        padding: 0 2;
+        padding: 1 2;
         background: $surface;
-    }
-
-    #status-container {
-        width: 100%;
-        height: 1;
-        background: $accent;
-        color: $text;
+        overflow-y: auto;
     }
 
     .title {
         text-align: center;
         color: $primary;
         text-style: bold;
+        height: 1;
+        width: 100%;
+    }
+
+    .suggestion-item {
+        width: 100%;
+        height: 1;
+        content-align: left middle;
+    }
+
+    .suggestions-placeholder {
+        width: 100%;
+        height: 3;
+        padding: 1;
+        color: $text-muted;
+        content-align: center middle;
+    }
+
+    SearchBar {
+        width: 100%;
+        height: 3;
+        border: tall $primary;
     }
     """
 
@@ -70,6 +90,8 @@ class SingularityApp(App):
         self.vendor = vendor
         self.config_path = config_path
         self.search_results = []
+        self.parsed_config = None
+        self.all_objects: List[Dict[str, Any]] = []
 
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
@@ -92,23 +114,87 @@ class SingularityApp(App):
         """Called when app starts."""
         self.title = self.TITLE
         self.sub_title = self.SUB_TITLE
+
+        # Parse config if available
+        if self.config_path:
+            self._load_config()
+
         # Focus search bar on startup
         self.query_one(SearchBar).focus()
 
+    def _load_config(self) -> None:
+        """Load and parse the firewall config."""
+        try:
+            import sys
+            from pathlib import Path
+
+            # Add parent directory to path to import parsers
+            parent_dir = Path(__file__).parent.parent
+            if str(parent_dir) not in sys.path:
+                sys.path.insert(0, str(parent_dir))
+
+            if self.vendor == "asa":
+                from parsers.cisco.asa.parser import parse_asa_config
+                with open(self.config_path, 'r') as f:
+                    config_text = f.read()
+                self.parsed_config = parse_asa_config(config_text)
+
+                # Build search index from objects
+                self.all_objects = []
+                for obj_name, obj in self.parsed_config.objects.items():
+                    self.all_objects.append({
+                        "name": obj_name,
+                        "type": "object",
+                        "detail": str(obj.value) if hasattr(obj, 'value') else ""
+                    })
+
+                # Add object groups
+                for group_name, group in self.parsed_config.object_groups.items():
+                    member_count = len(group.members) if hasattr(group, 'members') else 0
+                    self.all_objects.append({
+                        "name": group_name,
+                        "type": "group",
+                        "detail": f"{member_count} members"
+                    })
+
+                self.log(f"Loaded {len(self.all_objects)} objects from config")
+            elif self.vendor == "fortigate":
+                from parsers.fortigate.config import parse_fortigate_config
+                with open(self.config_path, 'r') as f:
+                    config_text = f.read()
+                self.parsed_config = parse_fortigate_config(config_text)
+                # TODO: Build index for FortiGate objects
+                self.log("FortiGate parsing not yet implemented for TUI")
+        except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+            self.log(f"Error loading config: {e}\n{error_details}")
+            self.notify(f"Error loading config: {e}", severity="error")
+
     def on_search_bar_searched(self, message: SearchBar.Searched) -> None:
         """Handle debounced search events."""
-        query = message.value.strip()
+        query = message.value.strip().lower()
+
+        # Log for debugging
+        self.log(f"Search event received: query='{query}'")
+
         if not query:
             self.clear_results()
             return
 
-        # TODO: Perform actual search using indexer
-        # For now, just show placeholder results with proper object names
+        # Search through loaded objects (simple prefix match)
+        results = []
+        for obj in self.all_objects:
+            if query in obj["name"].lower():
+                results.append(obj)
+                if len(results) >= 20:  # Limit results
+                    break
+
+        self.log(f"Found {len(results)} matching objects")
+
+        # Update suggestions
         suggestions = self.query_one(SuggestionList)
-        suggestions.update_results([
-            {"name": f"TestObject{i}", "type": "object", "detail": f"10.0.0.{i}/32"}
-            for i in range(1, 11)
-        ])
+        suggestions.update_results(results)
 
     def action_quit(self) -> None:
         """Quit the application."""
