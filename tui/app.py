@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 from textual.app import App, ComposeResult
 from textual.containers import Container, Vertical, Horizontal
@@ -15,6 +15,7 @@ from .widgets.search_bar import SearchBar
 from .widgets.suggestion_list import SuggestionList
 from .widgets.status_bar import StatusBar
 from .widgets.detail_view import DetailView
+from .widgets.action_tabs import ActionTabs
 
 
 # Set up file logging
@@ -52,12 +53,6 @@ class SingularityApp(App):
         layout: vertical;
     }
 
-    #content-container {
-        width: 100%;
-        height: 1fr;
-        layout: horizontal;
-    }
-
     #search-container {
         width: 100%;
         height: auto;
@@ -66,19 +61,49 @@ class SingularityApp(App):
         background: $panel;
     }
 
+    #breadcrumb-container {
+        width: 100%;
+        height: auto;
+        padding: 0 2;
+        background: $surface;
+        display: none;
+    }
+
+    #breadcrumb-container.visible {
+        display: block;
+    }
+
+    .breadcrumb {
+        color: $text;
+        text-style: bold;
+        padding: 1 0;
+    }
+
     #suggestions-container {
-        width: 50%;
-        height: 100%;
+        width: 100%;
+        height: 1fr;
         padding: 0 1;
         background: $surface;
     }
 
+    #actions-container {
+        width: 100%;
+        height: auto;
+        padding: 0 2 1 2;
+        background: $surface;
+        display: none;
+    }
+
+    #actions-container.visible {
+        display: block;
+    }
+
     #detail-container {
-        width: 50%;
-        height: 100%;
+        width: 100%;
+        height: 1fr;
         padding: 0 1;
         background: $surface;
-        display: none;  /* Hidden by default */
+        display: none;
     }
 
     #detail-container.visible {
@@ -127,6 +152,28 @@ class SingularityApp(App):
         border: solid $accent;
     }
 
+    .action-tabs {
+        width: 100%;
+        height: auto;
+    }
+
+    .action-tab {
+        width: auto;
+        height: 3;
+        min-width: 16;
+        margin: 0 1 0 0;
+        border: solid $primary;
+        background: $surface;
+        color: $text;
+    }
+
+    .action-tab.selected {
+        border: solid $accent;
+        background: $primary;
+        color: $text;
+        text-style: bold;
+    }
+
     DetailView {
         width: 100%;
         height: 100%;
@@ -163,6 +210,8 @@ class SingularityApp(App):
         self.search_results = []
         self.parsed_config = None
         self.all_objects: List[Dict[str, Any]] = []
+        self.selected_object: Optional[Dict[str, Any]] = None
+        self.drill_down_active = False
 
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
@@ -174,15 +223,21 @@ class SingularityApp(App):
                 yield Static(f"[{self.vendor.upper()}] {self.config_path or 'No config loaded'}", classes="title")
                 yield SearchBar(placeholder="Type to search objects, ACLs, hosts...")
 
-            # Content section with horizontal split
-            with Horizontal(id="content-container"):
-                # Suggestions section
-                with Vertical(id="suggestions-container"):
-                    yield SuggestionList()
+            # Breadcrumb section (hidden until item selected)
+            with Vertical(id="breadcrumb-container"):
+                yield Static("", id="breadcrumb", classes="breadcrumb")
 
-                # Detail section (hidden by default)
-                with Vertical(id="detail-container"):
-                    yield DetailView()
+            # Suggestions/results section
+            with Vertical(id="suggestions-container"):
+                yield SuggestionList()
+
+            # Action tabs section (hidden until item selected)
+            with Vertical(id="actions-container"):
+                yield ActionTabs()
+
+            # Detail section (hidden until tab selected)
+            with Vertical(id="detail-container"):
+                yield DetailView()
 
         # Footer with help text
         yield Footer()
@@ -286,19 +341,32 @@ class SingularityApp(App):
         suggestions.update_results(results)
 
     def on_suggestion_list_item_selected(self, message: SuggestionList.ItemSelected) -> None:
-        """Handle item selection - show detail view."""
+        """Handle item selection - enter drill-down mode."""
         logger.info(f"Item selected: {message.item['name']}")
 
-        # Update detail view with selected item
+        self.selected_object = message.item
+        self.drill_down_active = True
+
+        # Update breadcrumb
+        breadcrumb = self.query_one("#breadcrumb", Static)
+        obj_type = message.item.get("type", "object").upper()
+        breadcrumb.update(f"▶ Selected: {message.item['name']} [{obj_type}]")
+
+        # Show breadcrumb and action tabs
+        self.query_one("#breadcrumb-container").add_class("visible")
+        self.query_one("#actions-container").add_class("visible")
+
+        # Collapse results - show only selected item
+        suggestions = self.query_one(SuggestionList)
+        suggestions.update_results([message.item])
+
+        # Show detail view with default tab (details)
         detail_view = self.query_one(DetailView)
         detail_view.update_object(message.item, self.parsed_config)
+        self.query_one("#detail-container").add_class("visible")
 
-        # Show the detail container
-        detail_container = self.query_one("#detail-container")
-        detail_container.add_class("visible")
-
-        # Focus the suggestions list so user can continue navigating
-        self.query_one(SuggestionList).focus()
+        # Focus action tabs for keyboard navigation
+        self.query_one(ActionTabs).focus()
 
     def action_quit(self) -> None:
         """Quit the application."""
@@ -313,15 +381,62 @@ class SingularityApp(App):
         """Focus the search bar."""
         self.query_one(SearchBar).focus()
 
-    def action_close_detail_or_clear(self) -> None:
-        """Close detail view if open, otherwise clear search."""
-        detail_container = self.query_one("#detail-container")
+    def on_action_tabs_tab_selected(self, message: ActionTabs.TabSelected) -> None:
+        """Handle tab selection - update detail view content."""
+        logger.info(f"Tab selected: {message.tab_id} ({message.tab_label})")
 
-        # Check if detail view is visible
-        if "visible" in detail_container.classes:
-            # Close detail view
-            detail_container.remove_class("visible")
-            logger.info("Detail view closed")
+        if not self.selected_object:
+            return
+
+        detail_view = self.query_one(DetailView)
+
+        if message.tab_id == "details":
+            # Show object details
+            detail_view.update_object(self.selected_object, self.parsed_config)
+        elif message.tab_id == "inspect":
+            # TODO: Show inspect results (ACL rules for this object)
+            detail_view.update_object(self.selected_object, self.parsed_config)
+            self.notify(f"Inspect mode for {self.selected_object['name']} (coming soon)", timeout=3)
+        elif message.tab_id == "compare":
+            # TODO: Show compare UI
+            detail_view.update_object(self.selected_object, self.parsed_config)
+            self.notify(f"Compare mode (coming soon)", timeout=3)
+        elif message.tab_id == "acls":
+            # TODO: Show which ACLs reference this object
+            detail_view.update_object(self.selected_object, self.parsed_config)
+            self.notify(f"Finding ACLs using {self.selected_object['name']} (coming soon)", timeout=3)
+
+    def action_close_detail_or_clear(self) -> None:
+        """Exit drill-down mode or clear search."""
+        if self.drill_down_active:
+            # Exit drill-down mode
+            self.drill_down_active = False
+            self.selected_object = None
+
+            # Hide breadcrumb, actions, and detail
+            self.query_one("#breadcrumb-container").remove_class("visible")
+            self.query_one("#actions-container").remove_class("visible")
+            self.query_one("#detail-container").remove_class("visible")
+
+            # Restore full search results
+            search_bar = self.query_one(SearchBar)
+            query = search_bar.value.strip().lower()
+            if query:
+                # Re-run search to restore results
+                results = []
+                for obj in self.all_objects:
+                    if query in obj["name"].lower():
+                        results.append(obj)
+                        if len(results) >= 20:
+                            break
+                suggestions = self.query_one(SuggestionList)
+                suggestions.update_results(results)
+                suggestions.focus()
+            else:
+                self.clear_results()
+                search_bar.focus()
+
+            logger.info("Exited drill-down mode")
         else:
             # Clear search
             search_bar = self.query_one(SearchBar)
