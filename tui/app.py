@@ -447,14 +447,29 @@ class SingularityApp(App):
         if message.tab_id == "details":
             # Show object details
             detail_view.update_object(self.selected_object, self.parsed_config)
+
         elif message.tab_id == "inspect":
-            # TODO: Show inspect results (ACL rules for this object)
-            detail_view.update_object(self.selected_object, self.parsed_config)
-            self.notify(f"Inspect mode for {self.selected_object['name']} (coming soon)", timeout=3)
+            # Show ACL rules affecting this object using shared analysis_core
+            from analysis_core import inspect_object, format_inspect_rich
+
+            try:
+                result = inspect_object(
+                    self.parsed_config,
+                    self.selected_object['name'],
+                    include_any=False  # Exclude 'any' rules by default
+                )
+                rich_content = format_inspect_rich(result)
+                detail_view.show_content(rich_content)
+                logger.info(f"Inspect completed: {result.total_rules} rules found")
+            except Exception as e:
+                logger.error(f"Inspect failed: {e}", exc_info=True)
+                self.notify(f"Inspect error: {str(e)}", severity="error", timeout=5)
+
         elif message.tab_id == "compare":
             # TODO: Show compare UI
             detail_view.update_object(self.selected_object, self.parsed_config)
             self.notify(f"Compare mode (coming soon)", timeout=3)
+
         elif message.tab_id == "acls":
             # TODO: Show which ACLs reference this object
             detail_view.update_object(self.selected_object, self.parsed_config)
