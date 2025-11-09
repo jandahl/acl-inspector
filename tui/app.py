@@ -94,6 +94,14 @@ class SingularityApp(App):
         height: 3;
         border: tall $primary;
     }
+
+    SearchBar:focus {
+        border: tall $accent;
+    }
+
+    SuggestionList:focus {
+        border: solid $warning;
+    }
     """
 
     TITLE = "ACL-inspector Singularity TUI"
@@ -101,7 +109,8 @@ class SingularityApp(App):
 
     BINDINGS = [
         Binding("ctrl+q", "quit", "Quit", show=True),
-        Binding("ctrl+h", "help", "Help", show=True),
+        Binding("ctrl+m", "menu", "Menu", show=True),
+        Binding("ctrl+t", "toggle_theme", "Theme", show=True),
         Binding("ctrl+r", "refresh", "Refresh", show=False),
         Binding("/", "focus_search", "Search", show=False),
         Binding("escape", "clear_search", "Clear", show=False),
@@ -250,17 +259,37 @@ class SingularityApp(App):
         search_bar.focus()
         self.clear_results()
 
-    def action_help(self) -> None:
-        """Show help overlay."""
-        help_text = (
-            "ACL-inspector TUI Help\n\n"
+    def action_toggle_theme(self) -> None:
+        """Toggle between dark and light theme."""
+        if self.theme == "textual-dark":
+            self.theme = "textual-light"
+            logger.info("Switched to light theme")
+            self.notify("Light theme activated", timeout=2)
+        else:
+            self.theme = "textual-dark"
+            logger.info("Switched to dark theme")
+            self.notify("Dark theme activated", timeout=2)
+
+    def action_menu(self) -> None:
+        """Show main menu modal."""
+        # TODO: Create proper modal menu
+        current_theme = "Light" if self.theme == "textual-light" else "Dark"
+        menu_text = (
+            "ACL-inspector Menu\n\n"
+            "1. Help - Key bindings and usage\n"
+            "2. About - Version and info\n"
+            "3. Settings - Configure TUI\n\n"
+            f"Current theme: {current_theme}\n\n"
             "Ctrl+Q: Quit\n"
-            "Ctrl+H: Show this help\n"
+            "Ctrl+M: Toggle this menu\n"
+            "Ctrl+T: Toggle dark/light theme\n"
             "ESC: Clear search\n"
+            "Tab: Navigate between widgets\n"
+            "Enter: Select result (coming soon)\n"
             "Type to search objects and groups\n\n"
-            "More features coming soon!"
+            "Drill-down view: Coming soon!"
         )
-        self.notify(help_text, timeout=8)
+        self.notify(menu_text, timeout=12)
 
     def clear_results(self) -> None:
         """Clear search results."""
