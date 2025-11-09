@@ -62,9 +62,15 @@ class SingularityApp(App):
     #suggestions-container {
         width: 100%;
         height: 1fr;
-        padding: 1 2;
+        padding: 0 2;
         background: $surface;
         overflow-y: auto;
+    }
+
+    SuggestionList {
+        width: 100%;
+        height: 100%;
+        border: solid $primary;
     }
 
     .title {
@@ -100,7 +106,7 @@ class SingularityApp(App):
     }
 
     SuggestionList:focus {
-        border: solid $warning;
+        border: solid $accent;
     }
     """
 

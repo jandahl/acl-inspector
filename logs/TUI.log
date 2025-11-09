@@ -22,3 +22,8 @@ AttributeError: 'ASAConfig' object has no attribute 'objects'
 2025-11-09 12:54:10,012 - TUI - INFO - Loaded 42 objects from config
 2025-11-09 16:39:27,089 - TUI - INFO - TUI started: vendor=asa, config=configs/cisco/cisco-asa-example
 2025-11-09 16:39:27,098 - TUI - INFO - Loaded 42 objects from config
+2025-11-09 16:43:26,831 - TUI - INFO - TUI started: vendor=asa, config=configs/cisco/cisco-asa-example
+2025-11-09 16:43:26,841 - TUI - INFO - Loaded 42 objects from config
+2025-11-09 16:47:49,405 - TUI - INFO - Switched to light theme
+2025-11-09 16:48:42,751 - TUI - INFO - TUI started: vendor=asa, config=configs/cisco/cisco-asa-example
+2025-11-09 16:48:42,761 - TUI - INFO - Loaded 42 objects from config
