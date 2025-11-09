@@ -27,3 +27,64 @@ AttributeError: 'ASAConfig' object has no attribute 'objects'
 2025-11-09 16:47:49,405 - TUI - INFO - Switched to light theme
 2025-11-09 16:48:42,751 - TUI - INFO - TUI started: vendor=asa, config=configs/cisco/cisco-asa-example
 2025-11-09 16:48:42,761 - TUI - INFO - Loaded 42 objects from config
+2025-11-09 16:51:50,964 - TUI - INFO - TUI started: vendor=asa, config=configs/cisco/cisco-asa-example
+2025-11-09 16:51:50,973 - TUI - INFO - Loaded 42 objects from config
+2025-11-09 16:52:20,380 - TUI - INFO - Switched to light theme
+2025-11-09 16:52:21,016 - TUI - INFO - Switched to dark theme
+2025-11-09 16:52:21,554 - TUI - INFO - Switched to light theme
+2025-11-09 16:52:22,130 - TUI - INFO - Switched to dark theme
+2025-11-09 16:52:22,660 - TUI - INFO - Switched to light theme
+2025-11-09 16:52:23,459 - TUI - INFO - Switched to dark theme
+2025-11-09 16:52:24,181 - TUI - INFO - Switched to light theme
+2025-11-09 16:52:24,896 - TUI - INFO - Switched to dark theme
+2025-11-09 19:15:31,744 - TUI - INFO - TUI started: vendor=asa, config=configs/cisco/cisco-asa-example
+2025-11-09 19:15:31,758 - TUI - INFO - Loaded 42 objects from config
+2025-11-09 19:15:37,375 - TUI - INFO - Item selected: bravo_lobby_host2
+2025-11-09 19:15:38,635 - TUI - INFO - Item selected: bravo_dest1_host1
+2025-11-09 19:15:39,070 - TUI - INFO - Item selected: bravo_dest1_host2
+2025-11-09 19:15:39,386 - TUI - INFO - Item selected: bravo_dest2_host1
+2025-11-09 19:15:39,677 - TUI - INFO - Item selected: bravo_dest2_host2
+2025-11-09 19:15:39,993 - TUI - INFO - Item selected: bravo_dest3_host1
+2025-11-09 19:15:40,354 - TUI - INFO - Item selected: bravo_dest3_host2
+2025-11-09 19:15:44,209 - TUI - INFO - Item selected: bravo_lobby_host1
+2025-11-09 19:15:44,605 - TUI - INFO - Item selected: bravo_lobby_host1
+2025-11-09 19:15:45,074 - TUI - INFO - Item selected: bravo_lobby_net
+2025-11-09 19:15:46,211 - TUI - INFO - Item selected: bravo_dest1_host2
+2025-11-09 19:22:33,508 - TUI - INFO - TUI started: vendor=asa, config=configs/cisco/cisco-asa-example
+2025-11-09 19:22:33,517 - TUI - INFO - Loaded 42 objects from config
+2025-11-09 19:22:45,604 - TUI - INFO - TUI started: vendor=asa, config=configs/cisco/cisco-asa-example
+2025-11-09 19:22:45,612 - TUI - INFO - Loaded 42 objects from config
+2025-11-09 19:22:52,159 - TUI - INFO - Item selected: bravo_lobby_host1
+2025-11-09 19:22:55,402 - TUI - INFO - Item selected: bravo_lobby_host1
+2025-11-09 19:23:01,507 - TUI - INFO - Tab selected: acls (Used in ACLs)
+2025-11-09 19:24:00,431 - TUI - INFO - Tab selected: details (Details)
+2025-11-09 19:24:03,348 - TUI - INFO - Tab selected: details (Details)
+2025-11-09 19:24:09,475 - TUI - INFO - TUI started: vendor=asa, config=configs/cisco/cisco-asa-example
+2025-11-09 19:24:09,484 - TUI - INFO - Loaded 42 objects from config
+2025-11-09 19:24:13,373 - TUI - INFO - Item selected: bravo_lobby_net
+2025-11-09 19:24:15,623 - TUI - INFO - Tab selected: inspect (Inspect)
+2025-11-09 19:24:19,407 - TUI - INFO - Exited drill-down mode
+2025-11-09 20:29:25,120 - TUI - INFO - TUI started: vendor=asa, config=configs/cisco/cisco-asa-example
+2025-11-09 20:29:25,130 - TUI - INFO - Loaded 42 objects from config
+2025-11-09 20:30:39,666 - TUI - INFO - TUI started: vendor=asa, config=configs/cisco/cisco-asa-example
+2025-11-09 20:30:39,672 - TUI - INFO - Loaded 42 objects from config
+2025-11-09 20:30:43,869 - TUI - INFO - Item selected: bravo_lobby_host2
+2025-11-09 20:31:30,451 - TUI - INFO - Item selected: bravo_lobby_host2
+2025-11-09 20:31:31,199 - TUI - INFO - Exited drill-down mode
+2025-11-09 20:31:32,571 - TUI - INFO - Item selected: bravo_dest1_host2
+2025-11-09 20:31:33,962 - TUI - INFO - Exited drill-down mode
+2025-11-09 20:31:48,599 - TUI - INFO - Item selected: bravo_lobby_host1
+2025-11-09 20:32:59,974 - TUI - INFO - Tab selected: inspect (Inspect)
+2025-11-09 20:33:05,774 - TUI - INFO - Tab selected: details (Details)
+2025-11-09 20:33:07,110 - TUI - INFO - Tab selected: inspect (Inspect)
+2025-11-09 20:33:07,817 - TUI - INFO - Tab selected: compare (Compare)
+2025-11-09 20:33:08,463 - TUI - INFO - Tab selected: acls (Used in ACLs)
+2025-11-09 20:34:38,370 - TUI - INFO - TUI started: vendor=asa, config=configs/cisco/cisco-asa-example
+2025-11-09 20:34:38,380 - TUI - INFO - Loaded 42 objects from config
+2025-11-09 20:34:42,431 - TUI - INFO - Switched to light theme
+2025-11-09 20:34:43,184 - TUI - INFO - Switched to dark theme
+2025-11-09 20:34:43,814 - TUI - INFO - Switched to light theme
+2025-11-09 20:34:45,113 - TUI - INFO - Switched to dark theme
+2025-11-09 20:34:45,697 - TUI - INFO - Switched to light theme
+2025-11-09 20:34:46,297 - TUI - INFO - Switched to dark theme
+2025-11-09 20:34:46,879 - TUI - INFO - Switched to light theme
