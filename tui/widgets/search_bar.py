@@ -19,11 +19,21 @@ class SearchBar(Input):
             self.value = value
             super().__init__()
 
+    class EnterPressed(Message):
+        """Posted when Enter is pressed in search field."""
+        pass
+
     @on(Input.Changed)
     def on_input_changed(self, event: Input.Changed) -> None:
         """React to input changes with debounce."""
         # Trigger debounced search
         self._trigger_search(event.value)
+
+    @on(Input.Submitted)
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """React to Enter key press."""
+        # Post message to notify parent that Enter was pressed
+        self.post_message(self.EnterPressed())
 
     @work(exclusive=True)
     async def _trigger_search(self, value: str) -> None:
