@@ -84,6 +84,12 @@ class SingularityApp(App):
         height: 1fr;
         padding: 0 1;
         background: $surface;
+        transition: height 300ms ease-in-out;
+    }
+
+    #suggestions-container.collapsed {
+        height: auto;
+        max-height: 5;
     }
 
     #actions-container {
@@ -356,7 +362,10 @@ class SingularityApp(App):
         self.query_one("#breadcrumb-container").add_class("visible")
         self.query_one("#actions-container").add_class("visible")
 
-        # Collapse results - show only selected item
+        # Collapse results container and show only selected item
+        suggestions_container = self.query_one("#suggestions-container")
+        suggestions_container.add_class("collapsed")
+
         suggestions = self.query_one(SuggestionList)
         suggestions.update_results([message.item])
 
@@ -417,6 +426,10 @@ class SingularityApp(App):
             self.query_one("#breadcrumb-container").remove_class("visible")
             self.query_one("#actions-container").remove_class("visible")
             self.query_one("#detail-container").remove_class("visible")
+
+            # Expand suggestions container back to full height
+            suggestions_container = self.query_one("#suggestions-container")
+            suggestions_container.remove_class("collapsed")
 
             # Restore full search results
             search_bar = self.query_one(SearchBar)
