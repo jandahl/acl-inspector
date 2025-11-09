@@ -382,6 +382,14 @@ class SingularityApp(App):
         suggestions = self.query_one(SuggestionList)
         suggestions.update_results(results)
 
+    def on_search_bar_enter_pressed(self, message: SearchBar.EnterPressed) -> None:
+        """Handle Enter key in search field - focus results."""
+        suggestions = self.query_one(SuggestionList)
+        if suggestions.results:
+            # Focus the results list if there are results
+            suggestions.focus()
+            logger.debug("Enter pressed in search - focused results list")
+
     def on_suggestion_list_item_selected(self, message: SuggestionList.ItemSelected) -> None:
         """Handle item selection - enter drill-down mode."""
         logger.info(f"Item selected: {message.item['name']}")
