@@ -453,6 +453,193 @@ def _parse_ports(values: Sequence[Any]) -> Set[int]:
     return ports
 
 
+def detect_vendor(
+    state: AppState,
+    *,
+    vendor: Optional[str],
+    filename: str,
+) -> Tuple[int, Dict[str, Any]]:
+    """Auto-detect vendor from config file content.
+
+    Returns vendor identification with confidence score and detection reason.
+    If vendor is provided, validates the guess against detected vendor.
+    """
+    # Import vendor detection from scripts
+    import sys
+    script_path = Path(__file__).parent.parent.parent / "scripts"
+    if str(script_path) not in sys.path:
+        sys.path.insert(0, str(script_path))
+
+    from index_repo import _detect_vendor
+
+    # Try all vendor config roots to find the file
+    config_path = None
+    for v in ['asa', 'fortigate', 'ios', 'ios-xe', 'ios-xr']:
+        path = _resolve_config(state, v, filename)
+        if path and path.is_file():
+            config_path = path
+            break
+
+    if not config_path:
+        # If vendor specified, try that root
+        if vendor:
+            config_path = _resolve_config(state, vendor.lower(), filename)
+
+    if not config_path or not config_path.is_file():
+        return 400, {"error": "file_not_found", "filename": filename}
+
+    try:
+        text = load_config_text(config_path)
+    except Exception as exc:
+        return 500, {"error": f"read_failed: {exc}"}
+
+    detected_vendor, confidence, reason = _detect_vendor(text, filename)
+
+    result = {
+        "filename": filename,
+        "detected_vendor": detected_vendor,
+        "confidence": confidence,
+        "reason": reason,
+        "os_tag": _vendor_os_tag(detected_vendor),
+    }
+
+    # If vendor was provided, check if it matches
+    if vendor:
+        vendor_lower = vendor.lower()
+        result["provided_vendor"] = vendor_lower
+        result["match"] = (vendor_lower == detected_vendor)
+
+    return 200, result
+
+
+def compare_cross_vendor(
+    state: AppState,
+    *,
+    vendor_a: str,
+    filename_a: str,
+    vendor_b: str,
+    filename_b: str,
+) -> Tuple[int, Dict[str, Any]]:
+    """Compare ACLs across two different vendor firewalls via IR.
+
+    Converts both configs to IR format and compares ACL entries to identify:
+    - Semantically equivalent rules
+    - Rules unique to each vendor
+    - Coverage differences
+
+    Returns comparison results with match statistics.
+    """
+    # Import IR modules
+    from parsers.cisco.asa import parser as asa_parser_module
+    from parsers.cisco.asa import ir_export as asa_export
+    from parsers.fortigate.config import FTGConfig
+    from parsers.fortigate import ir_export as ftg_export
+
+    # Resolve config paths
+    path_a = _resolve_config(state, vendor_a.lower(), filename_a)
+    path_b = _resolve_config(state, vendor_b.lower(), filename_b)
+
+    if not path_a or not path_a.is_file():
+        return 400, {"error": "config_a_not_found", "vendor": vendor_a, "filename": filename_a}
+    if not path_b or not path_b.is_file():
+        return 400, {"error": "config_b_not_found", "vendor": vendor_b, "filename": filename_b}
+
+    try:
+        # Parse vendor A
+        text_a = clean_config_text(load_config_text(path_a))
+        if vendor_a.lower() == 'asa':
+            cfg_a = asa_parser_module.ASAConfig(text_a)
+            device_a = asa_export.to_ir(cfg_a, device_name=filename_a)
+        elif vendor_a.lower() == 'fortigate':
+            cfg_a = FTGConfig(text_a)
+            device_a = ftg_export.to_ir(cfg_a, device_name=filename_a)
+        else:
+            return 400, {"error": "vendor_a_not_supported", "vendor": vendor_a}
+
+        # Parse vendor B
+        text_b = clean_config_text(load_config_text(path_b))
+        if vendor_b.lower() == 'asa':
+            cfg_b = asa_parser_module.ASAConfig(text_b)
+            device_b = asa_export.to_ir(cfg_b, device_name=filename_b)
+        elif vendor_b.lower() == 'fortigate':
+            cfg_b = FTGConfig(text_b)
+            device_b = ftg_export.to_ir(cfg_b, device_name=filename_b)
+        else:
+            return 400, {"error": "vendor_b_not_supported", "vendor": vendor_b}
+
+    except Exception as exc:
+        return 500, {"error": f"parse_failed: {exc}"}
+
+    # Compare ACLs by extracting and normalizing entries
+    entries_a = []
+    for acl in device_a.acls:
+        for entry in acl.entries:
+            entries_a.append({
+                "action": entry.action,
+                "proto": entry.proto,
+                "src": sorted(entry.src),
+                "dst": sorted(entry.dst),
+                "acl": acl.name,
+            })
+
+    entries_b = []
+    for acl in device_b.acls:
+        for entry in acl.entries:
+            entries_b.append({
+                "action": entry.action,
+                "proto": entry.proto,
+                "src": sorted(entry.src),
+                "dst": sorted(entry.dst),
+                "acl": acl.name,
+            })
+
+    # Find semantic matches (ignoring ACL name)
+    def rule_key(entry: Dict[str, Any]) -> tuple:
+        return (
+            entry["action"],
+            entry["proto"],
+            tuple(entry["src"]),
+            tuple(entry["dst"]),
+        )
+
+    keys_a = {rule_key(e): e for e in entries_a}
+    keys_b = {rule_key(e): e for e in entries_b}
+
+    common_keys = set(keys_a.keys()) & set(keys_b.keys())
+    only_a_keys = set(keys_a.keys()) - set(keys_b.keys())
+    only_b_keys = set(keys_b.keys()) - set(keys_a.keys())
+
+    result = {
+        "vendor_a": {
+            "vendor": vendor_a,
+            "filename": filename_a,
+            "os": device_a.os,
+            "version": device_a.version,
+            "acl_count": len(device_a.acls),
+            "entry_count": len(entries_a),
+        },
+        "vendor_b": {
+            "vendor": vendor_b,
+            "filename": filename_b,
+            "os": device_b.os,
+            "version": device_b.version,
+            "acl_count": len(device_b.acls),
+            "entry_count": len(entries_b),
+        },
+        "comparison": {
+            "common_rules": len(common_keys),
+            "unique_to_a": len(only_a_keys),
+            "unique_to_b": len(only_b_keys),
+            "match_percentage": round(100 * len(common_keys) / max(len(keys_a), len(keys_b), 1), 1),
+        },
+        "common_examples": [keys_a[k] for k in list(common_keys)[:5]],
+        "unique_to_a_examples": [keys_a[k] for k in list(only_a_keys)[:5]],
+        "unique_to_b_examples": [keys_b[k] for k in list(only_b_keys)[:5]],
+    }
+
+    return 200, result
+
+
 def packet_probe(
     state: AppState,
     *,

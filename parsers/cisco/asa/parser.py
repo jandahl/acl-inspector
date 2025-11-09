@@ -113,7 +113,7 @@ re_object = re.compile(r"^object(?: network)?\s+(?P<name>\S+)", re.IGNORECASE)
 re_object_network_host = re.compile(r"^\s*host\s+(?P<ip>\S+)", re.IGNORECASE)
 re_object_network_subnet = re.compile(r"^\s*(?:subnet|network)\s+(?P<ip>\S+)\s+(?P<mask>\S+)", re.IGNORECASE)
 
-re_object_group = re.compile(r"^object-group\s+(?P<type>network|service)\s+(?P<name>\S+)", re.IGNORECASE)
+re_object_group = re.compile(r"^object-group\s+(?P<type>network|service)\s+(?P<name>\S+)(?:\s+(?P<proto>tcp|udp|tcp-udp|ip))?", re.IGNORECASE)
 re_group_network_object = re.compile(r"^\s*network-object\s+object\s+(?P<name>\S+)", re.IGNORECASE)
 re_group_network_host = re.compile(r"^\s*network-object\s+host\s+(?P<ip>\S+)", re.IGNORECASE)
 re_group_network_subnet = re.compile(r"^\s*network-object\s+(?!object\b)(?!host\b)(?P<ip>\S+)\s+(?P<mask>\S+)", re.IGNORECASE)
@@ -352,6 +352,7 @@ class ASAConfig:
             if mg:
                 typ = mg.group('type').lower()
                 name = mg.group('name')
+                service_group_proto = (mg.group('proto') or '').lower() if typ == 'service' else None
                 members = []
                 i += 1
                 while i < L and self.lines[i].startswith(' '):
@@ -381,20 +382,33 @@ class ASAConfig:
                         if m_group:
                             members.append({'group-object': m_group.group('name')})
                         else:
-                            msvc = re.match(r"^\s*service-object\s+(tcp|udp|icmp|ip)(?:\s+(eq|lt|gt|neq|range)\s+(\S+)(?:\s+(\S+))?)?", ln, re.IGNORECASE)
-                            if msvc:
-                                proto = msvc.group(1).lower()
-                                op = (msvc.group(2) or '').lower()
-                                v1 = msvc.group(3)
-                                v2 = msvc.group(4)
-                                spec = {"proto": proto}
-                                if op in {"eq", "lt", "gt", "neq", "range"}:
-                                    spec.update({"op": op, "v1": v1, "v2": v2})
+                            # Parse port-object lines (destination ports for tcp/udp)
+                            mport = re.match(r"^\s*port-object\s+(eq|lt|gt|neq|range)\s+(\S+)(?:\s+(\S+))?", ln, re.IGNORECASE)
+                            if mport:
+                                # port-object doesn't specify protocol, it's inherited from object-group declaration
+                                # e.g., "object-group service HTTP tcp" means port-objects are tcp ports
+                                op = mport.group(1).lower()
+                                v1 = mport.group(2)
+                                v2 = mport.group(3)
+                                # Use protocol from object-group header (captured as service_group_proto)
+                                proto = service_group_proto or 'tcp'  # Default to tcp if not specified
+                                spec = {"proto": proto, "op": op, "v1": v1, "v2": v2}
                                 members.append(spec)
                             else:
-                                mobj = re.match(r"^\s*service-object\s+object\s+(\S+)", ln, re.IGNORECASE)
-                                if mobj:
-                                    members.append({"object": mobj.group(1)})
+                                msvc = re.match(r"^\s*service-object\s+(tcp|udp|icmp|ip)(?:\s+(eq|lt|gt|neq|range)\s+(\S+)(?:\s+(\S+))?)?", ln, re.IGNORECASE)
+                                if msvc:
+                                    proto = msvc.group(1).lower()
+                                    op = (msvc.group(2) or '').lower()
+                                    v1 = msvc.group(3)
+                                    v2 = msvc.group(4)
+                                    spec = {"proto": proto}
+                                    if op in {"eq", "lt", "gt", "neq", "range"}:
+                                        spec.update({"op": op, "v1": v1, "v2": v2})
+                                    members.append(spec)
+                                else:
+                                    mobj = re.match(r"^\s*service-object\s+object\s+(\S+)", ln, re.IGNORECASE)
+                                    if mobj:
+                                        members.append({"object": mobj.group(1)})
                     i += 1
                 if typ == 'network':
                     self.network_object_groups[name] = members
