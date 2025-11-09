@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 from textual.widgets import Static
 from textual.containers import VerticalScroll
 from rich.text import Text
 from rich.table import Table
+from rich.console import Group, RenderableType
 
 
 class DetailView(VerticalScroll):
@@ -20,6 +21,15 @@ class DetailView(VerticalScroll):
     def compose(self):
         """Compose child widgets."""
         yield Static("Select an item to view details", classes="detail-placeholder")
+
+    def show_content(self, content: RenderableType) -> None:
+        """Show arbitrary Rich renderable content.
+
+        Args:
+            content: Any Rich renderable (Table, Panel, Group, etc.)
+        """
+        self.remove_children()
+        self.mount(Static(content, classes="detail-content"))
 
     def update_object(self, obj: Dict[str, Any], config=None) -> None:
         """Update the displayed object details.
