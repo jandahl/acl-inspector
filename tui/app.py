@@ -14,6 +14,7 @@ from textual.binding import Binding
 from .widgets.search_bar import SearchBar
 from .widgets.suggestion_list import SuggestionList
 from .widgets.status_bar import StatusBar
+from .widgets.detail_view import DetailView
 
 
 # Set up file logging
@@ -51,6 +52,12 @@ class SingularityApp(App):
         layout: vertical;
     }
 
+    #content-container {
+        width: 100%;
+        height: 1fr;
+        layout: horizontal;
+    }
+
     #search-container {
         width: 100%;
         height: auto;
@@ -60,11 +67,22 @@ class SingularityApp(App):
     }
 
     #suggestions-container {
-        width: 100%;
-        height: 1fr;
-        padding: 0 2;
+        width: 50%;
+        height: 100%;
+        padding: 0 1;
         background: $surface;
-        overflow-y: auto;
+    }
+
+    #detail-container {
+        width: 50%;
+        height: 100%;
+        padding: 0 1;
+        background: $surface;
+        display: none;  /* Hidden by default */
+    }
+
+    #detail-container.visible {
+        display: block;
     }
 
     SuggestionList {
@@ -108,6 +126,22 @@ class SingularityApp(App):
     SuggestionList:focus {
         border: solid $accent;
     }
+
+    DetailView {
+        width: 100%;
+        height: 100%;
+        border: solid $success;
+    }
+
+    .detail-content {
+        padding: 1;
+    }
+
+    .detail-placeholder {
+        padding: 1;
+        color: $text-muted;
+        content-align: center middle;
+    }
     """
 
     TITLE = "ACL-inspector Singularity TUI"
@@ -119,7 +153,7 @@ class SingularityApp(App):
         Binding("ctrl+t", "toggle_theme", "Theme", show=True),
         Binding("ctrl+r", "refresh", "Refresh", show=False),
         Binding("/", "focus_search", "Search", show=False),
-        Binding("escape", "clear_search", "Clear", show=False),
+        Binding("escape", "close_detail_or_clear", "Close/Clear", show=False),
     ]
 
     def __init__(self, vendor: str = "asa", config_path: str = ""):
@@ -140,9 +174,15 @@ class SingularityApp(App):
                 yield Static(f"[{self.vendor.upper()}] {self.config_path or 'No config loaded'}", classes="title")
                 yield SearchBar(placeholder="Type to search objects, ACLs, hosts...")
 
-            # Suggestions section
-            with Vertical(id="suggestions-container"):
-                yield SuggestionList()
+            # Content section with horizontal split
+            with Horizontal(id="content-container"):
+                # Suggestions section
+                with Vertical(id="suggestions-container"):
+                    yield SuggestionList()
+
+                # Detail section (hidden by default)
+                with Vertical(id="detail-container"):
+                    yield DetailView()
 
         # Footer with help text
         yield Footer()
@@ -245,6 +285,21 @@ class SingularityApp(App):
         suggestions = self.query_one(SuggestionList)
         suggestions.update_results(results)
 
+    def on_suggestion_list_item_selected(self, message: SuggestionList.ItemSelected) -> None:
+        """Handle item selection - show detail view."""
+        logger.info(f"Item selected: {message.item['name']}")
+
+        # Update detail view with selected item
+        detail_view = self.query_one(DetailView)
+        detail_view.update_object(message.item, self.parsed_config)
+
+        # Show the detail container
+        detail_container = self.query_one("#detail-container")
+        detail_container.add_class("visible")
+
+        # Focus the suggestions list so user can continue navigating
+        self.query_one(SuggestionList).focus()
+
     def action_quit(self) -> None:
         """Quit the application."""
         self.exit()
@@ -258,12 +313,21 @@ class SingularityApp(App):
         """Focus the search bar."""
         self.query_one(SearchBar).focus()
 
-    def action_clear_search(self) -> None:
-        """Clear the search field."""
-        search_bar = self.query_one(SearchBar)
-        search_bar.value = ""
-        search_bar.focus()
-        self.clear_results()
+    def action_close_detail_or_clear(self) -> None:
+        """Close detail view if open, otherwise clear search."""
+        detail_container = self.query_one("#detail-container")
+
+        # Check if detail view is visible
+        if "visible" in detail_container.classes:
+            # Close detail view
+            detail_container.remove_class("visible")
+            logger.info("Detail view closed")
+        else:
+            # Clear search
+            search_bar = self.query_one(SearchBar)
+            search_bar.value = ""
+            search_bar.focus()
+            self.clear_results()
 
     def action_toggle_theme(self) -> None:
         """Toggle between dark and light theme."""
