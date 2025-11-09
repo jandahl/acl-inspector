@@ -429,6 +429,14 @@ class FTGConfig:
                     if ps.startswith('edit '):
                         iface = ps.split('edit', 1)[1].strip().strip('"')
                         routing_config['passive_interfaces'].append(iface)
+                        # Skip to next after the edit line
+                        j += 1
+                        while j < len(blk) and blk[j].startswith('        '):
+                            if blk[j].strip() == 'next':
+                                j += 1
+                                break
+                            j += 1
+                        continue
                     elif ps == 'end':
                         break
                     j += 1
@@ -450,6 +458,10 @@ class FTGConfig:
                                 net_entry['prefix'] = nns.split('set prefix', 1)[1].strip()
                             elif nns.startswith('set area '):
                                 net_entry['area'] = nns.split('set area', 1)[1].strip()
+                            elif nns == 'next':
+                                # End of this edit block
+                                j += 1
+                                break
                             j += 1
                         routing_config['networks'].append(net_entry)
                         continue
@@ -513,6 +525,10 @@ class FTGConfig:
                             nns = blk[j].strip()
                             if nns.startswith('set remote-as '):
                                 neighbor_entry['remote_as'] = nns.split('set remote-as', 1)[1].strip()
+                            elif nns == 'next':
+                                # End of this edit block
+                                j += 1
+                                break
                             j += 1
                         routing_config['neighbors'].append(neighbor_entry)
                         continue

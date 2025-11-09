@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
-from textual import work
+from textual import work, on
 from textual.widgets import Input
 from textual.message import Message
 
@@ -19,16 +19,20 @@ class SearchBar(Input):
             self.value = value
             super().__init__()
 
-    def watch_value(self, value: str) -> None:
-        """React to value changes with debounce."""
-        # Use work decorator to debounce
-        self._trigger_search(value)
+    @on(Input.Changed)
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """React to input changes with debounce."""
+        # Log the input change
+        self.log(f"Input changed: value='{event.value}'")
+        # Trigger debounced search
+        self._trigger_search(event.value)
 
     @work(exclusive=True)
     async def _trigger_search(self, value: str) -> None:
         """Debounced search trigger."""
         # Wait 250ms before posting search message
         await asyncio.sleep(0.25)
+        self.log(f"Posting search message for: '{value}'")
         self.post_message(self.Searched(value))
 
     def action_clear(self) -> None:

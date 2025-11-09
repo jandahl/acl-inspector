@@ -163,6 +163,38 @@ def register_api(router: Router, state: AppState) -> None:
         )
         return json_response(payload, status)
 
+    def handle_detect_vendor(request: Request) -> Response:
+        if request.state is None:
+            return json_response({"error": "Server state unavailable"}, 500)
+        vendor = _get_param(request.query, "vendor", "")
+        filename = _get_param(request.query, "filename", "")
+        if not filename:
+            return json_response({"error": "filename parameter required"}, 400)
+        status, payload = api_handlers.detect_vendor(
+            request.state,
+            vendor=vendor if vendor else None,
+            filename=filename,
+        )
+        return json_response(payload, status)
+
+    def handle_compare_cross_vendor(request: Request) -> Response:
+        if request.state is None:
+            return json_response({"error": "Server state unavailable"}, 500)
+        vendor_a = _get_param(request.query, "vendor_a", "")
+        filename_a = _get_param(request.query, "filename_a", "")
+        vendor_b = _get_param(request.query, "vendor_b", "")
+        filename_b = _get_param(request.query, "filename_b", "")
+        if not (vendor_a and filename_a and vendor_b and filename_b):
+            return json_response({"error": "vendor_a, filename_a, vendor_b, filename_b required"}, 400)
+        status, payload = api_handlers.compare_cross_vendor(
+            request.state,
+            vendor_a=vendor_a,
+            filename_a=filename_a,
+            vendor_b=vendor_b,
+            filename_b=filename_b,
+        )
+        return json_response(payload, status)
+
     router.add("GET", "/api/objects", handle_objects)
     router.add("GET", "/api/singularity/suggest", handle_singularity_suggest)
     router.add("GET", "/api/meta", handle_meta)
@@ -170,6 +202,8 @@ def register_api(router: Router, state: AppState) -> None:
     router.add("GET", "/api/config", handle_config)
     router.add("GET", "/api/index/status", handle_index_status)
     router.add("GET", "/api/history", handle_history)
+    router.add("GET", "/api/detect-vendor", handle_detect_vendor)
+    router.add("GET", "/api/compare-cross-vendor", handle_compare_cross_vendor)
     router.add("GET", "/healthz", handle_health)
     router.add("POST", "/api/cache/flush", handle_cache_flush)
     router.add("POST", "/api/probe", handle_probe)

@@ -113,12 +113,34 @@ access-list OUTSIDE extended deny ip any any
         self.assertIn('access-list OUTSIDE', output)
 
     def test_service_groups(self):
-        """Test that service object-groups survive round-trip.
+        """Test that service object-groups survive round-trip."""
+        config = """
+object-group service WEB tcp
+ port-object eq 80
+ port-object eq 443
+object-group service SSH
+ service-object tcp eq 22
+"""
+        cfg = ASAConfig(config)
+        device = asa_export.to_ir(cfg)
 
-        TODO: ASA parser currently doesn't parse port-object lines.
-        This test is skipped until parser support is added.
-        """
-        self.skipTest("ASA parser does not yet parse port-object/service-object lines")
+        # Verify service groups were parsed
+        self.assertGreater(len(device.service_groups), 0)
+
+        # Find WEB service group
+        web_sg = next((sg for sg in device.service_groups if sg.name == 'WEB'), None)
+        self.assertIsNotNone(web_sg)
+        self.assertEqual(len(web_sg.members), 2)
+
+        # Verify port-object entries
+        for member in web_sg.members:
+            self.assertIn('proto', member)
+            self.assertEqual(member['proto'], 'tcp')
+            self.assertIn('op', member)
+
+        # Round-trip
+        output = asa_import.from_ir(device)
+        self.assertIn('object-group service', output)
 
 
 class TestFortiGateRoundTrip(unittest.TestCase):
@@ -352,6 +374,204 @@ object-group network GRP1
         self.assertIsInstance(test_obj.literals, list)
         for literal in test_obj.literals:
             self.assertIsInstance(literal, str)
+
+
+class TestRoutingProtocolTranslation(unittest.TestCase):
+    """Test routing protocol IR translation."""
+
+    def test_asa_static_routes_to_ir(self):
+        """Test ASA static routes export to IR."""
+        config = """
+route outside 0.0.0.0 0.0.0.0 203.0.113.1 1
+route inside 192.168.1.0 255.255.255.0 10.0.0.1 10 tunneled
+route dmz 10.20.0.0 255.255.0.0 10.20.1.1 1 track 10
+"""
+        cfg = ASAConfig(config)
+        device = asa_export.to_ir(cfg)
+
+        # Verify static routes
+        self.assertEqual(len(device.static_routes), 3)
+
+        # Check default route
+        default_route = next((r for r in device.static_routes if r.destination == '0.0.0.0/0'), None)
+        self.assertIsNotNone(default_route)
+        self.assertEqual(default_route.next_hop, '203.0.113.1')
+        self.assertEqual(default_route.interface, 'outside')
+        self.assertEqual(default_route.distance, 1)
+
+        # Check tunneled route
+        tunneled = next((r for r in device.static_routes if r.tunneled), None)
+        self.assertIsNotNone(tunneled)
+        self.assertEqual(tunneled.destination, '192.168.1.0/24')
+
+        # Check tracked route
+        tracked = next((r for r in device.static_routes if r.track is not None), None)
+        self.assertIsNotNone(tracked)
+        self.assertEqual(tracked.track, 10)
+
+    def test_asa_ospf_to_ir(self):
+        """Test ASA OSPF configuration export to IR."""
+        config = """
+router ospf 1
+ router-id 1.1.1.1
+ network 192.168.1.0 255.255.255.0 area 0
+ network 192.168.2.0 255.255.255.0 area 1
+ log-adjacency-changes
+"""
+        cfg = ASAConfig(config)
+        device = asa_export.to_ir(cfg)
+
+        # Verify OSPF process
+        self.assertEqual(len(device.dynamic_routing), 1)
+        ospf = device.dynamic_routing[0]
+
+        self.assertEqual(ospf.protocol, 'ospf')
+        self.assertEqual(ospf.process_id, '1')  # Process ID stored as string
+        self.assertEqual(ospf.router_id, '1.1.1.1')
+        self.assertEqual(len(ospf.networks), 2)
+
+        # Check networks
+        area0 = next((n for n in ospf.networks if n.get('area') == '0'), None)
+        self.assertIsNotNone(area0)
+        self.assertIn('192.168.1.0', area0.get('network', ''))
+
+    def test_asa_bgp_to_ir(self):
+        """Test ASA BGP configuration export to IR."""
+        config = """
+router bgp 65001
+ router-id 10.10.10.10
+ neighbor 203.0.113.100 remote-as 65002
+ neighbor 203.0.113.101 remote-as 65003
+"""
+        cfg = ASAConfig(config)
+        device = asa_export.to_ir(cfg)
+
+        # Verify BGP process
+        bgp = next((r for r in device.dynamic_routing if r.protocol == 'bgp'), None)
+        self.assertIsNotNone(bgp)
+        self.assertEqual(bgp.process_id, '65001')  # Process ID stored as string
+        self.assertEqual(bgp.router_id, '10.10.10.10')
+        self.assertEqual(len(bgp.neighbors), 2)
+
+        # Check neighbor
+        neighbor = bgp.neighbors[0]
+        self.assertIn('ip', neighbor)
+        self.assertIn('remote_as', neighbor)
+
+    def test_fortigate_static_routes_to_ir(self):
+        """Test FortiGate static routes export to IR."""
+        config = """
+config router static
+    edit 1
+        set dst 0.0.0.0/0
+        set gateway 203.0.113.1
+        set device "wan1"
+        set distance 10
+    next
+    edit 2
+        set dst 192.168.1.0/24
+        set gateway 10.0.0.1
+        set device "lan"
+    next
+end
+"""
+        cfg = FTGConfig(config)
+        device = ftg_export.to_ir(cfg)
+
+        # Verify routes
+        self.assertEqual(len(device.static_routes), 2)
+
+        default = next((r for r in device.static_routes if r.destination == '0.0.0.0/0'), None)
+        self.assertIsNotNone(default)
+        self.assertEqual(default.next_hop, '203.0.113.1')
+        self.assertEqual(default.interface, 'wan1')
+        self.assertEqual(default.distance, 10)
+
+    def test_fortigate_ospf_to_ir(self):
+        """Test FortiGate OSPF export to IR."""
+        config = """
+config router ospf
+    set router-id 1.1.1.1
+    config network
+        edit 1
+            set prefix 192.168.1.0/24
+            set area 0.0.0.0
+        next
+        edit 2
+            set prefix 192.168.2.0/24
+            set area 0.0.0.1
+        next
+    end
+end
+"""
+        cfg = FTGConfig(config)
+        device = ftg_export.to_ir(cfg)
+
+        # Verify OSPF
+        ospf = next((r for r in device.dynamic_routing if r.protocol == 'ospf'), None)
+        self.assertIsNotNone(ospf)
+        self.assertEqual(ospf.router_id, '1.1.1.1')
+        self.assertEqual(len(ospf.networks), 2)  # Should capture both networks now
+
+        # Verify both networks were parsed
+        area0 = next((n for n in ospf.networks if n.get('area') == '0.0.0.0'), None)
+        area1 = next((n for n in ospf.networks if n.get('area') == '0.0.0.1'), None)
+        self.assertIsNotNone(area0)
+        self.assertIsNotNone(area1)
+
+    def test_routing_cross_vendor_asa_to_fortigate(self):
+        """Test ASA routing translates to FortiGate."""
+        config = """
+route outside 0.0.0.0 0.0.0.0 203.0.113.1 1
+router ospf 1
+ router-id 1.1.1.1
+ network 192.168.1.0 255.255.255.0 area 0
+"""
+        cfg = ASAConfig(config)
+        device = asa_export.to_ir(cfg)
+
+        # Translate to FortiGate
+        output = ftg_import.from_ir(device)
+
+        # Verify FortiGate routing syntax
+        self.assertIn('config router static', output)
+        self.assertIn('set dst 0.0.0.0/0', output)
+        self.assertIn('set gateway 203.0.113.1', output)
+        self.assertIn('config router ospf', output)
+        self.assertIn('set router-id 1.1.1.1', output)
+
+    def test_routing_cross_vendor_fortigate_to_asa(self):
+        """Test FortiGate routing translates to ASA."""
+        config = """
+config router static
+    edit 1
+        set dst 0.0.0.0/0
+        set gateway 203.0.113.1
+        set device "outside"
+        set distance 1
+    next
+end
+config router ospf
+    set router-id 1.1.1.1
+    config network
+        edit 1
+            set prefix 192.168.1.0/24
+            set area 0.0.0.0
+        next
+    end
+end
+"""
+        cfg = FTGConfig(config)
+        device = ftg_export.to_ir(cfg)
+
+        # Translate to ASA
+        output = asa_import.from_ir(device)
+
+        # Verify ASA routing syntax
+        self.assertIn('route outside 0.0.0.0 0.0.0.0 203.0.113.1 1', output)
+        self.assertIn('router ospf', output)
+        self.assertIn('router-id 1.1.1.1', output)
+        self.assertIn('network 192.168.1.0', output)
 
 
 if __name__ == '__main__':
