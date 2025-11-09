@@ -1,0 +1,10 @@
+2025-11-09 12:23:14,724 - TUI - INFO - TUI started: vendor=asa, config=configs/cisco/cisco-asa-example
+2025-11-09 12:23:14,733 - TUI - ERROR - Error loading config: 'ASAConfig' object has no attribute 'objects'
+Traceback (most recent call last):
+  File "/Users/jangronemann/code/ACL-inspector/tui/app.py", line 170, in _load_config
+    for obj_name, obj in self.parsed_config.objects.items():
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'ASAConfig' object has no attribute 'objects'
+
+2025-11-09 12:23:50,223 - TUI - INFO - TUI started: vendor=asa, config=configs/cisco/cisco-asa-example
+2025-11-09 12:23:50,232 - TUI - INFO - Loaded 42 objects from config

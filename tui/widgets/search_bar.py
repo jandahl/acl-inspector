@@ -22,8 +22,6 @@ class SearchBar(Input):
     @on(Input.Changed)
     def on_input_changed(self, event: Input.Changed) -> None:
         """React to input changes with debounce."""
-        # Log the input change
-        self.log(f"Input changed: value='{event.value}'")
         # Trigger debounced search
         self._trigger_search(event.value)
 
@@ -32,7 +30,6 @@ class SearchBar(Input):
         """Debounced search trigger."""
         # Wait 250ms before posting search message
         await asyncio.sleep(0.25)
-        self.log(f"Posting search message for: '{value}'")
         self.post_message(self.Searched(value))
 
     def action_clear(self) -> None:

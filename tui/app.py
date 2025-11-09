@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Dict, List, Any
 
@@ -13,6 +14,27 @@ from textual.binding import Binding
 from .widgets.search_bar import SearchBar
 from .widgets.suggestion_list import SuggestionList
 from .widgets.status_bar import StatusBar
+
+
+# Set up file logging
+def setup_logging():
+    """Configure logging to file."""
+    log_dir = Path("./logs")
+    log_dir.mkdir(exist_ok=True)
+
+    log_file = log_dir / "TUI.log"
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(log_file),
+        ]
+    )
+    return logging.getLogger("TUI")
+
+
+logger = setup_logging()
 
 
 class SingularityApp(App):
@@ -78,10 +100,10 @@ class SingularityApp(App):
     SUB_TITLE = "Search-first firewall configuration analysis"
 
     BINDINGS = [
-        Binding("ctrl+c,q", "quit", "Quit", show=True),
-        Binding("ctrl+r", "refresh", "Refresh", show=True),
-        Binding("/", "focus_search", "Search", show=True),
-        Binding("?", "help", "Help", show=True),
+        Binding("ctrl+q", "quit", "Quit", show=True),
+        Binding("ctrl+h", "help", "Help", show=True),
+        Binding("ctrl+r", "refresh", "Refresh", show=False),
+        Binding("/", "focus_search", "Search", show=False),
         Binding("escape", "clear_search", "Clear", show=False),
     ]
 
@@ -107,17 +129,21 @@ class SingularityApp(App):
             with Vertical(id="suggestions-container"):
                 yield SuggestionList()
 
-        # Status bar at bottom
-        yield StatusBar()
+        # Footer with help text
+        yield Footer()
 
     def on_mount(self) -> None:
         """Called when app starts."""
         self.title = self.TITLE
         self.sub_title = self.SUB_TITLE
 
+        logger.info(f"TUI started: vendor={self.vendor}, config={self.config_path}")
+
         # Parse config if available
         if self.config_path:
             self._load_config()
+        else:
+            logger.warning("No config file specified")
 
         # Focus search bar on startup
         self.query_one(SearchBar).focus()
@@ -134,55 +160,63 @@ class SingularityApp(App):
                 sys.path.insert(0, str(parent_dir))
 
             if self.vendor == "asa":
-                from parsers.cisco.asa.parser import parse_asa_config
+                from parsers.cisco.asa.parser import ASAConfig
                 with open(self.config_path, 'r') as f:
                     config_text = f.read()
-                self.parsed_config = parse_asa_config(config_text)
+                self.parsed_config = ASAConfig(config_text)
 
                 # Build search index from objects
                 self.all_objects = []
-                for obj_name, obj in self.parsed_config.objects.items():
+                for obj_name, networks in self.parsed_config.network_objects.items():
+                    # Convert network set to string representation
+                    detail = ", ".join(str(net) for net in list(networks)[:3])  # Show first 3
+                    if len(networks) > 3:
+                        detail += f" (+{len(networks)-3} more)"
                     self.all_objects.append({
                         "name": obj_name,
                         "type": "object",
-                        "detail": str(obj.value) if hasattr(obj, 'value') else ""
+                        "detail": detail
                     })
 
                 # Add object groups
-                for group_name, group in self.parsed_config.object_groups.items():
-                    member_count = len(group.members) if hasattr(group, 'members') else 0
+                for group_name, members in self.parsed_config.network_object_groups.items():
+                    member_count = len(members)
                     self.all_objects.append({
                         "name": group_name,
                         "type": "group",
                         "detail": f"{member_count} members"
                     })
 
-                self.log(f"Loaded {len(self.all_objects)} objects from config")
+                logger.info(f"Loaded {len(self.all_objects)} objects from config")
             elif self.vendor == "fortigate":
-                from parsers.fortigate.config import parse_fortigate_config
+                from parsers.fortigate.config import FTGConfig
                 with open(self.config_path, 'r') as f:
                     config_text = f.read()
-                self.parsed_config = parse_fortigate_config(config_text)
+                self.parsed_config = FTGConfig(config_text)
                 # TODO: Build index for FortiGate objects
-                self.log("FortiGate parsing not yet implemented for TUI")
+                logger.warning("FortiGate parsing not yet fully implemented for TUI")
         except Exception as e:
             import traceback
             error_details = traceback.format_exc()
-            self.log(f"Error loading config: {e}\n{error_details}")
-            self.notify(f"Error loading config: {e}", severity="error")
+            logger.error(f"Error loading config: {e}\n{error_details}")
+            # Make error notification persistent (timeout=0 means it stays until dismissed)
+            self.notify(
+                f"Failed to load config: {str(e)[:100]}...\nCheck ./logs/TUI.log for details",
+                severity="error",
+                timeout=10  # Show for 10 seconds
+            )
 
     def on_search_bar_searched(self, message: SearchBar.Searched) -> None:
         """Handle debounced search events."""
         query = message.value.strip().lower()
 
-        # Log for debugging
-        self.log(f"Search event received: query='{query}'")
+        logger.debug(f"Search event received: query='{query}'")
 
         if not query:
             self.clear_results()
             return
 
-        # Search through loaded objects (simple prefix match)
+        # Search through loaded objects (simple substring match)
         results = []
         for obj in self.all_objects:
             if query in obj["name"].lower():
@@ -190,7 +224,7 @@ class SingularityApp(App):
                 if len(results) >= 20:  # Limit results
                     break
 
-        self.log(f"Found {len(results)} matching objects")
+        logger.debug(f"Found {len(results)} matching objects for query '{query}'")
 
         # Update suggestions
         suggestions = self.query_one(SuggestionList)
@@ -218,8 +252,15 @@ class SingularityApp(App):
 
     def action_help(self) -> None:
         """Show help overlay."""
-        # TODO: Display help modal
-        self.notify("Help: / to search, q to quit, ESC to clear")
+        help_text = (
+            "ACL-inspector TUI Help\n\n"
+            "Ctrl+Q: Quit\n"
+            "Ctrl+H: Show this help\n"
+            "ESC: Clear search\n"
+            "Type to search objects and groups\n\n"
+            "More features coming soon!"
+        )
+        self.notify(help_text, timeout=8)
 
     def clear_results(self) -> None:
         """Clear search results."""
