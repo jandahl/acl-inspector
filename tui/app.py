@@ -90,11 +90,6 @@ class SingularityApp(App):
         display: none;
     }
 
-    SuggestionList.collapsed {
-        /* Prevent focus when hidden */
-        can-focus: false;
-    }
-
     #actions-container {
         width: 100%;
         height: auto;
