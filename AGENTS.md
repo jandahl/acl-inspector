@@ -34,6 +34,7 @@ New features in this iteration
 - Duplicate object detection: For a given target, report other network-objects that resolve to the same IP/network
 - Robust tokenization for ACL parsing: consume service object(-group) names appearing in protocol position to prevent token bleed into src/dst parsing
 - Web UI: predictive search (prefix) via JSON API; UI structured with CSS classes and default dark mode with a switch; mode tabs (Inspect/Compare, Find host, Packet check, Preferences); duplicates shown in a dedicated box; optional disk cache for indices
+- TUI (Terminal User Interface): Full-featured interactive terminal UI with fuzzy search, drill-down tabs, export functionality (JSON/CSV/TXT), protocol/port filters, interactive settings screen, path check simulation, and theme toggle. Settings persist to ~/.config/acl-inspector/tui-settings.json
 
 Quality and linting
 -------------------
@@ -118,10 +119,46 @@ Docker notes
 
 Config directories
 ------------------
-- Default directories scanned by the web UI:
+- Default directories scanned by the web UI and TUI:
   - ASA: `configs/cisco`
   - FortiGate: `configs/fortigate`
-- These can be overridden via CLI flags in `access-list-web.py`: `--configs-cisco`, `--configs-fortigate`.
+- Web UI: Override via CLI flags in `access-list-web.py`: `--configs-cisco`, `--configs-fortigate`.
+- TUI: Override via CLI flags in `python3 -m tui`: `--vendor`, `--config` (file or directory).
+
+TUI (Terminal User Interface)
+------------------------------
+- Launch: `python3 -m tui` or `make tui`
+- Architecture:
+  - Built with Textual framework (Python TUI library)
+  - Modular widget structure: `tui/widgets/` for reusable components
+  - Screen system: `tui/screens/` for modal dialogs (settings, export, help, about)
+  - State management: `tui/state.py` for settings persistence
+  - Analysis core: Shared `analysis_core/` module used by both TUI and Web UI
+- Key Components:
+  - `tui/app.py`: Main application, search bar, keyboard routing
+  - `tui/widgets/search_bar.py`: Fuzzy search input
+  - `tui/widgets/suggestion_list.py`: Results list with selection
+  - `tui/widgets/detail_view.py`: Tab content display
+  - `tui/widgets/action_tabs.py`: Tab navigation (Details, Inspect, Compare, Used in ACLs, Path Check)
+  - `tui/widgets/filter_bar.py`: Protocol/port/action filters for Inspect tab
+  - `tui/screens/settings_screen.py`: Interactive settings with Select/Switch widgets
+  - `tui/screens/export_screen.py`: Export dialog with format selection
+  - `tui/utils/export.py`: Export manager for JSON/CSV/TXT formats
+- Settings:
+  - Persisted to `~/.config/acl-inspector/tui-settings.json`
+  - Categories: Display, Search, Config, Advanced
+  - Editable via interactive settings screen (Ctrl+Shift+S)
+  - Includes: theme, line numbers, results per page, search mode, case sensitivity, max results, logging level, cache settings
+- Testing:
+  - Tests under `tests/test_tui_*.py`
+  - Covers: export, filters, settings, tabs, navigation, multiconfig support
+  - Most TUI tests skip in CI (textual framework not available in test environment)
+- Documentation:
+  - `TUI_QUICKSTART_GUIDE.md`: User guide with examples
+  - `TUI_FEATURE_PLAN.md`: Roadmap and feature completeness plan
+  - `TUI_IMPLEMENTATION_SUMMARY.md`: Technical implementation details
+  - `TUI_COMPLETION_SUMMARY.md`: Feature completion summary
+  - `INTERACTIVE_SETTINGS_SUMMARY.md`: Settings screen implementation details
 CLI output & structured formats
 ------------------------------
 - Text output aims to be explicit and readable:

@@ -117,6 +117,35 @@ Notes on parsing
 - Service object(-group) names at the protocol position are consumed to prevent token spillover
  - Optional port-aware filtering is supported via `--proto` and `--dport`
 
+TUI (Terminal User Interface)
+------------------------------
+- Launch the interactive terminal UI:
+  `python3 -m tui` or `make tui`
+
+- Features:
+  - **Fuzzy search**: Real-time search across all objects with keyboard navigation (up/down/j/k)
+  - **Multi-config support**: Load single files or entire directories
+  - **Drill-down tabs**: Details, Inspect, Compare, Used in ACLs, Path Check
+  - **Export functionality**: Export results to JSON/CSV/TXT (Ctrl+E)
+  - **Filters**: Protocol/port/action filters in Inspect tab
+  - **Interactive settings**: Configure display, search, and advanced options (Ctrl+Shift+S)
+  - **Theme toggle**: Switch between dark/light themes (Ctrl+T)
+  - **Path check**: Simulate packet flows through NAT and ACLs (ASA only)
+
+- Keyboard shortcuts:
+  - `Ctrl+O`: Main menu
+  - `F1`: Help screen
+  - `Ctrl+E`: Export current tab
+  - `Ctrl+T`: Toggle theme
+  - `Ctrl+Shift+S`: Settings
+  - `ESC`: Navigate back
+  - `Left/Right`: Switch tabs
+  - `Up/Down` or `j/k`: Navigate results
+
+- Settings are persisted to `~/.config/acl-inspector/tui-settings.json`
+
+- See `TUI_QUICKSTART_GUIDE.md` for detailed usage instructions
+
 Web UI
 ------
 - Start a simple local UI (default port 8083):

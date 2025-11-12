@@ -86,6 +86,7 @@ class SuggestionList(VerticalScroll):
         name = result.get("name", "Unknown")
         obj_type = result.get("type", "unknown")
         detail = result.get("detail", "")
+        source_file = result.get("source_file", "")
 
         # Type badge colors
         type_colors = {
@@ -111,6 +112,10 @@ class SuggestionList(VerticalScroll):
 
         # Type badge
         text.append(f"[{obj_type:8s}]", style=type_color)
+
+        # Source file (if available and multi-config mode)
+        if source_file:
+            text.append(f" [{source_file}]", style="dim italic")
 
         # Detail
         if detail:
