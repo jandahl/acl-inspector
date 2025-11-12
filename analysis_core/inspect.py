@@ -95,10 +95,20 @@ def inspect_object(
     )
 
     # Convert to InspectResult
+    # Handle aliases - may be dict or list depending on parser
+    aliases_raw = result_dict.get("aliases", [])
+    if isinstance(aliases_raw, dict):
+        # If dict, extract keys
+        aliases = list(aliases_raw.keys())
+    elif isinstance(aliases_raw, list):
+        aliases = aliases_raw
+    else:
+        aliases = []
+
     return InspectResult(
         object_name=target,
         resolved_addresses=[str(net) for net in result_dict["target_nets"]],
         matching_rules=result_dict["hits"],
-        duplicates=result_dict.get("aliases", []),
+        duplicates=aliases,
         total_rules=len(result_dict["hits"])
     )

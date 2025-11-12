@@ -128,6 +128,7 @@ re_tokenized = re.compile(r"\S+")
 
 class ASAConfig:
     def __init__(self, text: str) -> None:
+        self.raw_text = text  # Store raw config text for analysis functions
         self.lines = [line.rstrip() for line in text.splitlines()]
         self.network_objects: Dict[
             str, Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]]
