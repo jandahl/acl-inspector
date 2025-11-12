@@ -30,6 +30,7 @@ class ActionTabs(Horizontal):
             {"id": "inspect", "label": "Inspect"},
             {"id": "compare", "label": "Compare"},
             {"id": "acls", "label": "Used in ACLs"},
+            {"id": "path", "label": "Path Check"},
         ]
         self.classes = "action-tabs"
         self.can_focus = True

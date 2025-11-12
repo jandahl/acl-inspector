@@ -17,6 +17,7 @@ from rich.console import Group
 if TYPE_CHECKING:
     from .inspect import InspectResult
     from .compare import CompareResult
+    from .acl_usage import UsageResult
 
 
 def format_inspect_rich(result: InspectResult) -> Group:
@@ -218,5 +219,107 @@ def format_compare_json(result: CompareResult) -> dict:
             "removed": len(result.old_only_rules),
             "added": len(result.new_only_rules),
             "common": len(result.common_rules),
+        }
+    }
+
+
+def format_usage_rich(result: UsageResult) -> Group:
+    """Format UsageResult as Rich renderable for TUI.
+
+    Args:
+        result: UsageResult to format
+
+    Returns:
+        Rich Group containing formatted usage information
+    """
+    # Summary panel
+    summary_text = Text()
+    summary_text.append(f"Object: ", style="bold cyan")
+    summary_text.append(f"{result.object_name}\n", style="bold white")
+
+    summary_text.append(f"Total references: ", style="bold cyan")
+    summary_text.append(f"{result.total_references}\n", style="yellow")
+
+    summary_text.append(f"Direct ACL references: ", style="bold cyan")
+    summary_text.append(f"{len(result.direct_acl_references)}\n")
+
+    summary_text.append(f"Group memberships: ", style="bold cyan")
+    summary_text.append(f"{len(result.group_memberships)}\n")
+
+    summary_text.append(f"Indirect ACL references: ", style="bold cyan")
+    summary_text.append(f"{len(result.indirect_acl_references)}\n")
+
+    summary_panel = Panel(summary_text, title="[bold]Object Usage Summary[/bold]", border_style="cyan")
+
+    renderables = [summary_panel]
+
+    # Group memberships
+    if result.group_memberships:
+        groups_table = Table(title="Group Memberships", show_header=True, header_style="bold magenta")
+        groups_table.add_column("Group Name", style="cyan")
+
+        for group_name in result.group_memberships:
+            groups_table.add_row(group_name)
+
+        renderables.append(groups_table)
+
+    # Direct ACL references
+    if result.direct_acl_references:
+        direct_table = Table(title="Direct ACL References", show_header=True, header_style="bold green")
+        direct_table.add_column("ACL", style="cyan", width=25)
+        direct_table.add_column("Line", style="dim", width=6)
+        direct_table.add_column("Action", style="bold", width=8)
+        direct_table.add_column("Rule", style="white", width=50)
+
+        for ref in result.direct_acl_references[:20]:  # Limit to 20
+            action_style = "green" if ref.get("action") == "permit" else "red"
+            direct_table.add_row(
+                ref.get("acl", "unknown"),
+                str(ref.get("line", "")),
+                Text(ref.get("action", ""), style=action_style),
+                ref.get("raw", "")[:50]  # Truncate long rules
+            )
+
+        renderables.append(direct_table)
+
+    # Indirect ACL references (via groups)
+    if result.indirect_acl_references:
+        indirect_table = Table(title="Indirect ACL References (via groups)", show_header=True, header_style="bold blue")
+        indirect_table.add_column("ACL", style="cyan", width=25)
+        indirect_table.add_column("Via Group", style="magenta", width=25)
+        indirect_table.add_column("Action", style="bold", width=8)
+
+        for ref in result.indirect_acl_references[:20]:  # Limit to 20
+            action_style = "green" if ref.get("action") == "permit" else "red"
+            indirect_table.add_row(
+                ref.get("acl", "unknown"),
+                ref.get("via_group", ""),
+                Text(ref.get("action", ""), style=action_style)
+            )
+
+        renderables.append(indirect_table)
+
+    return Group(*renderables)
+
+
+def format_usage_json(result: UsageResult) -> dict:
+    """Format UsageResult as JSON dict for API.
+
+    Args:
+        result: UsageResult to format
+
+    Returns:
+        Dictionary ready for JSON serialization
+    """
+    return {
+        "object_name": result.object_name,
+        "total_references": result.total_references,
+        "direct_acl_references": result.direct_acl_references,
+        "group_memberships": result.group_memberships,
+        "indirect_acl_references": result.indirect_acl_references,
+        "summary": {
+            "direct": len(result.direct_acl_references),
+            "groups": len(result.group_memberships),
+            "indirect": len(result.indirect_acl_references),
         }
     }
