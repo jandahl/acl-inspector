@@ -8,6 +8,7 @@ from urllib.parse import parse_qs
 
 from . import actions as action_handlers
 from . import api as api_handlers
+from . import pages as pages_handlers
 from .pages import register_pages  # re-export for server wiring
 from ..router import Request, Response, Router
 from ..state import AppState
@@ -139,6 +140,7 @@ def register_api(router: Router, state: AppState) -> None:
         src = str(data.get("src") or _get_param(request.query, "src", ""))
         dst = str(data.get("dst") or _get_param(request.query, "dst", ""))
         proto = data.get("proto") or _get_param(request.query, "proto", "")
+        vdom = data.get("vdom") or _get_param(request.query, "vdom", "")
         dports: List[Any] = []
         if "dports" in data:
             dports = data.get("dports") if isinstance(data.get("dports"), list) else [data.get("dports")]
@@ -160,6 +162,7 @@ def register_api(router: Router, state: AppState) -> None:
             proto=proto if proto else None,
             dports=dports,
             include_any=include_any,
+            vdom=vdom or None,
         )
         return json_response(payload, status)
 

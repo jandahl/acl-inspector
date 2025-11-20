@@ -1,4 +1,4 @@
-<section id="tab-packet-probe" class="tab-panel" data-beta-module="packet-probe" data-beta-optional="1">
+<section id="tab-packet-probe" class="tab-panel" data-requires="packet" data-beta-module="packet-probe" data-beta-optional="1">
   <div class="tab-controls"><button type="button" class="clear-btn" data-clear-tab="packet-probe">Clear</button></div>
   <fieldset class="section section-packet">
     <legend>Packet probe <span class="badge beta" data-beta-badge="packet-probe">Beta</span></legend>
@@ -19,7 +19,7 @@
     <input type="text" id="probe_dport" name="probe_dport" placeholder="443,3389" class="mono-input">
     <label><input type="checkbox" id="probe_include_any"> Include rules with 'any'</label>
   </fieldset>
-  <div class="actions actions-run" data-tab="packet-probe">
+  <div class="actions actions-run" data-tab="packet-probe" data-requires="packet">
     <button type="submit">Run</button>
   </div>
   <fieldset class="section section-results">

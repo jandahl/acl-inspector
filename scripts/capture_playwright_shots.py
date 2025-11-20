@@ -86,7 +86,7 @@ def start_server(config_dir: str, port: int) -> subprocess.Popen:
     proc = subprocess.Popen(
         [
             sys.executable,
-            "access-list-web.py",
+            "cli/access-list-web.py",
             "--addr",
             "127.0.0.1",
             "--port",
@@ -105,7 +105,7 @@ def wait_for_server(proc: subprocess.Popen, port: int, timeout: float = 20.0) ->
         if proc.poll() is not None:
             stdout, stderr = proc.communicate()
             raise RuntimeError(
-                "access-list-web.py exited early:\nSTDOUT:\n{}\nSTDERR:\n{}".format(
+                "cli/access-list-web.py exited early:\nSTDOUT:\n{}\nSTDERR:\n{}".format(
                     stdout.decode(),
                     stderr.decode(),
                 )

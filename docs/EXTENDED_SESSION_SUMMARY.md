@@ -69,19 +69,19 @@ cfg, vendor, score = load_config("mystery.conf", strict=True, min_confidence=80)
 - Related rule tracking
 - Actionable suggestions
 
-**CLI Tool (`acl-optimize.py`):**
+**CLI Tool (`cli/acl-optimize.py`):**
 ```bash
 # Analyze with auto-detection
-./acl-optimize.py --config firewall.conf
+./aclinspector.py optimize --config firewall.conf
 
 # Generate markdown report
-./acl-optimize.py --config fw.conf --format markdown --output report.md
+./aclinspector.py optimize --config fw.conf --format markdown --output report.md
 
 # Show only critical issues
-./acl-optimize.py --config fw.conf --severity critical
+./aclinspector.py optimize --config fw.conf --severity critical
 
 # Filter by category
-./acl-optimize.py --config fw.conf --category shadowed
+./aclinspector.py optimize --config fw.conf --category shadowed
 ```
 
 **Exit Codes:**
@@ -95,13 +95,13 @@ cfg, vendor, score = load_config("mystery.conf", strict=True, min_confidence=80)
 **Auto-Detection Support:**
 ```bash
 # No --vendor needed!
-./acl-ir-translate.py export --config mystery.conf --output mystery.ir.json
+./aclinspector.py translate export --config mystery.conf --output mystery.ir.json
 
 # Convert without specifying source vendor
-./acl-ir-translate.py convert --to fortigate --config asa-firewall.conf --output fortigate.conf
+./aclinspector.py translate convert --to fortigate --config asa-firewall.conf --output fortigate.conf
 
 # Override detection if needed
-./acl-ir-translate.py export --vendor asa --config fw.conf --no-auto-detect
+./aclinspector.py translate export --vendor asa --config fw.conf --no-auto-detect
 ```
 
 ## Complete File Inventory
@@ -116,16 +116,16 @@ cfg, vendor, score = load_config("mystery.conf", strict=True, min_confidence=80)
 5. `tui/widgets/search_bar.py`
 6. `tui/widgets/suggestion_list.py`
 7. `tui/widgets/status_bar.py`
-8. `acl-inspector-tui.py` (executable)
+8. `cli/acl-inspector-tui.py` (executable)
 
 **Analysis Tools (3 files):**
 9. `analysis/__init__.py`
 10. `analysis/optimizer.py` (370 lines)
-11. `acl-optimize.py` (executable)
+11. `cli/acl-optimize.py` (executable)
 
 **Parsers & Infrastructure (2 files):**
 12. `parsers/loader.py` (180 lines)
-13. `acl-ir-translate.py` (enhanced, executable)
+13. `cli/acl-ir-translate.py` (enhanced, executable)
 
 **Documentation (2 files):**
 14. `docs/SESSION_SUMMARY_2.md`
@@ -244,7 +244,7 @@ App (SingularityApp)
 ### Before This Session
 ```bash
 # Required manual vendor specification
-./access-list-inspector.py --vendor asa --config fw.conf --inspect HOST
+./aclinspector.py inspect --vendor asa --config fw.conf --inspect HOST
 
 # No optimization analysis
 # No IR translation
@@ -254,12 +254,12 @@ App (SingularityApp)
 ### After This Session
 ```bash
 # Auto-detection everywhere
-./acl-optimize.py --config fw.conf
-./acl-ir-translate.py export --config fw.conf --output fw.ir.json
-./acl-inspector-tui.py --config fw.conf
+./aclinspector.py optimize --config fw.conf
+./aclinspector.py translate export --config fw.conf --output fw.ir.json
+./aclinspector.py tui --config fw.conf
 
 # Or still manual if preferred
-./acl-optimize.py --vendor asa --config fw.conf --no-auto-detect
+./aclinspector.py optimize --vendor asa --config fw.conf --no-auto-detect
 ```
 
 ## Production Readiness
@@ -287,7 +287,7 @@ App (SingularityApp)
 ### 1. Migration Projects
 ```bash
 # ASA to FortiGate migration
-./acl-ir-translate.py convert --to fortigate \
+./aclinspector.py translate convert --to fortigate \
     --config current-asa.conf \
     --output new-fortigate.conf \
     --save-ir migration-ir.json
@@ -296,7 +296,7 @@ App (SingularityApp)
 ### 2. Policy Audits
 ```bash
 # Generate optimization report
-./acl-optimize.py --config firewall.conf \
+./aclinspector.py optimize --config firewall.conf \
     --format markdown \
     --output audit-report.md
 
@@ -306,7 +306,7 @@ App (SingularityApp)
 ### 3. Config Analysis
 ```bash
 # Auto-detect and analyze any firewall
-./acl-inspector-tui.py --config mystery.conf
+./aclinspector.py tui --config mystery.conf
 
 # Or via API
 curl 'http://localhost:8083/api/detect-vendor?filename=firewall.conf'

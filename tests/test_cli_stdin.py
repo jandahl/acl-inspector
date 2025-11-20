@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 BASE_DIR = Path(__file__).resolve().parents[1]
-SCRIPT_PATH = BASE_DIR / 'access-list-inspector.py'
+SCRIPT_PATH = BASE_DIR / 'cli/access-list-inspector.py'
 CONFIG_PATH = BASE_DIR / 'tests' / 'fixtures' / 'configs' / 'asa' / 'tmp_asa.conf'
 
 

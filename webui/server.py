@@ -1,7 +1,7 @@
 """Initial HTTP server bootstrap for the modular web UI.
 
 At this stage we still rely on the legacy WebHandler implementation from
-``access-list-web.py`` while the modular handlers are developed. The goal is to
+``cli/access-list-web.py`` while the modular handlers are developed. The goal is to
 centralise CLI parsing and server construction so future refactors can replace
 the handler without disturbing entrypoints.
 """

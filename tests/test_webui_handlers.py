@@ -8,11 +8,14 @@ from types import SimpleNamespace
 from unittest import mock
 
 from webui import settings as settings_mod
+from webui import vendor_caps
 from webui.handlers import api as api_handlers
 from webui.handlers import pages as page_handlers
 from webui.indexer import asa as asa_index
 from webui.state import AppState
 
+
+FORTI_FIXTURE = Path(__file__).parent / "fixtures" / "configs" / "fortigate" / "advanced_policy_nat.conf"
 
 ASA_SAMPLE = """!
 object network OBJ_WEB
@@ -33,9 +36,16 @@ class APIHandlersTest(unittest.TestCase):
         self.config_root = base / "configs" / "cisco"
         self.config_root.mkdir(parents=True, exist_ok=True)
         (self.config_root / "sample.cfg").write_text(ASA_SAMPLE, encoding="utf-8")
+        self.ftg_root = base / "configs" / "fortigate"
+        self.ftg_root.mkdir(parents=True, exist_ok=True)
+        forti_text = FORTI_FIXTURE.read_text(encoding="utf-8")
+        (self.ftg_root / "forti.conf").write_text(forti_text, encoding="utf-8")
         settings = settings_mod.load_settings(
             base / "settings.json",
-            env={"ACLINSPECTOR_CONFIGS_CISCO": str(self.config_root)},
+            env={
+                "ACLINSPECTOR_CONFIGS_CISCO": str(self.config_root),
+                "ACLINSPECTOR_CONFIGS_FORTIGATE": str(self.ftg_root),
+            },
         )
         self.state = AppState.create(settings)
 
@@ -276,10 +286,28 @@ class APIHandlersTest(unittest.TestCase):
         entries = self.state.history.snapshot()["entries"]
         self.assertTrue(any(entry["tab"] == "packet-probe" for entry in entries))
 
-    def test_packet_probe_invalid_vendor(self):
+    def test_packet_probe_fortigate(self):
         status, payload = api_handlers.packet_probe(
             self.state,
             vendor="fortigate",
+            filename="forti.conf",
+            src="1.1.1.1",
+            dst="198.51.100.10",
+            proto="tcp",
+            dports=["443"],
+            include_any=True,
+            vdom="root",
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(payload.get("vendor"), "fortigate")
+        self.assertEqual(payload.get("vdom"), "root")
+        nat = payload.get("result", {}).get("nat", {})
+        self.assertEqual(nat.get("type"), "vip")
+
+    def test_packet_probe_invalid_vendor(self):
+        status, payload = api_handlers.packet_probe(
+            self.state,
+            vendor="ios",
             filename="sample.cfg",
             src="HOST_A",
             dst="HOST_B",
@@ -289,6 +317,34 @@ class APIHandlersTest(unittest.TestCase):
         )
         self.assertEqual(status, 400)
         self.assertIn("error", payload)
+
+    def test_packet_probe_rejects_when_capability_disabled(self):
+        original_caps = vendor_caps.all_caps()
+        try:
+            vendor_caps._CAPS["asa"] = vendor_caps.VendorCaps(
+                name="asa",
+                label="ASA",
+                config_field="config",
+                requires_vdom=False,
+                supports_inspect=True,
+                supports_compare=True,
+                supports_find=True,
+                supports_packet=False,
+            )
+            status, payload = api_handlers.packet_probe(
+                self.state,
+                vendor="asa",
+                filename="sample.cfg",
+                src="OBJ_WEB",
+                dst="OBJ_DB",
+                proto="tcp",
+                dports=["443"],
+                include_any=False,
+            )
+            self.assertEqual(status, 400)
+            self.assertEqual(payload.get("error"), "packet_not_supported")
+        finally:
+            vendor_caps._CAPS.update(original_caps)
 
     def test_flush_caches(self):
         api_handlers.objects(

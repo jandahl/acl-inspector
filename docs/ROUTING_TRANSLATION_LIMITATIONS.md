@@ -270,11 +270,11 @@ Before using translated routing config:
 
 ```bash
 # 1. Translate and inspect
-./access-list-inspector.py --vendor asa --config asa.conf \
+./aclinspector.py inspect --vendor asa --config asa.conf \
   --translate --target-vendor fortigate > fortigate-routing.conf
 
 # 2. Check what was captured
-./access-list-inspector.py --vendor asa --config asa.conf \
+./aclinspector.py inspect --vendor asa --config asa.conf \
   --translate --target-vendor fortigate --format json | jq '.dynamic_routing'
 
 # 3. Compare before/after

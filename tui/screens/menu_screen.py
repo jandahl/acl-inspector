@@ -108,3 +108,18 @@ class MenuScreen(ModalScreen):
         """Handle key presses."""
         if event.key == "escape":
             self.dismiss(None)
+        elif event.key in ("down", "up"):
+            self._focus_relative(1 if event.key == "down" else -1)
+            event.prevent_default()
+
+    def _focus_relative(self, delta: int) -> None:
+        """Move focus between buttons."""
+        buttons = list(self.query(Button))
+        if not buttons:
+            return
+        try:
+            current_index = next(i for i, btn in enumerate(buttons) if btn.has_focus)
+        except StopIteration:
+            current_index = 0 if delta > 0 else len(buttons) - 1
+        next_index = (current_index + delta) % len(buttons)
+        buttons[next_index].focus()

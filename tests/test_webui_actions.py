@@ -12,6 +12,8 @@ from webui import settings as settings_mod
 from webui.handlers import actions as action_handlers
 from webui.state import AppState
 
+FORTI_FIXTURE = Path(__file__).parent / "fixtures" / "configs" / "fortigate" / "advanced_policy_nat.conf"
+
 ASA_SAMPLE = """!
 object network OBJ_WEB
  host 192.0.2.10
@@ -28,9 +30,15 @@ class ActionHandlersTest(unittest.TestCase):
         self.config_dir = base / "configs" / "cisco"
         self.config_dir.mkdir(parents=True, exist_ok=True)
         (self.config_dir / "sample.cfg").write_text(ASA_SAMPLE, encoding="utf-8")
+        self.ftg_dir = base / "configs" / "fortigate"
+        self.ftg_dir.mkdir(parents=True, exist_ok=True)
+        (self.ftg_dir / "forti.conf").write_text(FORTI_FIXTURE.read_text(), encoding="utf-8")
         settings = settings_mod.load_settings(
             base / "settings.json",
-            env={"ACLINSPECTOR_CONFIGS_CISCO": str(self.config_dir)},
+            env={
+                "ACLINSPECTOR_CONFIGS_CISCO": str(self.config_dir),
+                "ACLINSPECTOR_CONFIGS_FORTIGATE": str(self.ftg_dir),
+            },
         )
         self.state = AppState.create(settings)
 
@@ -89,6 +97,77 @@ class ActionHandlersTest(unittest.TestCase):
         self.assertIn("OBJ_WEB", payload["html"])
         history = self.state.history.snapshot()["entries"]
         self.assertFalse(history)
+
+    def test_process_inspect_fortigate(self):
+        status, payload = action_handlers.process_run(
+            self.state,
+            {
+                "vendor": ["fortigate"],
+                "mode": ["inspect"],
+                "config_ftg": ["forti.conf"],
+                "inspect": ["INTERNAL_NET"],
+                "vdom": ["root"],
+            },
+        )
+        self.assertEqual(status, 200)
+        self.assertIn("INTERNAL_NET", payload["html"])
+        self.assertEqual(payload.get("meta", {}).get("vendor"), "fortigate")
+        self.assertIn("Object context", payload["html"])
+        self.assertIn("firewall address INTERNAL_NET", payload["html"])
+        self.assertIn("Zone context", payload["html"])
+
+    def test_process_compare_fortigate(self):
+        status, payload = action_handlers.process_run(
+            self.state,
+            {
+                "vendor": ["fortigate"],
+                "mode": ["compare"],
+                "config_ftg": ["forti.conf"],
+                "old": ["INTERNAL_NET"],
+                "new": ["DMZ_WEB"],
+                "vdom": ["root"],
+            },
+        )
+        self.assertEqual(status, 200)
+        self.assertIn("New-only Policies", payload["html"])
+        self.assertIn("Old object context", payload["html"])
+        self.assertIn("New object context", payload["html"])
+        self.assertIn("Old target zones", payload["html"])
+        self.assertIn("New target zones", payload["html"])
+
+    def test_process_find_fortigate(self):
+        status, payload = action_handlers.process_run(
+            self.state,
+            {
+                "vendor": ["fortigate"],
+                "mode": ["find"],
+                "config_ftg": ["forti.conf"],
+                "findq": ["INTERNAL_NET"],
+                "vdom": ["root"],
+            },
+        )
+        self.assertEqual(status, 200)
+        self.assertIn("Likely Owner", payload["html"])
+
+    def test_packet_check_fortigate_render(self):
+        status, payload = action_handlers.process_run(
+            self.state,
+            {
+                "vendor": ["fortigate"],
+                "mode": ["packet"],
+                "config_ftg": ["forti.conf"],
+                "pkt_src": ["1.1.1.1"],
+                "pkt_dst": ["198.51.100.10"],
+                "proto": ["tcp"],
+                "dport": ["443"],
+                "include_any": ["1"],
+                "vdom": ["root"],
+            },
+        )
+        self.assertEqual(status, 200)
+        html = payload["html"]
+        self.assertIn("NAT Steps", html)
+        self.assertIn("VIP", html)
 
     def test_format_list_includes_more_suffix(self):
         text = action_handlers._format_list(["a", "b", "c", "d"], limit=2)

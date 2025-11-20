@@ -25,9 +25,9 @@ You are a command-line interface expert specializing in the ACL-inspector CLI to
 
 ## Current CLI Structure
 
-### Entry Point: `access-list-inspector.py`
+### Entry Point: `cli/access-list-inspector.py`
 ```bash
-./access-list-inspector.py [OPTIONS]
+./cli/access-list-inspector.py [OPTIONS]
 
 Modes (mutually exclusive):
   --inspect TARGET        Inspect a single IP/object/CIDR
@@ -262,14 +262,14 @@ def load_config(path):
 **Piping Examples:**
 ```bash
 # Read config from stdin
-cat fw.conf | ./access-list-inspector.py --vendor asa --config - --inspect WebServer01
+cat fw.conf | ./cli/access-list-inspector.py --vendor asa --config - --inspect WebServer01
 
 # Output to jq for filtering
-./access-list-inspector.py --vendor asa --config fw.conf --inspect WebServer01 --format json \
+./cli/access-list-inspector.py --vendor asa --config fw.conf --inspect WebServer01 --format json \
   | jq '.rules[] | select(.action == "permit")'
 
 # Chain with grep
-./access-list-inspector.py --vendor asa --config fw.conf --inspect WebServer01 \
+./cli/access-list-inspector.py --vendor asa --config fw.conf --inspect WebServer01 \
   | grep -i "permit"
 ```
 
@@ -378,31 +378,31 @@ def show_examples():
     Examples:
 
     1. Inspect a host (ASA):
-       ./access-list-inspector.py --vendor asa --config fw.conf --inspect 10.1.1.50
+       ./cli/access-list-inspector.py --vendor asa --config fw.conf --inspect 10.1.1.50
 
     2. Compare two objects:
-       ./access-list-inspector.py --vendor asa --config fw.conf --old WebServer01 --new WebServer02
+       ./cli/access-list-inspector.py --vendor asa --config fw.conf --old WebServer01 --new WebServer02
 
     3. Find host across configs:
-       ./access-list-inspector.py --vendor asa --config /path/to/configs --find-host 192.168.1.100
+       ./cli/access-list-inspector.py --vendor asa --config /path/to/configs --find-host 192.168.1.100
 
     4. Packet path check:
-       ./access-list-inspector.py --vendor asa --config fw.conf --packet \\
+       ./cli/access-list-inspector.py --vendor asa --config fw.conf --packet \\
          --packet-src 10.1.1.1 --packet-dst 10.2.2.2 --proto tcp --dport 443
 
     5. Filter by service:
-       ./access-list-inspector.py --vendor asa --config fw.conf --inspect WebServer01 \\
+       ./cli/access-list-inspector.py --vendor asa --config fw.conf --inspect WebServer01 \\
          --proto tcp --dport 443 --dport 8443
 
     6. JSON output (for automation):
-       ./access-list-inspector.py --vendor asa --config fw.conf --inspect WebServer01 \\
+       ./cli/access-list-inspector.py --vendor asa --config fw.conf --inspect WebServer01 \\
          --format json | jq '.rules[] | select(.action == "permit")'
 
     7. Read config from stdin:
-       cat fw.conf | ./access-list-inspector.py --vendor asa --config - --inspect WebServer01
+       cat fw.conf | ./cli/access-list-inspector.py --vendor asa --config - --inspect WebServer01
 
     8. FortiGate with VDOM:
-       ./access-list-inspector.py --vendor fortigate --config ftg.conf --vdom root \\
+       ./cli/access-list-inspector.py --vendor fortigate --config ftg.conf --vdom root \\
          --inspect 10.1.1.50
     """
     print(examples)
@@ -468,7 +468,7 @@ _aclinspector_completion() {
     COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
 }
 
-complete -F _aclinspector_completion access-list-inspector.py
+complete -F _aclinspector_completion cli/access-list-inspector.py
 ```
 
 **Auto-Generate from argparse:**
@@ -502,8 +502,8 @@ compare_parser.add_argument('new', help='New target')
 compare_parser.add_argument('--config', required=True)
 
 # Usage:
-# ./access-list-inspector.py inspect WebServer01 --config fw.conf --proto tcp
-# ./access-list-inspector.py compare WebServer01 WebServer02 --config fw.conf
+# ./cli/access-list-inspector.py inspect WebServer01 --config fw.conf --proto tcp
+# ./cli/access-list-inspector.py compare WebServer01 WebServer02 --config fw.conf
 ```
 
 ### Interactive Mode (Future Enhancement)
@@ -524,7 +524,7 @@ def interactive_mode():
         except (KeyboardInterrupt, EOFError):
             break
 
-# ./access-list-inspector.py --interactive
+# ./cli/access-list-inspector.py --interactive
 ```
 
 ### Rich Terminal Output (Future Enhancement)

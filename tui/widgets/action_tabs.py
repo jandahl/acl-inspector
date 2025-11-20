@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
-from textual.widgets import Static, Button
+from common.vendor_caps import supports_feature, VendorCaps
+
+from textual.widgets import Button
 from textual.containers import Horizontal
 from textual.message import Message
 from textual.reactive import reactive
@@ -25,15 +27,16 @@ class ActionTabs(Horizontal):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.tabs: List[Dict[str, str]] = [
+        self.tabs: List[Dict[str, Any]] = [
             {"id": "details", "label": "Details"},
-            {"id": "inspect", "label": "Inspect"},
-            {"id": "compare", "label": "Compare"},
+            {"id": "inspect", "label": "Inspect", "requires": "inspect"},
+            {"id": "compare", "label": "Compare", "requires": "compare"},
             {"id": "acls", "label": "Used in ACLs"},
-            {"id": "path", "label": "Path Check"},
+            {"id": "path", "label": "Path Check", "requires": "packet"},
         ]
         self.classes = "action-tabs"
         self.can_focus = True
+        self._buttons: List[Button] = []
 
     def compose(self):
         """Compose tab buttons."""
@@ -41,6 +44,7 @@ class ActionTabs(Horizontal):
             is_selected = (tab["id"] == self.selected_tab)
             classes = "action-tab selected" if is_selected else "action-tab"
             btn = Button(tab["label"], id=f"tab-{tab['id']}", classes=classes)
+            self._buttons.append(btn)
             yield btn
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -55,7 +59,7 @@ class ActionTabs(Horizontal):
         self.selected_tab = tab_id
 
         # Update button styles
-        for btn in self.query(Button):
+        for btn in self._buttons:
             if btn.id == f"tab-{tab_id}":
                 btn.classes = "action-tab selected"
             else:
@@ -91,9 +95,34 @@ class ActionTabs(Horizontal):
     def watch_selected_tab(self, old_value: str, new_value: str) -> None:
         """Update UI when selected tab changes."""
         # Update button styles
-        for btn in self.query(Button):
+        for btn in self._buttons:
             btn_id = btn.id
             if btn_id == f"tab-{new_value}":
                 btn.classes = "action-tab selected"
             else:
                 btn.classes = "action-tab"
+
+    def apply_vendor_caps(self, caps: Optional[VendorCaps]) -> None:
+        """Hide or show tabs based on the provided vendor capabilities."""
+        if not caps:
+            return
+        allowed: List[str] = []
+        for tab in self.tabs:
+            tab_id = tab["id"]
+            requires = tab.get("requires")
+            supported = True
+            if requires:
+                if not caps:
+                    supported = False
+                else:
+                    supported = supports_feature(caps.name, requires)
+            btn = next((candidate for candidate in self._buttons if candidate.id == f"tab-{tab_id}"), None)
+            if btn:
+                btn.hidden = not supported
+            if supported:
+                allowed.append(tab_id)
+        if not allowed:
+            return
+        if self.selected_tab not in allowed:
+            fallback = allowed[0]
+            self._select_tab(fallback)

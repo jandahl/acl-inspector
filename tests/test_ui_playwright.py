@@ -48,7 +48,7 @@ access-list OUT extended permit tcp object OBJ_HOST object OBJ_WEB eq 443
         cls._server = subprocess.Popen(
             [
                 sys.executable,
-                "access-list-web.py",
+                "cli/access-list-web.py",
                 "--addr",
                 "127.0.0.1",
                 "--port",
@@ -92,7 +92,7 @@ access-list OUT extended permit tcp object OBJ_HOST object OBJ_WEB eq 443
                     return
             except OSError:
                 time.sleep(0.1)
-        raise RuntimeError("Timed out waiting for access-list-web.py to start")
+        raise RuntimeError("Timed out waiting for cli/access-list-web.py to start")
 
     @classmethod
     def _cleanup_server(cls):

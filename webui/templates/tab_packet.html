@@ -1,4 +1,4 @@
-<section id="tab-packet" class="tab-panel" data-beta-module="packet-check" data-beta-optional="1">
+<section id="tab-packet" class="tab-panel" data-beta-module="packet-check" data-beta-optional="1" data-requires="packet">
   <div class="tab-controls"><button type="button" class="clear-btn" data-clear-tab="packet">Clear</button></div>
   <fieldset class="section section-packet">
     <legend>Packet check <span class="badge beta" data-beta-badge="packet-check">Beta</span></legend>
@@ -7,10 +7,10 @@
     <label>Destination:</label>
     <input type="text" name="pkt_dst" id="pkt_dst" list="targets" placeholder="Destination object / host" autocomplete="off" class="mono-input">
     <div class="packet-options">
-      <label><input type="checkbox" name="pkt_guess" id="pkt_guess" value="1" checked> Guess interface direction pairs</label>
+      <label id="pkt_guess_label"><input type="checkbox" name="pkt_guess" id="pkt_guess" value="1" checked> Guess interface direction pairs (ASA only)</label>
     </div>
   </fieldset>
-  <div class="actions actions-run" data-tab="packet">
+  <div class="actions actions-run" data-tab="packet" data-requires="packet">
     <button type="submit">Run</button>
   </div>
   <fieldset class="section section-results">

@@ -65,7 +65,11 @@ def inspect_object(
         ...     print(f"  {rule['acl']}: {rule['raw']}")
     """
     # Import here to avoid circular dependencies
-    from parsers.cisco.asa.inspect import inspect_host
+    from parsers.cisco.asa.inspect import inspect_host as inspect_host_asa
+    try:
+        from parsers.fortigate.inspect import inspect_host as inspect_host_fortigate
+    except ImportError:  # pragma: no cover
+        inspect_host_fortigate = None
 
     # Build service filter if protocol/port specified
     service_filter = None
@@ -87,12 +91,24 @@ def inspect_object(
         cfg_text = str(config)  # Fallback
 
     # Call existing inspect_host logic
-    result_dict = inspect_host(
-        cfg_text,
-        target,
-        service_filter=service_filter,
-        include_any=include_any
-    )
+    vendor = getattr(config, "vendor", None)
+
+    if vendor == "fortigate" or hasattr(config, "addrgrps"):
+        if inspect_host_fortigate is None:
+            raise RuntimeError("FortiGate inspection unavailable")
+        result_dict = inspect_host_fortigate(
+            cfg_text,
+            target,
+            service_filter=service_filter,
+            vdom=getattr(config, "vdom", None),
+        )
+    else:
+        result_dict = inspect_host_asa(
+            cfg_text,
+            target,
+            service_filter=service_filter,
+            include_any=include_any
+        )
 
     # Convert to InspectResult
     # Handle aliases - may be dict or list depending on parser
