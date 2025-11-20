@@ -97,8 +97,9 @@ object network AppServer2
 
         # Should have entries for both files
         self.assertEqual(len(app.parsed_configs), 2, "Should have 2 parsed configs")
-        self.assertIn('fw1.conf', app.parsed_configs, "Should have fw1.conf")
-        self.assertIn('fw2.conf', app.parsed_configs, "Should have fw2.conf")
+        basenames = {Path(path).name for path in app.parsed_configs.keys()}
+        self.assertIn('fw1.conf', basenames, "Should have fw1.conf")
+        self.assertIn('fw2.conf', basenames, "Should have fw2.conf")
 
         # Each should have network_objects
         for filename, config in app.parsed_configs.items():
@@ -155,10 +156,9 @@ object network AppServer2
         empty_dir = tempfile.mkdtemp()
         try:
             app = SingularityApp(vendor="asa", config_path=empty_dir)
-            # Should raise or handle gracefully
-            # The current implementation raises ValueError
-            with self.assertRaises(ValueError):
-                app._load_config()
+            app._load_config()
+            self.assertEqual(app.config_files, [])
+            self.assertEqual(app.all_objects, [])
         finally:
             import shutil
             shutil.rmtree(empty_dir)
@@ -186,6 +186,32 @@ object network AppServer2
         for config_file in app.config_files:
             self.assertFalse(os.path.basename(config_file).startswith('.'),
                            "Should not load hidden files")
+
+    def test_config_entries_available(self):
+        """Ensure each loaded config is searchable as its own entry."""
+        try:
+            from tui.app import SingularityApp
+        except ImportError:
+            self.skipTest("textual not installed")
+
+        app = SingularityApp(vendor="asa", config_path=self.test_dir)
+        app._load_config()
+        config_entries = [obj for obj in app.all_objects if obj.get("type") == "config"]
+        self.assertEqual(len(config_entries), 2, "Each config should produce a config entry")
+
+    def test_search_matches_filename(self):
+        """Search should match filenames in addition to object names."""
+        try:
+            from tui.app import SingularityApp
+        except ImportError:
+            self.skipTest("textual not installed")
+
+        app = SingularityApp(vendor="asa", config_path=self.test_dir)
+        app._load_config()
+        results = app._search_objects("fw1")
+        self.assertTrue(results, "Filename search should return results")
+        self.assertTrue(any(entry.get("type") == "config" for entry in results),
+                        "Results should include the config entry itself")
 
 
 if __name__ == '__main__':

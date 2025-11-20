@@ -3,14 +3,14 @@ Access-List Inspector
 
 Migration Plan (In Progress)
 ----------------------------
-- Split `access-list-web.py` into modular packages (`webui/server.py`, `webui/handlers`, `webui/templates`, `webui/themes`, `webui/indexer`, `webui/state`, `webui/settings`) so each concern is isolated and testable.
+- Split `cli/access-list-web.py` into modular packages (`webui/server.py`, `webui/handlers`, `webui/templates`, `webui/themes`, `webui/indexer`, `webui/state`, `webui/settings`) so each concern is isolated and testable.
 - Introduce a JSON settings loader that feeds both CLI and container builds; CLI/env flags continue to override settings.
 - Treat experimental features as opt-in “beta” modules under `webui/beta/`, toggled via the settings file.
 - Replace the monolithic entrypoint with a thin bootstrap once the refactor lands; no legacy shim required before production.
 
 Overview
 --------
-The tool parses firewall configurations (currently Cisco ASA; rudimentary FortiGate) to:
+The tool parses firewall configurations (currently Cisco ASA and FortiGate with interface/zone-aware policies + NAT metadata) to:
 - Resolve network objects and object-groups to concrete addresses/networks
 - Flatten ACL entries (source/destination) for impact analysis
 - Inspect a single IP/object to list all ACL entries affecting it
@@ -35,49 +35,58 @@ Setup
 - Run `make fonts` to fetch libre font families — Inter, Atkinson Hyperlegible, Ubuntu, Ubuntu Mono, Source Sans 3, JetBrains Mono, Fira Code, Source Code Pro — into `fonts/downloaded/`. Set `FORCE=1` to refresh. Add your own fonts by dropping a `manifest.json` + font files under `fonts/custom/` (see inline comments in `fonts/fonts.json`).
 - For live development, use `make web-watch` (optionally `POLL=60 make web-watch` to poll once a minute). The helper watches `.py/.html/.css/.js` files and restarts the server when they change.
 
+Tool layout
+-----------
+- `aclinspector.py` – single entry point that dispatches to the production tools below (`./aclinspector.py web …`, `./aclinspector.py translate …`, etc.).
+- `cli/` – production scripts (`access-list-inspector.py`, `access-list-web.py`, `acl-inspector-tui.py`, `acl-ir-translate.py`, `acl-optimize.py`). You can run them directly via `python3 cli/<script>.py` if you prefer.
+- `dev/` – developer harnesses (`test_tabs_manual.py`, `test_tui_simple.py`).
+- `common/` – shared helpers (`vendor_caps.py` today, future cross-surface modules).
+- See `docs/ROOT_STRUCTURE.md` for a full directory map and workflow guide.
+
 Quick start (CLI)
 -----------------
 - Inspect a host/object:
-  `./access-list-inspector.py --vendor asa --config <asa.conf> --inspect <ip|cidr|object>`
+  `./aclinspector.py inspect --vendor asa --config <asa.conf> --inspect <ip|cidr|object>`
 
   - With protocol/port filtering:
-    `./access-list-inspector.py --vendor asa --config <asa.conf> --inspect <target> --proto tcp --dport 443 --dport 1433`
+    `./aclinspector.py inspect --vendor asa --config <asa.conf> --inspect <target> --proto tcp --dport 443 --dport 1433`
 
 - Compare two targets:
-  `./access-list-inspector.py --vendor asa --config <asa.conf> --old <ip|cidr|object> --new <ip|cidr|object>`
+  `./aclinspector.py inspect --vendor asa --config <asa.conf> --old <ip|cidr|object> --new <ip|cidr|object>`
 
-- Packet path check (NAT + ACL prototype):
-  `./access-list-inspector.py --vendor asa --config <asa.conf> --packet --packet-src <ip|object> --packet-dst <ip|object> --proto tcp --dport 443`
+- Packet path check (NAT + ACL prototype for ASA and FortiGate):
+  - ASA: `./aclinspector.py inspect --vendor asa --config <asa.conf> --packet --packet-src <ip|object> --packet-dst <ip|object> --proto tcp --dport 443`
+  - FortiGate: `./aclinspector.py inspect --vendor fortigate --config <ftg.conf> --vdom root --packet --packet-src <ip|object> --packet-dst <ip|object> --proto tcp --dport 443`
 
 - Find host across configs:
-  - Directory: `./access-list-inspector.py --vendor asa --config /path/to/configs/cisco --find-host <ip|cidr|object>`
-  - Single file: `./access-list-inspector.py --vendor asa --config /path/to/asa.conf --find-host <ip|cidr|object>`
+  - Directory: `./aclinspector.py inspect --vendor asa --config /path/to/configs/cisco --find-host <ip|cidr|object>`
+  - Single file: `./aclinspector.py inspect --vendor asa --config /path/to/asa.conf --find-host <ip|cidr|object>`
 
 - FortiGate with VDOM:
-  - Inspect: `./access-list-inspector.py --vendor fortigate --config <ftg.conf> --vdom root --inspect <ip|object>`
-  - Compare: `./access-list-inspector.py --vendor fortigate --config <ftg.conf> --vdom root --old <A> --new <B>`
+  - Inspect: `./aclinspector.py inspect --vendor fortigate --config <ftg.conf> --vdom root --inspect <ip|object>`
+  - Compare: `./aclinspector.py inspect --vendor fortigate --config <ftg.conf> --vdom root --old <A> --new <B>`
 
 Reading configs from stdin
 --------------------------
 When ACL configs are generated dynamically (for example, pulled from an API, unpacked from an archive, or trimmed on the fly),
 you can pass them straight to the CLI without creating a temporary file. Supplying `--config -` instructs
-`access-list-inspector.py` to read the ASA or FortiGate configuration from standard input. This works for every mode that
+the inspector CLI to read the ASA or FortiGate configuration from standard input. This works for every mode that
 normally accepts `--config <path>`:
 
 - Inspect from stdin:
   ```bash
-  cat configs/cisco/sample-asa.conf | ./access-list-inspector.py --vendor asa --config - --inspect WebServer01
+  cat configs/cisco/sample-asa.conf | ./aclinspector.py inspect --vendor asa --config - --inspect WebServer01
   ```
 
 - Compare targets using stdin:
   ```bash
-  zcat latest-export.asa.gz | ./access-list-inspector.py --vendor asa --config - --old AppSrvA --new AppSrvB
+  zcat latest-export.asa.gz | ./aclinspector.py inspect --vendor asa --config - --old AppSrvA --new AppSrvB
   ```
 
 - Find host in a streamed config:
   ```bash
   curl https://example.com/asa.conf \ 
-    | ./access-list-inspector.py --vendor asa --config - --find-host 10.20.30.40
+    | ./aclinspector.py inspect --vendor asa --config - --find-host 10.20.30.40
   ```
 
 While reading from stdin the script can still emit human-readable text, JSON (`--format json`), or XML (`--format xml`), and
@@ -94,13 +103,13 @@ Output formats
 Examples
 --------
 - Print examples and exit:
-  `./access-list-inspector.py --examples`
+  `./aclinspector.py inspect --examples`
 
 - Inspect with protocol/port filter:
-  `./access-list-inspector.py --vendor asa --config <asa.conf> --inspect <target> --proto tcp --dport 443 --dport 1433`
+  `./aclinspector.py inspect --vendor asa --config <asa.conf> --inspect <target> --proto tcp --dport 443 --dport 1433`
 
 - Compare with a port filter:
-  `./access-list-inspector.py --vendor asa --config <asa.conf> --old <A> --new <B> --proto udp --dport 53`
+  `./aclinspector.py inspect --vendor asa --config <asa.conf> --old <A> --new <B> --proto udp --dport 53`
 
 Outputs
 -------
@@ -120,17 +129,19 @@ Notes on parsing
 TUI (Terminal User Interface)
 ------------------------------
 - Launch the interactive terminal UI:
-  `python3 -m tui` or `make tui`
+  - `python3 -m tui` (loads ASA + Forti directories by default)
+  - `./aclinspector.py tui` (same experience as `python3 -m tui`; optionally add `--vendor fortigate`, `--config <path>`, or `--vdom <name>`)
+  - Use `--vendor asa|fortigate|all` and `--config /path/or/file` to override roots
 
 - Features:
   - **Fuzzy search**: Real-time search across all objects with keyboard navigation (up/down/j/k)
-  - **Multi-config support**: Load single files or entire directories
-  - **Drill-down tabs**: Details, Inspect, Compare, Used in ACLs, Path Check
+  - **Multi-config support**: Load single files or entire directories (per vendor or across vendors)
+  - **Drill-down tabs**: Details, Inspect, Compare, Used in ACLs, Path Check (Forti + ASA)
   - **Export functionality**: Export results to JSON/CSV/TXT (Ctrl+E)
   - **Filters**: Protocol/port/action filters in Inspect tab
   - **Interactive settings**: Configure display, search, and advanced options (Ctrl+Shift+S)
   - **Theme toggle**: Switch between dark/light themes (Ctrl+T)
-  - **Path check**: Simulate packet flows through NAT and ACLs (ASA only)
+  - **Path check**: Simulate packet flows through NAT and ACLs (ASA + FortiGate)
 
 - Keyboard shortcuts:
   - `Ctrl+O`: Main menu
@@ -144,12 +155,12 @@ TUI (Terminal User Interface)
 
 - Settings are persisted to `~/.config/acl-inspector/tui-settings.json`
 
-- See `TUI_QUICKSTART_GUIDE.md` for detailed usage instructions
+- See `docs/TUI_QUICKSTART_GUIDE.md` for detailed usage instructions
 
 Web UI
 ------
 - Start a simple local UI (default port 8083):
-  `./access-list-web.py` or `make web` (use `WEB_PORT=8080 make web` to override)
+  `./aclinspector.py web` or `make web` (use `WEB_PORT=8080 make web` to override)
 
 - The UI lists config files from the following directories by default:
   - ASA: `configs/cisco`
@@ -295,8 +306,8 @@ Development
 -----------
 - Keep changes minimal and focused
 - Add or update tests alongside code changes
-- Validate with `python3 -m py_compile access-list-inspector.py parsers/cisco/asa.py parsers/fortigate/fortigate.py`
-- Self-test: `./access-list-inspector.py --self-test`
+- Validate with `python3 -m py_compile cli/access-list-inspector.py parsers/cisco/asa.py parsers/fortigate/fortigate.py`
+- Self-test: `./aclinspector.py inspect --self-test`
 
 Future goals
 ------------

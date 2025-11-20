@@ -12,7 +12,7 @@ ACL-inspector is a Python tool that parses firewall configurations (primarily Ci
 - Inspect a single IP/object to list all ACL entries affecting it
 - Compare two targets (old/new) to show rules added/removed
 - Detect duplicate network-objects mapping to the same IP/network
-- Path check prototype: evaluate a 5-tuple flow through NAT + ACL (ASA only)
+- Path check prototype: evaluate a 5-tuple flow through NAT + ACL (ASA + FortiGate)
 
 ## Essential Commands
 
@@ -27,10 +27,10 @@ python3 -m unittest discover -s tests -v
 python3 -m unittest tests.test_nat_parsing
 
 # Run CLI self-test
-./access-list-inspector.py --self-test
+./aclinspector.py inspect --self-test
 
 # Check syntax compilation
-python3 -m py_compile access-list-inspector.py parsers/cisco/asa/parser.py parsers/fortigate/fortigate.py
+python3 -m py_compile cli/access-list-inspector.py parsers/cisco/asa/parser.py parsers/fortigate/fortigate.py
 ```
 
 ### Web UI Development
@@ -103,7 +103,7 @@ Raw Config → Vendor Parser → Intermediate Representation (IR) → CLI/Web UI
 
 ### Web UI Modular Structure (Migration in Progress)
 
-The web UI is being refactored from a monolithic `access-list-web.py` into modular packages:
+The web UI is being refactored from a monolithic `cli/access-list-web.py` into modular packages:
 
 **New structure:**
 - **`webui/server.py`**: HTTP server bootstrap and CLI parsing
@@ -127,8 +127,8 @@ The web UI is being refactored from a monolithic `access-list-web.py` into modul
 
 ### Entry Points
 
-- **`access-list-inspector.py`**: CLI for inspect/compare/find-host operations
-- **`access-list-web.py`**: Legacy web UI entrypoint (being replaced by `webui/server.py`)
+- **`cli/access-list-inspector.py`**: CLI for inspect/compare/find-host operations
+- **`cli/access-list-web.py`**: Legacy web UI entrypoint (being replaced by `webui/server.py`)
 
 ### Data Flow: Inspect vs Compare
 
@@ -148,7 +148,7 @@ The web UI is being refactored from a monolithic `access-list-web.py` into modul
 **Path check flow** (`--packet --packet-src <A> --packet-dst <B> --proto <P> --dport <N>`):
 1. Parse NAT rules and ACLs with interface bindings
 2. Simulate packet flow: apply NAT translation → evaluate ACL permit/deny
-3. Return hop-by-hop trace with verdict (ASA prototype only)
+3. Return hop-by-hop trace with verdict (ASA + FortiGate)
 
 ## Important Parsing Details
 
@@ -191,27 +191,28 @@ Planned JSON settings loader (see `webui/settings.py`) will provide:
 
 ```bash
 # Inspect a host (ASA)
-./access-list-inspector.py --vendor asa --config configs/cisco/fw1.conf --inspect 10.1.1.50
+./aclinspector.py inspect --vendor asa --config configs/cisco/fw1.conf --inspect 10.1.1.50
 
 # Inspect with protocol/port filter
-./access-list-inspector.py --vendor asa --config fw.conf --inspect WebServer01 --proto tcp --dport 443
+./aclinspector.py inspect --vendor asa --config fw.conf --inspect WebServer01 --proto tcp --dport 443
 
 # Compare two targets
-./access-list-inspector.py --vendor asa --config fw.conf --old AppSrvA --new AppSrvB
+./aclinspector.py inspect --vendor asa --config fw.conf --old AppSrvA --new AppSrvB
 
 # Find host across multiple configs (directory scan)
-./access-list-inspector.py --vendor asa --config configs/cisco --find-host 192.168.1.100
+./aclinspector.py inspect --vendor asa --config configs/cisco --find-host 192.168.1.100
 
 # Read config from stdin
-cat fw.conf | ./access-list-inspector.py --vendor asa --config - --inspect WebServer01
+cat fw.conf | ./aclinspector.py inspect --vendor asa --config - --inspect WebServer01
 
-# Packet path check (ASA only)
-./access-list-inspector.py --vendor asa --config fw.conf --packet --packet-src 10.1.1.1 --packet-dst 10.2.2.2 --proto tcp --dport 443
+# Packet path check (ASA + FortiGate)
+./aclinspector.py inspect --vendor asa --config fw.conf --packet --packet-src 10.1.1.1 --packet-dst 10.2.2.2 --proto tcp --dport 443
+./aclinspector.py inspect --vendor fortigate --config ftg.conf --vdom root --packet --packet-src 10.10.10.10 --packet-dst WEB-VIP --proto tcp --dport 443
 
 # Output formats
-./access-list-inspector.py ... --format json
-./access-list-inspector.py ... --format xml
-./access-list-inspector.py ... --no-color
+./aclinspector.py inspect ... --format json
+./aclinspector.py inspect ... --format xml
+./aclinspector.py inspect ... --no-color
 ```
 
 ## Testing Strategy
@@ -246,7 +247,7 @@ cat fw.conf | ./access-list-inspector.py --vendor asa --config - --inspect WebSe
 **Quality checks:**
 ```bash
 # Syntax compilation (always run before commit)
-python3 -m py_compile access-list-inspector.py parsers/cisco/asa/parser.py parsers/fortigate/fortigate.py
+python3 -m py_compile cli/access-list-inspector.py parsers/cisco/asa/parser.py parsers/fortigate/fortigate.py
 
 # Optional linters (if installed)
 make lint   # Runs ruff and flake8 if available

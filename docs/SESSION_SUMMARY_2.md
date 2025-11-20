@@ -85,7 +85,7 @@ tui/
 - **Vendor/config display** in title bar
 
 **Entry Point:**
-- `acl-inspector-tui.py` - Executable CLI wrapper with argument parsing
+- `cli/acl-inspector-tui.py` - Executable CLI wrapper with argument parsing
   - `--vendor` (asa|fortigate)
   - `--config` (path to config file)
   - `--vdom` (FortiGate VDOM)
@@ -97,23 +97,23 @@ tui/
 
 ### 4. IR Translation CLI Tool
 
-**Created:** `acl-ir-translate.py` - Comprehensive CLI for IR operations
+**Created:** `cli/acl-ir-translate.py` - Comprehensive CLI for IR operations
 
 **Commands:**
 
 1. **export** - Vendor config → IR JSON
    ```bash
-   ./acl-ir-translate.py export --vendor asa --config fw.conf --output fw.ir.json --pretty
+   ./aclinspector.py translate export --vendor asa --config fw.conf --output fw.ir.json --pretty
    ```
 
 2. **import** - IR JSON → Vendor config
    ```bash
-   ./acl-ir-translate.py import --vendor fortigate --ir fw.ir.json --output fw.ftg.conf
+   ./aclinspector.py translate import --vendor fortigate --ir fw.ir.json --output fw.ftg.conf
    ```
 
 3. **convert** - Direct vendor-to-vendor translation
    ```bash
-   ./acl-ir-translate.py convert --from asa --to fortigate --config fw.conf --output fw.ftg.conf --save-ir fw.ir.json
+   ./aclinspector.py translate convert --from asa --to fortigate --config fw.conf --output fw.ftg.conf --save-ir fw.ir.json
    ```
 
 **Features:**
@@ -152,8 +152,8 @@ tui/
 5. `tui/widgets/search_bar.py`
 6. `tui/widgets/suggestion_list.py`
 7. `tui/widgets/status_bar.py`
-8. `acl-inspector-tui.py`
-9. `acl-ir-translate.py`
+8. `cli/acl-inspector-tui.py`
+9. `cli/acl-ir-translate.py`
 10. `docs/SESSION_SUMMARY_2.md`
 
 ### Files Modified

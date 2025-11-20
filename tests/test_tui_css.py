@@ -12,7 +12,7 @@ class TUICSSTest(unittest.TestCase):
         """Verify TUI app CSS has no parsing errors."""
         # Run TUI with --help to trigger CSS parsing without entering interactive mode
         result = subprocess.run(
-            [sys.executable, "acl-inspector-tui.py", "--help"],
+            [sys.executable, "cli/acl-inspector-tui.py", "--help"],
             capture_output=True,
             text=True,
             timeout=5

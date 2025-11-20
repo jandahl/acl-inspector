@@ -8,9 +8,11 @@ from textual.widgets import Static, Input
 from textual.containers import VerticalScroll, Vertical
 from textual.message import Message
 from textual import events
+from textual._context import NoActiveAppError
 from rich.text import Text
 from rich.table import Table
 from rich.console import Group, RenderableType
+from rich.panel import Panel
 
 
 class DetailView(VerticalScroll):
@@ -34,6 +36,13 @@ class DetailView(VerticalScroll):
         self.compare_filtered_suggestions: List[Dict[str, Any]] = []
         self.compare_selected_index: int = 0
 
+    def _safe_remove_children(self) -> None:
+        """Remove child widgets without requiring an active app context."""
+        try:
+            super().remove_children()
+        except NoActiveAppError:
+            pass
+
     def compose(self):
         """Compose child widgets."""
         yield Static("Select an item to view details", classes="detail-placeholder")
@@ -44,7 +53,7 @@ class DetailView(VerticalScroll):
         Args:
             content: Any Rich renderable (Table, Panel, Group, etc.)
         """
-        self.remove_children()
+        self._safe_remove_children()
         self.mount(Static(content, classes="detail-content"))
 
     def update_object(self, obj: Dict[str, Any], config=None) -> None:
@@ -57,13 +66,13 @@ class DetailView(VerticalScroll):
         self.current_object = obj
 
         # Clear existing content
-        self.remove_children()
+        self._safe_remove_children()
 
         # Create rich content
         content = self._format_detail(obj, config)
         self.mount(Static(content, classes="detail-content"))
 
-    def _format_detail(self, obj: Dict[str, Any], config=None) -> Table:
+    def _format_detail(self, obj: Dict[str, Any], config=None) -> RenderableType:
         """Format object details as a Rich table.
 
         Args:
@@ -88,11 +97,19 @@ class DetailView(VerticalScroll):
         source_file = obj.get("source_file", "")
         if source_file:
             table.add_row("Source", source_file)
+        vendor = obj.get("vendor")
+        if vendor:
+            table.add_row("Vendor", vendor.upper())
+        vdom = obj.get("vdom")
+        if vdom:
+            table.add_row("VDOM", vdom)
 
         if detail:
             table.add_row("Summary", detail)
 
         # If we have config, get more details
+        extra_renderables: List[RenderableType] = []
+
         if config:
             if obj_type == "object":
                 # Network object - show ALL IPs (no limit)
@@ -136,18 +153,35 @@ class DetailView(VerticalScroll):
                     nested_groups = [m.get('name') for m in members if isinstance(m, dict) and m.get('type') == 'group-object']
                     if nested_groups:
                         table.add_row("Nested Groups", str(len(nested_groups)))
+            elif obj_type == "config":
+                if hasattr(config, 'network_objects'):
+                    table.add_row("Objects", str(len(getattr(config, 'network_objects', {}))))
+                if hasattr(config, 'network_object_groups'):
+                    table.add_row("Groups", str(len(getattr(config, 'network_object_groups', {}))))
+                if hasattr(config, 'addresses'):
+                    table.add_row("Addresses", str(len(getattr(config, 'addresses', {}))))
+                if hasattr(config, 'addrgrps'):
+                    table.add_row("Addr Groups", str(len(getattr(config, 'addrgrps', {}))))
+                if hasattr(config, 'acls'):
+                    table.add_row("ACLs", str(len(getattr(config, 'acls', {}))))
+                raw_text = getattr(config, "raw_text", "")
+                if raw_text:
+                    config_panel = Panel(Text(raw_text), title="Raw configuration", border_style="blue")
+                    extra_renderables.append(config_panel)
 
         # Add help text
         table.add_row("", "")
         table.add_row("Actions", "[ESC] Close detail view")
 
+        if extra_renderables:
+            return Group(table, *extra_renderables)
         return table
 
     def clear(self) -> None:
         """Clear the detail view."""
         self.current_object = None
         self.compare_mode = False
-        self.remove_children()
+        self._safe_remove_children()
         self.mount(Static("Select an item to view details", classes="detail-placeholder"))
 
     def show_compare_prompt(self, base_obj: Dict[str, Any], all_objects: Optional[List[Dict[str, Any]]] = None) -> None:
@@ -171,7 +205,7 @@ class DetailView(VerticalScroll):
         help_text.append("(ESC once: navigate tabs | ESC twice: back to search)\n", style="dim italic")
 
         # Clear and show compare prompt
-        self.remove_children()
+        self._safe_remove_children()
 
         # Mount widgets directly (no container needed since DetailView is VerticalScroll)
         help_static = Static(help_text, classes="detail-content")
@@ -396,7 +430,7 @@ class DetailView(VerticalScroll):
             content_parts.append(hints)
 
             # Display all parts
-            self.remove_children()
+            self._safe_remove_children()
             self.mount(Static(Group(*content_parts), classes="detail-content"))
 
         except Exception as e:
@@ -404,5 +438,5 @@ class DetailView(VerticalScroll):
             error_text = Text()
             error_text.append("Comparison Error\n\n", style="bold red")
             error_text.append(f"{str(e)}", style="white")
-            self.remove_children()
+            self._safe_remove_children()
             self.mount(Static(error_text, classes="detail-content"))

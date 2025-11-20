@@ -9,6 +9,10 @@ from collections import defaultdict
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Set, Tuple, Union
 
 from parsers.cisco import asa as asa_parser
+from parsers.fortigate import inspect as fortigate_parser
+from parsers.fortigate import path_check as fortigate_path
+from parsers.fortigate.config import FTGConfig
+from ..vendor_caps import get_caps
 
 from ..state import AppState
 from utils.config import clean_config_text
@@ -32,7 +36,12 @@ def process_run(state: AppState, fields: Mapping[str, List[str]]) -> Tuple[int, 
 
     vendor = get("vendor", "asa").lower()
     mode = get("mode", "inspect")
-    cfg_file = get("config")
+    caps = get_caps(vendor)
+    if not caps:
+        return 400, {"error": f"Vendor {vendor!r} not supported"}
+    config_field = caps.config_field
+    cfg_file = get(config_field)
+    vdom = get("vdom") or ""
     proto = get("proto")
     include_any = bool(fields.get("include_any", []))
     find_verbose = bool(fields.get("find_verbose", []))
@@ -71,58 +80,80 @@ def process_run(state: AppState, fields: Mapping[str, List[str]]) -> Tuple[int, 
         "vendor": vendor,
         "config": cfg_file,
         "query": "",
+        "vdom": vdom,
     }
 
     try:
-        if vendor != "asa":
-            return 400, {"error": f"Vendor {vendor!r} not implemented"}
-
         if mode == "inspect":
+            if not caps.supports_inspect:
+                return 400, {"error": f"Inspect not supported for vendor {vendor!r}"}
             target = get("inspect")
-            cfg = asa_parser.ASAConfig(cfg_text)
-            report = asa_parser.inspect_host(
-                cfg_text, target, service_filter=svc_filter, include_any=include_any
-            )
-            try:
-                nets = cfg.resolve_network(target)
-                inclusive = {}
-                for net in nets:
-                    names = cfg.ip_to_objects.get(net, set()) if hasattr(cfg, "ip_to_objects") else set()
-                    if names:
-                        inclusive[net] = names
-                report["aliases"] = inclusive
-            except Exception:
-                pass
-            html_output = _render_report(target, report, cfg_file, cfg)
+            if vendor == "asa":
+                cfg = asa_parser.ASAConfig(cfg_text)
+                report = asa_parser.inspect_host(
+                    cfg_text, target, service_filter=svc_filter, include_any=include_any
+                )
+                try:
+                    nets = cfg.resolve_network(target)
+                    inclusive = {}
+                    for net in nets:
+                        names = cfg.ip_to_objects.get(net, set()) if hasattr(cfg, "ip_to_objects") else set()
+                        if names:
+                            inclusive[net] = names
+                    report["aliases"] = inclusive
+                except Exception:
+                    pass
+                html_output = _render_report(target, report, cfg_file, cfg)
+            elif vendor == "fortigate":
+                report = fortigate_parser.inspect_host(
+                    cfg_text, target, service_filter=svc_filter, vdom=vdom or None
+                )
+                cfg = FTGConfig(cfg_text, vdom=vdom or None)
+                html_output = _render_fortigate_report(target, report, cfg_file, cfg, vdom=vdom)
+            else:
+                return 400, {"error": f"Inspect not supported for vendor {vendor!r}"}
             history_query = target
             meta["query"] = target
 
         elif mode == "compare":
+            if not caps.supports_compare:
+                return 400, {"error": f"Compare not supported for vendor {vendor!r}"}
             old = get("old")
             new = get("new")
-            diff = asa_parser.compare_old_new(
-                cfg_text, old, new, service_filter=svc_filter, include_any=include_any
-            )
-            cfg = asa_parser.ASAConfig(cfg_text)
+            if vendor == "asa":
+                diff = asa_parser.compare_old_new(
+                    cfg_text, old, new, service_filter=svc_filter, include_any=include_any
+                )
+                cfg = asa_parser.ASAConfig(cfg_text)
 
-            def _incl(name: str) -> Dict[ipaddress._BaseAddress, Set[str]]:
-                out: Dict[ipaddress._BaseAddress, Set[str]] = {}
-                nets_inner = cfg.resolve_network(name)
-                for net in nets_inner:
-                    names = cfg.ip_to_objects.get(net, set()) if hasattr(cfg, "ip_to_objects") else set()
-                    if names:
-                        out[net] = names
-                return out
+                def _incl(name: str) -> Dict[ipaddress._BaseAddress, Set[str]]:
+                    out: Dict[ipaddress._BaseAddress, Set[str]] = {}
+                    nets_inner = cfg.resolve_network(name)
+                    for net in nets_inner:
+                        names = cfg.ip_to_objects.get(net, set()) if hasattr(cfg, "ip_to_objects") else set()
+                        if names:
+                            out[net] = names
+                    return out
 
-            old_aliases = _incl(old) if old else {}
-            new_aliases = _incl(new) if new else {}
-            html_output = _render_diff(old, new, diff, cfg_file, cfg, old_aliases, new_aliases)
+                old_aliases = _incl(old) if old else {}
+                new_aliases = _incl(new) if new else {}
+                html_output = _render_diff(old, new, diff, cfg_file, cfg, old_aliases, new_aliases)
+            elif vendor == "fortigate":
+                diff = fortigate_parser.compare_old_new(
+                    cfg_text, old, new, service_filter=svc_filter, vdom=vdom or None
+                )
+                cfg = FTGConfig(cfg_text, vdom=vdom or None)
+                html_output = _render_fortigate_diff(old, new, diff, cfg_file, cfg, vdom=vdom)
+            else:
+                return 400, {"error": f"Compare not supported for vendor {vendor!r}"}
             history_query = f"{old}->{new}"
             meta["query"] = history_query
 
         elif mode == "find":
+            if not caps.supports_find:
+                return 400, {"error": f"Find not supported for vendor {vendor!r}"}
             target = get("findq")
-            results = _find_host(state, target)
+            results = _find_host(state, target, vendor, vdom or None)
             html_output = _render_find(target, results, find_verbose)
             tab = "find"
             history_query = target
@@ -130,13 +161,23 @@ def process_run(state: AppState, fields: Mapping[str, List[str]]) -> Tuple[int, 
             meta["verbose"] = bool(find_verbose)
 
         elif mode == "packet":
+            if not caps.supports_packet:
+                return 400, {"error": f"Packet check not supported for vendor {vendor!r}"}
             src = get("pkt_src")
             dst = get("pkt_dst")
             guess_pairs = is_checked("pkt_guess", True)
-            pkt = _packet_check_asa(
-                cfg_text, src, dst, proto or None, dports_clean, include_any, guess_pairs
-            )
-            html_output = _render_packet(cfg_file, pkt)
+            if vendor == "asa":
+                pkt = _packet_check_asa(
+                    cfg_text, src, dst, proto or None, dports_clean, include_any, guess_pairs
+                )
+            elif vendor == "fortigate":
+                pkt = _packet_check_fortigate(
+                    cfg_text, src, dst, proto or None, dports_clean, include_any, vdom or None
+                )
+                guess_pairs = False
+            else:
+                return 400, {"error": f"Packet check not supported for vendor {vendor!r}"}
+            html_output = _render_packet(cfg_file, pkt, vendor=vendor)
             tab = "packet"
             history_query = f"{src}->{dst}"
             meta["query"] = history_query
@@ -204,6 +245,41 @@ def _fmt(rule: dict) -> str:
     proto = rule.get("proto")
     proto_part = f" {proto}" if proto else ""
     return f"{rule['action']}{proto_part}{svc_str} src=[{src_str}] dst=[{dst_str}]{bind_suffix}"
+
+
+def _format_flat_rule(entry: dict) -> str:
+    src_str = ", ".join(sorted(str(s) for s in entry.get("src", [])))
+    dst_str = ", ".join(sorted(str(s) for s in entry.get("dst", [])))
+    svc = entry.get("svc") or {}
+    proto = svc.get("proto") or entry.get("proto")
+    svc_parts: List[str] = []
+    if proto:
+        svc_parts.append(proto)
+    if svc.get("service_group_at_proto"):
+        sg = svc["service_group_at_proto"]
+        svc_parts.append(f"{sg['kind']}:{sg['name']}")
+    port_chunks: List[str] = []
+    for op, (p1, p2) in svc.get("dst_ports", []):
+        if op == "range":
+            port_chunks.append(f"{p1}-{p2}")
+        else:
+            port_chunks.append(f"{op} {p1}")
+    for name in sorted(svc.get("dst_service_groups") or []):
+        port_chunks.append(f"group:{name}")
+    for name in sorted(svc.get("dst_service_objects") or []):
+        port_chunks.append(f"object:{name}")
+    svc_str = ""
+    if svc_parts or port_chunks:
+        head = " ".join(svc_parts) if svc_parts else ""
+        tail = (" ports=" + ",".join(port_chunks)) if port_chunks else ""
+        svc_str = f" {head}{tail}".rstrip()
+    binding = entry.get("binding") or {}
+    src_if = ", ".join(binding.get("srcintf") or [])
+    dst_if = ", ".join(binding.get("dstintf") or [])
+    bind_desc = ""
+    if src_if or dst_if:
+        bind_desc = f" bind={src_if or 'any'}->{dst_if or 'any'}"
+    return f"{entry.get('action', 'deny')}{svc_str} src=[{src_str}] dst=[{dst_str}]{bind_desc}"
 
 
 def _format_binding(binding: Optional[Mapping[str, Any]]) -> str:
@@ -553,6 +629,319 @@ def _looks_like_address(value: str) -> bool:
             return False
 
 
+def _fortigate_group_membership(cfg: FTGConfig) -> Dict[str, Set[str]]:
+    membership: Dict[str, Set[str]] = defaultdict(set)
+    group_lookup = {name.lower(): name for name in cfg.addrgrps.keys()}
+
+    def canonical(name: str) -> Optional[str]:
+        if not name:
+            return None
+        lower = name.lower()
+        if lower in group_lookup:
+            return group_lookup[lower]
+        return name if name in cfg.addrgrps else None
+
+    def visit(group_name: str, chain: Set[str]) -> None:
+        actual = canonical(group_name)
+        if not actual:
+            return
+        lower = actual.lower()
+        if lower in chain:
+            return
+        next_chain = set(chain)
+        next_chain.add(lower)
+        members = cfg.addrgrps.get(actual, [])
+        for member in members:
+            if isinstance(member, dict) and "object" in member:
+                target = member["object"]
+                membership[target.lower()].add(actual)
+                if target.lower() in group_lookup:
+                    membership[target.lower()].add(actual)
+                    visit(target, next_chain)
+            else:
+                membership[str(member).lower()].add(actual)
+
+    for group in cfg.addrgrps.keys():
+        visit(group, set())
+    return membership
+
+
+def _fortigate_vip_group_membership(cfg: FTGConfig) -> Dict[str, Set[str]]:
+    membership: Dict[str, Set[str]] = defaultdict(set)
+    for group, members in cfg.vipgrps.items():
+        for member in members:
+            if member:
+                membership[member.lower()].add(group)
+    return membership
+
+
+def _format_ftg_literal(value: Union[str, ipaddress._BaseAddress, ipaddress._BaseNetwork]) -> str:
+    if isinstance(value, (ipaddress.IPv4Address, ipaddress.IPv4Network)):
+        return str(value)
+    return str(value)
+
+
+def _fortigate_add_literal(
+    name: str,
+    literal: str,
+    literal_map: Dict[str, Set[str]],
+    label_map: Dict[str, str],
+) -> None:
+    if not name or not literal:
+        return
+    key = name.lower()
+    literal_map.setdefault(key, set()).add(literal)
+    label_map.setdefault(key, name)
+
+
+def _fortigate_literal_maps_from_report(
+    target: str,
+    target_nets: Iterable[Union[ipaddress._BaseAddress, ipaddress._BaseNetwork, str]],
+    aliases: Optional[Mapping[Union[ipaddress._BaseAddress, ipaddress._BaseNetwork], Iterable[str]]],
+) -> Tuple[Dict[str, Set[str]], Dict[str, str]]:
+    literal_map: Dict[str, Set[str]] = defaultdict(set)
+    label_map: Dict[str, str] = {}
+    if target:
+        label_map[target.lower()] = target
+    for net in target_nets:
+        literal = _format_ftg_literal(net)
+        if target:
+            _fortigate_add_literal(target, literal, literal_map, label_map)
+    if aliases:
+        for net, names in aliases.items():
+            literal = _format_ftg_literal(net)
+            for name in names:
+                _fortigate_add_literal(name, literal, literal_map, label_map)
+    return literal_map, label_map
+
+
+def _fortigate_literal_maps_for_target(cfg: FTGConfig, target: str) -> Tuple[Dict[str, Set[str]], Dict[str, str]]:
+    literal_map: Dict[str, Set[str]] = defaultdict(set)
+    label_map: Dict[str, str] = {}
+    if target:
+        label_map[target.lower()] = target
+    try:
+        resolved = cfg.resolve_addr_token(target)
+    except Exception:
+        resolved = set()
+    for item in resolved:
+        literal = _format_ftg_literal(item)
+        if target:
+            _fortigate_add_literal(target, literal, literal_map, label_map)
+        if isinstance(item, (ipaddress.IPv4Address, ipaddress.IPv4Network)):
+            for alias in cfg.ip_to_objects.get(item, set()):
+                _fortigate_add_literal(alias, literal, literal_map, label_map)
+    return literal_map, label_map
+
+
+def _fortigate_describe_vip(cfg: FTGConfig, name: str) -> str:
+    vip = cfg.vips.get(name)
+    if vip:
+        ext = vip.get("extip")
+        mapped = vip.get("mappedip")
+        ext_text = ", ".join(ext) if isinstance(ext, list) else str(ext or "")
+        mapped_text = ", ".join(mapped) if isinstance(mapped, list) else str(mapped or "")
+        if ext_text and mapped_text:
+            suffix = f"{ext_text} -> {mapped_text}"
+        else:
+            suffix = ext_text or mapped_text or ""
+        iface = vip.get("extintf")
+        if iface:
+            suffix = f"{suffix} ({iface})" if suffix else iface
+        return suffix
+    members = cfg.vipgrps.get(name)
+    if members:
+        if len(members) <= 4:
+            return f"group members: {', '.join(members)}"
+        head = ", ".join(members[:4])
+        return f"group members: {head} (+{len(members) - 4} more)"
+    return ""
+
+
+def _fortigate_render_card(rows: List[Tuple[str, str]]) -> str:
+    if not rows:
+        return ""
+    body = "".join(
+        f"<div class='config-card-row {row_class}'><span class='config-card-text'>{_escape_text(text)}</span></div>"
+        for row_class, text in rows
+        if text
+    )
+    return f"<div class='config-card'>{body}</div>"
+
+
+def _fortigate_object_detail_block(
+    cfg: FTGConfig,
+    *,
+    primary_names: Iterable[str],
+    literal_map: Dict[str, Set[str]],
+    label_map: Dict[str, str],
+    membership: Dict[str, Set[str]],
+    vip_membership: Dict[str, Set[str]],
+    title: str,
+) -> str:
+    addr_lookup = {name.lower(): name for name in cfg.addresses.keys()}
+    group_lookup = {name.lower(): name for name in cfg.addrgrps.keys()}
+    vip_lookup = {name.lower(): name for name in cfg.vips.keys()}
+    vipgrp_lookup = {name.lower(): name for name in cfg.vipgrps.keys()}
+
+    def canonical(name: str) -> Tuple[str, str]:
+        lower = name.lower()
+        if lower in addr_lookup:
+            return lower, addr_lookup[lower]
+        if lower in group_lookup:
+            return lower, group_lookup[lower]
+        if lower in vip_lookup:
+            return lower, vip_lookup[lower]
+        if lower in vipgrp_lookup:
+            return lower, vipgrp_lookup[lower]
+        return lower, label_map.get(lower, name)
+
+    ordered_keys: List[str] = []
+    seen: Set[str] = set()
+    for name in primary_names:
+        if not name:
+            continue
+        key, label = canonical(name)
+        if key not in label_map:
+            label_map[key] = label
+        if key not in seen:
+            ordered_keys.append(key)
+            seen.add(key)
+    for key in list(label_map.keys()):
+        if key not in seen:
+            ordered_keys.append(key)
+            seen.add(key)
+    for key in list(ordered_keys):
+        for group in membership.get(key, set()):
+            group_key = group.lower()
+            if group_key not in label_map:
+                label_map[group_key] = group
+            if group_key not in seen:
+                ordered_keys.append(group_key)
+                seen.add(group_key)
+        for vip_group in vip_membership.get(key, set()):
+            vg_key = vip_group.lower()
+            if vg_key not in label_map:
+                label_map[vg_key] = vip_group
+            if vg_key not in seen:
+                ordered_keys.append(vg_key)
+                seen.add(vg_key)
+
+    cards: List[str] = []
+    for key in ordered_keys:
+        label = label_map.get(key)
+        if not label:
+            continue
+        literal_values = sorted(literal_map.get(key, set()))
+        rows: List[Tuple[str, str]] = []
+        if key in addr_lookup:
+            rows.append(("is-name", f"firewall address {addr_lookup[key]}"))
+            literals = literal_values or [str(net) for net in sorted(cfg.addresses.get(addr_lookup[key], []), key=str)]
+            value = ", ".join(literals) if literals else "(no subnet)"
+            rows.append(("is-value", value))
+            groups = sorted(membership.get(key, set()))
+            if groups:
+                rows.append(("is-meta", f"Groups: {', '.join(groups)}"))
+        elif key in group_lookup:
+            rows.append(("is-name", f"firewall addrgrp {group_lookup[key]}"))
+            members = []
+            for member in cfg.addrgrps.get(group_lookup[key], []):
+                if isinstance(member, dict) and "object" in member:
+                    members.append(member["object"])
+                else:
+                    members.append(str(member))
+            if members:
+                head = ", ".join(members[:4])
+                suffix = f" (+{len(members) - 4} more)" if len(members) > 4 else ""
+                rows.append(("is-value", f"Members: {head}{suffix}"))
+            if literal_values:
+                rows.append(("is-meta", f"Resolves: {', '.join(literal_values)}"))
+        elif key in vip_lookup:
+            rows.append(("is-name", f"firewall vip {vip_lookup[key]}"))
+            rows.append(("is-value", _fortigate_describe_vip(cfg, vip_lookup[key]) or "(no mapping)"))
+            policies = sorted(cfg.policy_vip_refs.get(vip_lookup[key], set()))
+            if policies:
+                rows.append(("is-meta", f"Policies: {', '.join(policies)}"))
+            groups = sorted(vip_membership.get(key, set()))
+            if groups:
+                rows.append(("is-meta", f"VIP groups: {', '.join(groups)}"))
+        elif key in vipgrp_lookup:
+            rows.append(("is-name", f"firewall vipgrp {vipgrp_lookup[key]}"))
+            members = cfg.vipgrps.get(vipgrp_lookup[key], [])
+            if members:
+                head = ", ".join(members[:4])
+                suffix = f" (+{len(members) - 4} more)" if len(members) > 4 else ""
+                rows.append(("is-value", f"Members: {head}{suffix}"))
+        else:
+            rows.append(("is-name", label))
+            rows.append(("is-value", ", ".join(literal_values) if literal_values else label))
+        card = _fortigate_render_card(rows)
+        if card:
+            cards.append(card)
+    if not cards:
+        return ""
+    body = "".join(cards)
+    return f"<div class='diff diff-objects'><h3>{_escape_text(title)}</h3><div class='config-cards'>{body}</div></div>"
+
+
+def _fortigate_zone_summary(title: str, hits: Iterable[dict]) -> str:
+    entries: List[str] = []
+    seen: Set[Tuple[str, str, str]] = set()
+
+    def _value(binding: Mapping[str, Any], zone_key: str, iface_key: str) -> str:
+        zone = binding.get(zone_key)
+        if zone:
+            vals = zone if isinstance(zone, list) else [zone]
+            return ", ".join(vals)
+        iface = binding.get(iface_key)
+        if iface:
+            vals = iface if isinstance(iface, list) else [iface]
+            return ", ".join(vals)
+        return "any"
+
+    for entry in hits:
+        binding = entry.get("binding") or {}
+        src = _value(binding, "srczone", "srcintf")
+        dst = _value(binding, "dstzone", "dstintf")
+        policy_label = entry.get("policy_id") or binding.get("name") or binding.get("uuid") or ""
+        key = (policy_label, src, dst)
+        if key in seen:
+            continue
+        seen.add(key)
+        label = f"Policy {policy_label}" if policy_label else "Policy"
+        entries.append(f"{label}: {src} -> {dst}")
+    if not entries:
+        return ""
+    text = "\n".join(entries)
+    return f"<div class='diff diff-objects'><h3>{_escape_text(title)}</h3><pre data-lang='fortigate'>{_escape_text(text)}</pre></div>"
+
+
+def _fortigate_vip_reference_block(cfg: FTGConfig, hits: Iterable[dict], title: str) -> str:
+    lines: List[str] = []
+    seen: Set[Tuple[str, str]] = set()
+    for entry in hits:
+        binding = entry.get("binding") or {}
+        vip_refs = binding.get("vip_refs") or []
+        if not vip_refs:
+            continue
+        policy_label = entry.get("policy_id") or binding.get("name") or binding.get("uuid") or ""
+        for vip_name in vip_refs:
+            key = (policy_label, vip_name)
+            if key in seen:
+                continue
+            seen.add(key)
+            desc = _fortigate_describe_vip(cfg, vip_name)
+            label = f"Policy {policy_label}" if policy_label else "Policy"
+            line = f"{label} -> {vip_name}"
+            if desc:
+                line += f": {desc}"
+            lines.append(line)
+    if not lines:
+        return ""
+    text = "\n".join(lines)
+    return f"<div class='diff diff-objects'><h3>{_escape_text(title)}</h3><pre data-lang='fortigate'>{_escape_text(text)}</pre></div>"
+
+
 def _render_report(target: str, report: dict, cfg_file: str, cfg: asa_parser.ASAConfig) -> str:
     raw_entries = report.get("hits", [])
     raw_text = "\n".join(entry["raw"] for entry in raw_entries)
@@ -626,6 +1015,52 @@ def _render_report(target: str, report: dict, cfg_file: str, cfg: asa_parser.ASA
 </div>
 """
 
+def _render_fortigate_report(target: str, report: dict, cfg_file: str, cfg: FTGConfig, vdom: Optional[str] = None) -> str:
+    hits = report.get("hits", [])
+    raw_block = "\n".join(entry.get("raw", "") for entry in hits)
+    flat_block = "\n".join(_format_flat_rule(entry) for entry in hits)
+    aliases = report.get("aliases") or {}
+    target_nets = report.get("target_nets", [])
+    cfg.flatten_policies()
+    literal_map, label_map = _fortigate_literal_maps_from_report(target, target_nets, aliases)
+    membership = _fortigate_group_membership(cfg)
+    vip_membership = _fortigate_vip_group_membership(cfg)
+    object_block = _fortigate_object_detail_block(
+        cfg,
+        primary_names=[target],
+        literal_map=literal_map,
+        label_map=label_map,
+        membership=membership,
+        vip_membership=vip_membership,
+        title="Object context",
+    )
+    zone_block = _fortigate_zone_summary("Zone context", hits)
+    vip_block = _fortigate_vip_reference_block(cfg, hits, "VIP references")
+    vdom_suffix = f" (VDOM={_escape_text(vdom)})" if vdom else ""
+    return f"""
+<div class='results results-rules' data-tab='rules'>
+  <div class='section'><h2>{_escape_text(cfg_file)}</h2><h3>Inspection Report for {_escape_text(target)}{vdom_suffix}</h3>
+  <p>Resolved to: {', '.join(_escape_text(str(net)) for net in report.get('target_nets', []))}</p>
+  <p>Found {len(hits)} matching policies.</p></div>
+  {object_block or ""}
+  {vip_block or ""}
+  {zone_block or ""}
+  <div class='diff diff-ruleset'>
+    <h3>Matched Policies</h3>
+    <div class='acl-view-container' data-mode='both'>
+      <div class='acl-view acl-view--raw is-active' data-view='raw'>
+        <h4>Raw policies</h4>
+        <pre data-lang='fortigate'>{_escape_text(raw_block or '  (none)')}</pre>
+      </div>
+      <div class='acl-view acl-view--flat is-active' data-view='flat'>
+        <h4>Flattened policies</h4>
+        <pre data-lang='fortigate'>{_escape_text(flat_block or '  (none)')}</pre>
+      </div>
+    </div>
+  </div>
+</div>
+"""
+
 
 def _render_diff(
     old: str,
@@ -671,6 +1106,65 @@ def _render_diff(
 """
 
 
+def _render_fortigate_diff(
+    old: str,
+    new: str,
+    diff: dict,
+    cfg_file: str,
+    cfg: FTGConfig,
+    vdom: Optional[str] = None,
+) -> str:
+    added = "\n".join(_format_flat_rule(entry) for entry in diff.get("added_to_new", [])[:200])
+    removed = "\n".join(_format_flat_rule(entry) for entry in diff.get("removed_from_old", [])[:200])
+    cfg.flatten_policies()
+    membership = _fortigate_group_membership(cfg)
+    vip_membership = _fortigate_vip_group_membership(cfg)
+    old_literal_map, old_labels = _fortigate_literal_maps_for_target(cfg, old)
+    new_literal_map, new_labels = _fortigate_literal_maps_for_target(cfg, new)
+    old_block = _fortigate_object_detail_block(
+        cfg,
+        primary_names=[old],
+        literal_map=old_literal_map,
+        label_map=old_labels,
+        membership=membership,
+        vip_membership=vip_membership,
+        title="Old object context",
+    )
+    new_block = _fortigate_object_detail_block(
+        cfg,
+        primary_names=[new],
+        literal_map=new_literal_map,
+        label_map=new_labels,
+        membership=membership,
+        vip_membership=vip_membership,
+        title="New object context",
+    )
+    old_zone = _fortigate_zone_summary("Old target zones", diff.get("old_hits", []))
+    new_zone = _fortigate_zone_summary("New target zones", diff.get("new_hits", []))
+    old_vip = _fortigate_vip_reference_block(cfg, diff.get("old_hits", []), "Old target VIP references")
+    new_vip = _fortigate_vip_reference_block(cfg, diff.get("new_hits", []), "New target VIP references")
+    vdom_suffix = f" (VDOM={_escape_text(vdom)})" if vdom else ""
+    return f"""
+<div class='results results-rules' data-tab='rules'>
+  <div class='section'><h2>{_escape_text(cfg_file)}</h2><h3>Comparison{vdom_suffix}</h3>
+  <p>Old target: {_escape_text(old)}</p>
+  <p>New target: {_escape_text(new)}</p>
+  <p>Old hits: {len(diff.get('old_hits', []))} &nbsp; New hits: {len(diff.get('new_hits', []))}</p>
+  </div>
+  {old_block or ""}
+  {new_block or ""}
+  {old_vip or ""}
+  {new_vip or ""}
+  {old_zone or ""}
+  {new_zone or ""}
+  <div class='diff diff-added'><h3>New-only Policies</h3>
+  <pre data-lang='fortigate'>{_escape_text(added or '  (none)')}</pre></div>
+  <div class='diff diff-removed'><h3>Old-only Policies</h3>
+  <pre data-lang='fortigate'>{_escape_text(removed or '  (none)')}</pre></div>
+</div>
+"""
+
+
 def _render_find(target: str, results: List[dict], verbose: bool) -> str:
     filtered = [res for res in results if verbose or res.get("has_detail")]
     if not filtered:
@@ -684,6 +1178,7 @@ def _render_find(target: str, results: List[dict], verbose: bool) -> str:
     primary = filtered[0]
     primary_file = _escape_text(primary["file"])
     primary_vendor = _escape_text(primary["vendor"])
+    primary_vdom = _escape_text(primary.get("vdom") or "")
     target_safe = _escape_text(target)
 
     def _render_lines(result: dict) -> str:
@@ -718,7 +1213,7 @@ def _render_find(target: str, results: List[dict], verbose: bool) -> str:
     jump_button = (
         "<div class='find-actions'>"
         f"<button type='button' class='btn-secondary js-find-to-packet' data-config='{primary_file}' "
-        f"data-vendor='{primary_vendor}' data-target='{target_safe}'>Send to Packet Check</button>"
+        f"data-vendor='{primary_vendor}' data-vdom='{primary_vdom}' data-target='{target_safe}'>Send to Packet Check</button>"
         "</div>"
     )
 
@@ -742,7 +1237,7 @@ def _render_find(target: str, results: List[dict], verbose: bool) -> str:
     )
 
 
-def _render_packet(cfg_file: str, pkt: dict) -> str:
+def _render_packet(cfg_file: str, pkt: dict, vendor: str = "asa") -> str:
     if pkt.get("error"):
         return (
             "<div class='results results-packet' data-tab='packet'>"
@@ -768,7 +1263,14 @@ def _render_packet(cfg_file: str, pkt: dict) -> str:
     nat_lines = []
     if nat.get("applied"):
         rule = nat.get("rule") or {}
-        nat_lines.append(f"Rule: {rule.get('raw', 'unknown')}")
+        rule_desc = (
+            rule.get("raw")
+            or rule.get("name")
+            or rule.get("policy_name")
+            or rule.get("type")
+            or "unknown"
+        )
+        nat_lines.append(f"Rule: {rule_desc}")
         nat_lines.append(f"Source: {src_nat.get('before')} → {src_nat.get('after')}")
         if src_nat.get("note"):
             nat_lines.append(f"  note: {src_nat.get('note')}")
@@ -779,6 +1281,20 @@ def _render_packet(cfg_file: str, pkt: dict) -> str:
     else:
         nat_lines.append("No NAT rule matched.")
     nat_block = "\n".join(nat_lines)
+    step_block = ""
+    steps = nat.get("steps") or []
+    if steps:
+        rendered_steps: List[str] = []
+        for idx, step in enumerate(steps, start=1):
+            desc = step.get("type", "nat")
+            direction = step.get("direction") or "n/a"
+            detail = step.get("rule") or {}
+            summary = detail.get("raw") or detail.get("name") or detail.get("policy_name") or detail.get("type") or ""
+            rendered_steps.append(f"Step {idx}: {desc} (direction={direction}) {summary}")
+        step_block = (
+            "  <div class='diff diff-steps'><h3>NAT Steps</h3>\n"
+            f"  <pre>{_escape_text(chr(10).join(rendered_steps))}</pre></div>\n"
+        )
     cand_lines = []
     for cand in context.get("acl_candidates", []):
         iface = cand.get("interface") or "global"
@@ -810,9 +1326,10 @@ def _render_packet(cfg_file: str, pkt: dict) -> str:
         "  <div class='diff diff-added'><h3>NAT Evaluation</h3>\n"
         f"  <pre>{_escape_text(nat_block)}</pre></div>\n"
         f"{candidate_block}"
+        f"{step_block}"
         f"{warning_block}"
         "  <div class='diff diff-raw'><h3>ACL Matches</h3>\n"
-        f"  <pre data-lang='asa'>{_escape_text(content)}</pre></div>\n"
+        f"  <pre data-lang='{_escape_text(vendor)}'>{_escape_text(content)}</pre></div>\n"
         "</div>\n"
     )
 
@@ -840,7 +1357,36 @@ def _packet_check_asa(
         return {"error": str(exc), "allowed": False}
 
 
-def _find_host(state: AppState, target: str) -> List[dict]:
+def _packet_check_fortigate(
+    cfg_text: str,
+    src: str,
+    dst: str,
+    proto: Optional[str],
+    dports: Set[int],
+    include_any: bool,
+    vdom: Optional[str],
+) -> dict:
+    try:
+        return fortigate_path(
+            cfg_text,
+            src,
+            dst,
+            proto=proto,
+            dports=dports,
+            include_any=include_any,
+            vdom=vdom,
+        )
+    except Exception as exc:
+        return {"error": str(exc), "allowed": False}
+
+
+def _find_host(state: AppState, target: str, vendor: str = "asa", vdom: Optional[str] = None) -> List[dict]:
+    if vendor == "fortigate":
+        return _find_host_fortigate(state, target, vdom)
+    return _find_host_asa(state, target)
+
+
+def _find_host_asa(state: AppState, target: str) -> List[dict]:
     query = (target or "").strip()
     if not query:
         return []
@@ -1010,6 +1556,7 @@ def _find_host(state: AppState, target: str) -> List[dict]:
             {
                 "vendor": entry["vendor"],
                 "file": entry["file"],
+                "vdom": "",
                 "objects": sorted(matched_objects),
                 "literals": sorted(matched_literals),
                 "interfaces": sorted(interface_hits),
@@ -1041,6 +1588,121 @@ def _find_host(state: AppState, target: str) -> List[dict]:
                     res["best"] = True
                 else:
                     break
+    return results
+
+
+def _find_host_fortigate(state: AppState, target: str, vdom: Optional[str]) -> List[dict]:
+    query = (target or "").strip()
+    if not query:
+        return []
+    data = _load_fortigate_configs(state, vdom)
+    if not data:
+        return []
+    query_lower = query.lower()
+    literal_targets: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]] = set()
+    try:
+        literal_targets.add(ipaddress.ip_address(query))
+    except Exception:
+        pass
+    try:
+        literal_targets.add(ipaddress.ip_network(query, strict=False))
+    except Exception:
+        pass
+
+    results: List[dict] = []
+    for entry in data:
+        cfg = entry["cfg"]
+        text_lower = entry["text"].lower()
+        direct = False
+        matched_objects: Set[str] = set()
+        matched_groups: Set[str] = set()
+        matched_literals: Set[str] = set()
+        score_details: List[str] = []
+
+        if query_lower in (name.lower() for name in cfg.addresses.keys()):
+            direct = True
+
+        try:
+            resolved = cfg.resolve_addr_token(query)
+        except Exception:
+            resolved = set()
+        resolved_ips: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]] = set()
+        for val in resolved:
+            if isinstance(val, (ipaddress.IPv4Address, ipaddress.IPv4Network)):
+                resolved_ips.add(val)
+            else:
+                try:
+                    resolved_ips.add(ipaddress.ip_address(str(val)))
+                except Exception:
+                    try:
+                        resolved_ips.add(ipaddress.ip_network(str(val), strict=False))
+                    except Exception:
+                        continue
+        matched_literals.update(str(val) for val in resolved_ips)
+
+        for name, nets in cfg.addresses.items():
+            if resolved_ips and any(net in resolved_ips for net in nets):
+                matched_objects.add(name)
+            elif literal_targets and any(net in literal_targets for net in nets):
+                matched_objects.add(name)
+
+        for net, names in getattr(cfg, "ip_to_objects", {}).items():
+            if net in resolved_ips or net in literal_targets:
+                matched_objects.update(names)
+
+        for group, members in cfg.addrgrps.items():
+            for member in members:
+                ref = member.get("object") if isinstance(member, dict) else None
+                if ref and (ref.lower() == query_lower or ref in matched_objects):
+                    matched_groups.add(group)
+
+        text_hit = query_lower in text_lower
+        has_detail = bool(matched_objects or matched_groups)
+        score = 0
+        if direct:
+            score += 100
+            score_details.append("Direct object reference")
+        if matched_objects:
+            score += 30
+            score_details.append("Address match")
+        if matched_groups:
+            score += 20
+            score_details.append("Group membership")
+        if matched_literals:
+            score += 10
+        if text_hit and not has_detail:
+            score += 5
+            score_details.append("Text reference")
+
+        if not (matched_objects or matched_groups or matched_literals or text_hit):
+            continue
+
+        results.append(
+            {
+                "vendor": "fortigate",
+                "file": entry["file"],
+                "vdom": entry.get("vdom", ""),
+                "objects": sorted(matched_objects),
+                "literals": sorted(matched_literals),
+                "interfaces": [],
+                "groups": sorted(matched_groups),
+                "text_hit": text_hit,
+                "score": score,
+                "score_details": score_details,
+                "direct": direct,
+                "has_detail": has_detail,
+            }
+        )
+
+    if not results:
+        return []
+    results.sort(key=lambda res: (-res["score"], -len(res["objects"]), res["file"]))
+    top_score = results[0]["score"]
+    for res in results:
+        if res["score"] == top_score and top_score > 0:
+            res["best"] = True
+        else:
+            break
     return results
 
 
@@ -1107,6 +1769,43 @@ def _load_asa_configs(state: AppState) -> List[dict]:
                 "text": text,
                 "cfg": cfg,
                 "group_membership": _build_group_membership(cfg),
+            }
+        )
+    return items
+
+
+def _load_fortigate_configs(state: AppState, vdom: Optional[str]) -> List[dict]:
+    dirpath = state.settings.paths.configs.get("fortigate")
+    if not dirpath:
+        return []
+    items: List[dict] = []
+    try:
+        entries = [
+            name
+            for name in sorted(os.listdir(dirpath))
+            if not name.startswith(".") and os.path.isfile(os.path.join(dirpath, name))
+        ]
+    except FileNotFoundError:
+        return []
+    for name in entries:
+        path = os.path.join(dirpath, name)
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                text = clean_config_text(handle.read())
+        except Exception:
+            continue
+        try:
+            cfg = FTGConfig(text, vdom=vdom or None)
+        except Exception:
+            continue
+        items.append(
+            {
+                "vendor": "fortigate",
+                "file": name,
+                "path": path,
+                "text": text,
+                "cfg": cfg,
+                "vdom": vdom or cfg.vdom or "",
             }
         )
     return items

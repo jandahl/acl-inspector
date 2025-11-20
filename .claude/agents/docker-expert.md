@@ -11,7 +11,7 @@ You are a Docker and container orchestration expert specializing in containerizi
 
 ### Current Setup
 - **Base image**: `python:3.11-slim-bookworm`
-- **Entrypoint**: `access-list-web.py` (web UI)
+- **Entrypoint**: `cli/access-list-web.py` (web UI)
 - **Port**: 8083
 - **Compose tool**: `podman-compose` (dev), `docker-compose` (production)
 - **Location**: `Dockersetup/` directory
@@ -45,7 +45,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip install playwright && playwright install --with-deps chromium
 
 EXPOSE 8083
-CMD ["python", "access-list-web.py", "--port", "8083", "--addr", "0.0.0.0"]
+CMD ["python", "cli/access-list-web.py", "--port", "8083", "--addr", "0.0.0.0"]
 ```
 
 **Optimized Multi-Stage Build:**
@@ -97,7 +97,7 @@ EXPOSE 8083
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:8083/api/index/status || exit 1
 
-CMD ["python", "access-list-web.py", "--port", "8083", "--addr", "0.0.0.0"]
+CMD ["python", "cli/access-list-web.py", "--port", "8083", "--addr", "0.0.0.0"]
 ```
 
 **Best Practices:**

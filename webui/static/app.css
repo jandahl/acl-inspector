@@ -7,6 +7,8 @@ a:visited{color:var(--link-visited, var(--link, var(--accent)));text-decoration:
 a:hover{color:var(--link-hover, var(--accent));text-decoration:underline;}
 a:active{color:var(--link-active, var(--link-hover, var(--accent)));text-decoration:underline;}
 .app{max-width:calc(var(--content-width) + 80px);margin:0 auto;padding:16px;}
+.boot-status{display:none;margin:12px auto 0;max-width:var(--content-width);padding:10px 16px;border-radius:8px;border:1px solid #f08888;background:#3f1d1d;color:#ffecec;font-size:0.92rem;box-sizing:border-box;}
+.boot-status.active{display:block;}
 .toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
 h2{margin:0;}
 .tab-shell{margin-top:12px;max-width:var(--content-width);margin-left:auto;margin-right:auto;}

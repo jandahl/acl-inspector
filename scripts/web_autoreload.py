@@ -16,7 +16,7 @@ from typing import Dict, Iterable, List, Sequence
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PATTERNS = ["*.py", "*.html", "*.css", "*.js"]
 DEFAULT_PATHS = [
-    ROOT / "access-list-web.py",
+    ROOT / "cli" / "cli/access-list-web.py",
     ROOT / "webui",
     ROOT / "templates",
 ]
@@ -71,7 +71,7 @@ def launch(args: argparse.Namespace) -> subprocess.Popen:
         env["ACLINSPECTOR_CONFIGS_CISCO"] = args.configs_cisco
     if args.configs_fortigate:
         env["ACLINSPECTOR_CONFIGS_FORTIGATE"] = args.configs_fortigate
-    cmd = [sys.executable, str(ROOT / "access-list-web.py"), "--addr", args.addr, "--port", str(args.port)]
+    cmd = [sys.executable, str(ROOT / "cli" / "cli/access-list-web.py"), "--addr", args.addr, "--port", str(args.port)]
     if args.prewarm:
         cmd.append("--prewarm-all-configs")
     return subprocess.Popen(cmd, cwd=ROOT, env=env)

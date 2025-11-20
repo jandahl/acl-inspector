@@ -11,7 +11,7 @@ services:
       - ../configs:/app/configs
       - aclinspector_cache:/app/cache
     # Command to override the Dockerfile CMD if needed, but for now, it's good.
-    # command: ["python", "access-list-web.py", "--port", "8083", "--host", "0.0.0.0"]
+    # command: ["python", "aclinspector.py", "web", "--port", "8083", "--host", "0.0.0.0"]
     environment:
       - ACLINSPECTOR_CACHE_DIR=/app/cache
       - ACLINSPECTOR_SEARCH_LIMIT=${ACLINSPECTOR_SEARCH_LIMIT}

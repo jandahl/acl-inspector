@@ -7,8 +7,9 @@ comparison and analysis.
 
 from __future__ import annotations
 
+import ipaddress
 import re
-from typing import TYPE_CHECKING, Dict, List, Set
+from typing import TYPE_CHECKING, Dict, List, Optional, Set, Union
 
 if TYPE_CHECKING:
     from .config import FTGConfig
@@ -62,10 +63,16 @@ def to_ir(cfg: FTGConfig, device_name: str = None) -> "ir.Device":
             version = m2.group(1).strip()
             break
 
-    # FortiGate doesn't have traditional interfaces in the same way ASA does
-    # For now, we'll create placeholder interfaces if zones are referenced
-    # TODO: Parse 'config system interface' and 'config system zone' when available
     interfaces: List[ir.Interface] = []
+    for name, meta in cfg.interfaces.items():
+        ipv4 = _normalize_interface_ip(meta.get('ip'))
+        alias = meta.get('alias') if isinstance(meta.get('alias'), str) else None
+        interfaces.append(ir.Interface(
+            name=name,
+            physical=alias or name,
+            ipv4=ipv4,
+            security_level=None,
+        ))
 
     # Convert network objects (firewall address)
     objects: List[ir.Object] = []
@@ -160,9 +167,9 @@ def to_ir(cfg: FTGConfig, device_name: str = None) -> "ir.Device":
                 svc=svc_norm,
                 raw=e.get('raw', ''),
                 acl='policy',
-                bound_to=None,  # FortiGate policies are global within VDOM
-                binding=None,
-                direction='global',  # Policies apply bidirectionally in FortiGate
+                bound_to=None,
+                binding=e.get('binding'),
+                direction='global',
             )
             entries.append(entry)
 
@@ -173,8 +180,65 @@ def to_ir(cfg: FTGConfig, device_name: str = None) -> "ir.Device":
             binding=None
         ))
 
-    # NAT rules not yet implemented in FortiGate parser
     ir_nats: List[ir.NAT] = []
+
+    for name, vip in cfg.vips.items():
+        extips = _ensure_list(vip.get('extip'))
+        mapped = _ensure_list(vip.get('mappedip'))
+        policies = sorted(list(cfg.policy_vip_refs.get(name, set())))
+        detail = {
+            'type': 'vip',
+            'name': name,
+            'extip': extips,
+            'mappedip': mapped,
+            'extintf': vip.get('extintf'),
+            'portforward': vip.get('portforward'),
+            'extport': vip.get('extport'),
+            'mappedport': vip.get('mappedport'),
+            'policies': policies,
+        }
+        ir_nats.append(ir.NAT(
+            kind='manual',
+            src_if=None,
+            dst_if=vip.get('extintf'),
+            detail=detail,
+            raw=f"vip {name}",
+        ))
+
+    for policy in cfg.policies:
+        if policy.get('nat'):
+            detail = {
+                'type': 'policy-snat',
+                'policy_id': policy.get('id'),
+                'policy_name': policy.get('name'),
+                'ippool': policy.get('ippool'),
+                'poolname': policy.get('poolname'),
+            }
+            ir_nats.append(ir.NAT(
+                kind='manual',
+                src_if=_first_or_none(policy.get('srcintf')),
+                dst_if=_first_or_none(policy.get('dstintf')),
+                detail=detail,
+                raw=f"policy {policy.get('id')}",
+            ))
+
+    for entry in cfg.central_snat_map:
+        detail = {
+            'type': 'central-snat',
+            'seq': entry.get('seq'),
+            'srcintf': entry.get('srcintf'),
+            'dstintf': entry.get('dstintf'),
+            'orig-addr': entry.get('orig-addr'),
+            'dst-addr': entry.get('dst-addr'),
+            'nat-ippool': entry.get('nat-ippool'),
+        }
+        ir_nats.append(ir.NAT(
+            kind='manual',
+            src_if=_first_or_none(entry.get('srcintf')),
+            dst_if=_first_or_none(entry.get('dstintf')),
+            detail=detail,
+            raw=f"central-snat {entry.get('seq')}",
+        ))
 
     # Convert static routes
     static_routes: List[ir.StaticRoute] = []
@@ -220,3 +284,40 @@ def to_ir(cfg: FTGConfig, device_name: str = None) -> "ir.Device":
         routes=[],  # Backward compat, deprecated
     )
     return dev
+
+
+def _normalize_interface_ip(value: Optional[Union[str, List[str]]]) -> Optional[str]:
+    if not value:
+        return None
+    if isinstance(value, list):
+        value = ' '.join(str(v) for v in value)
+    text = str(value).strip()
+    if not text:
+        return None
+    if '/' in text:
+        return text
+    parts = text.split()
+    if len(parts) == 2:
+        ip, mask = parts
+        try:
+            net = ipaddress.ip_network(f"{ip}/{mask}", strict=False)
+            return f"{ip}/{net.prefixlen}"
+        except Exception:
+            return f"{ip}/{mask}"
+    return text
+
+
+def _ensure_list(value: Optional[Union[str, List[str]]]) -> List[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    return [value]
+
+
+def _first_or_none(value: Optional[Union[str, List[str]]]) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, list):
+        return value[0] if value else None
+    return value

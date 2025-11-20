@@ -94,7 +94,7 @@ def _rule_shadows(self, general: Dict, specific: Dict) -> bool:
 - JSON: Machine-parsable for automation
 - Markdown: Documentation-ready with emojis
 
-### 3. Policy Optimization CLI (`acl-optimize.py`)
+### 3. Policy Optimization CLI (`cli/acl-optimize.py`)
 
 **New File: Executable**
 
@@ -103,16 +103,16 @@ Production-ready CLI tool for policy audits:
 **Usage Examples:**
 ```bash
 # Analyze with auto-detection
-./acl-optimize.py --config firewall.conf
+./aclinspector.py optimize --config firewall.conf
 
 # Generate markdown report
-./acl-optimize.py --config fw.conf --format markdown --output report.md
+./aclinspector.py optimize --config fw.conf --format markdown --output report.md
 
 # Show only critical issues
-./acl-optimize.py --config fw.conf --severity critical
+./aclinspector.py optimize --config fw.conf --severity critical
 
 # Filter by category
-./acl-optimize.py --config fw.conf --category shadowed
+./aclinspector.py optimize --config fw.conf --category shadowed
 ```
 
 **Exit Codes (CI/CD Integration):**
@@ -128,7 +128,7 @@ Production-ready CLI tool for policy audits:
 - Multiple output formats
 - Suitable for automated pipelines
 
-### 4. Enhanced IR Translation CLI (`acl-ir-translate.py`)
+### 4. Enhanced IR Translation CLI (`cli/acl-ir-translate.py`)
 
 **Modified: Added auto-detection support**
 
@@ -137,19 +137,19 @@ All commands now support automatic vendor detection:
 **Before:**
 ```bash
 # Required manual vendor specification
-./acl-ir-translate.py export --vendor asa --config fw.conf --output fw.ir.json
+./aclinspector.py translate export --vendor asa --config fw.conf --output fw.ir.json
 ```
 
 **After:**
 ```bash
 # Vendor auto-detected!
-./acl-ir-translate.py export --config fw.conf --output fw.ir.json
+./aclinspector.py translate export --config fw.conf --output fw.ir.json
 
 # Convert without specifying source vendor
-./acl-ir-translate.py convert --to fortigate --config asa-fw.conf --output ftg.conf
+./aclinspector.py translate convert --to fortigate --config asa-fw.conf --output ftg.conf
 
 # Override detection if needed
-./acl-ir-translate.py export --vendor asa --config fw.conf --no-auto-detect
+./aclinspector.py translate export --vendor asa --config fw.conf --no-auto-detect
 ```
 
 ### 5. TUI Critical Bug Fix (`tui/widgets/search_bar.py`)
@@ -183,10 +183,10 @@ class Changed(Message):
 1. `parsers/loader.py` (180 lines) - Unified config loader
 2. `analysis/__init__.py` - Module initialization
 3. `analysis/optimizer.py` (370 lines) - Policy optimization logic
-4. `acl-optimize.py` (executable) - Optimization CLI tool
+4. `cli/acl-optimize.py` (executable) - Optimization CLI tool
 
 ### Modified Files (2)
-1. `acl-ir-translate.py` - Added auto-detection to export/convert
+1. `cli/acl-ir-translate.py` - Added auto-detection to export/convert
 2. `tui/widgets/search_bar.py` - Fixed Message initialization order
 
 ## Test Results
@@ -235,17 +235,17 @@ Example analysis on typical firewall:
 **Before this session:**
 ```bash
 # Every command required vendor specification
-./access-list-inspector.py --vendor asa --config fw.conf --inspect HOST
-./acl-ir-translate.py export --vendor asa --config fw.conf
+./aclinspector.py inspect --vendor asa --config fw.conf --inspect HOST
+./aclinspector.py translate export --vendor asa --config fw.conf
 # etc.
 ```
 
 **After this session:**
 ```bash
 # Auto-detection everywhere
-./acl-optimize.py --config fw.conf
-./acl-ir-translate.py export --config fw.conf
-./acl-inspector-tui.py --config fw.conf
+./aclinspector.py optimize --config fw.conf
+./aclinspector.py translate export --config fw.conf
+./aclinspector.py tui --config fw.conf
 
 # 80% reduction in required arguments!
 ```
@@ -291,7 +291,7 @@ User reported TUI crash after typing in search field, which was immediately diag
 ```bash
 #!/bin/bash
 # CI/CD pipeline step
-./acl-optimize.py --config production.conf --format json --output audit.json
+./aclinspector.py optimize --config production.conf --format json --output audit.json
 
 # Exit code 2 if critical issues found
 if [ $? -eq 2 ]; then
@@ -304,19 +304,19 @@ fi
 ### 2. Cross-Vendor Migration
 ```bash
 # ASA → FortiGate migration with validation
-./acl-ir-translate.py convert --to fortigate \
+./aclinspector.py translate convert --to fortigate \
     --config asa-firewall.conf \
     --output fortigate-draft.conf \
     --save-ir migration.ir.json
 
 # Analyze for issues before deployment
-./acl-optimize.py --config fortigate-draft.conf --severity critical
+./aclinspector.py optimize --config fortigate-draft.conf --severity critical
 ```
 
 ### 3. Quick Config Analysis
 ```bash
 # No vendor specification needed!
-./acl-optimize.py --config unknown-firewall.conf
+./aclinspector.py optimize --config unknown-firewall.conf
 
 # Output:
 # Detected ASA with 85% confidence
@@ -330,8 +330,8 @@ fi
 
 ### Code Metrics
 - **New lines of code:** ~550 lines
-- **New executable tools:** 1 (acl-optimize.py)
-- **Enhanced tools:** 1 (acl-ir-translate.py)
+- **New executable tools:** 1 (cli/acl-optimize.py)
+- **Enhanced tools:** 1 (cli/acl-ir-translate.py)
 - **Bug fixes:** 1 critical (TUI crash)
 - **Test pass rate:** 100% (161/161, 11 skipped)
 

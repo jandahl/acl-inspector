@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from parsers.cisco import asa as asa_parser
+from parsers.fortigate import path_check as fortigate_path
+from ..vendor_caps import get_caps
 from ..state import AppState
 from utils.config import clean_config_text, load_config_text
 
@@ -41,15 +43,6 @@ def _resolve_config(state: AppState, vendor: str, filename: str) -> Optional[Pat
     if not path.is_file():
         return None
     return path
-
-
-def _vendor_os_tag(vendor: str) -> str:
-    vendor_lower = (vendor or "").lower()
-    if vendor_lower == "asa":
-        return "ASA"
-    if vendor_lower == "fortigate":
-        return "FortiOS"
-    return vendor.upper()
 
 
 def _extract_meta(vendor: str, text: str) -> Dict[str, str]:
@@ -650,13 +643,15 @@ def packet_probe(
     proto: Optional[str],
     dports: Sequence[Any],
     include_any: bool,
+    vdom: Optional[str] = None,
 ) -> Tuple[int, Dict[str, Any]]:
     vendor_lower = (vendor or "").lower()
+    caps = get_caps(vendor_lower)
+    if not caps or not caps.supports_packet:
+        return 400, {"error": "packet_not_supported"}
     path = _resolve_config(state, vendor_lower, filename)
     if not path:
         return 400, {"error": "invalid_config"}
-    if vendor_lower != "asa":
-        return 400, {"error": "vendor_not_supported"}
     src = (src or "").strip()
     dst = (dst or "").strip()
     if not src or not dst:
@@ -667,15 +662,31 @@ def packet_probe(
         return 500, {"error": f"read_failed: {exc}"}
     ports = _parse_ports(dports)
     try:
-        result = asa_parser.path_check(
-            text,
-            src,
-            dst,
-            proto=proto if proto else None,
-            dports=ports,
-            include_any=include_any,
-        )
+        if vendor_lower == "asa":
+            result = asa_parser.path_check(
+                text,
+                src,
+                dst,
+                proto=proto if proto else None,
+                dports=ports,
+                include_any=include_any,
+            )
+        elif vendor_lower == "fortigate":
+            result = fortigate_path(
+                text,
+                src,
+                dst,
+                proto=proto if proto else None,
+                dports=ports,
+                include_any=include_any,
+                vdom=vdom,
+            )
+        else:
+            return 400, {"error": "vendor_not_supported"}
     except Exception as exc:  # pragma: no cover - defensive
         return 500, {"error": str(exc)}
     state.history.record("packet-probe", f"{src}->{dst}")
-    return 200, {"vendor": vendor_lower, "config": filename, "result": result}
+    payload = {"vendor": vendor_lower, "config": filename, "result": result}
+    if vdom:
+        payload["vdom"] = vdom
+    return 200, payload

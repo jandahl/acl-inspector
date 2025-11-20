@@ -26,7 +26,7 @@ Located in `tui/widgets/action_tabs.py`:
 Located in:
 - `parsers/cisco/asa/inspect.py`: Object resolution and ACL inspection
 - `parsers/cisco/asa/parser.py`: ASAConfig class with network_objects, ACLs
-- `access-list-inspector.py`: CLI for inspect/compare/find-host
+- `cli/access-list-inspector.py`: CLI for inspect/compare/find-host
 
 ## Shared Library Architecture
 

@@ -2,7 +2,7 @@
 
 import unittest
 from parsers.cisco.asa import ASAConfig
-from analysis_core import inspect_object, compare_objects
+from analysis_core import inspect_object, compare_objects, InspectResult
 
 # Skip all tests if rich is not available
 try:
@@ -59,6 +59,45 @@ access-list INSIDE_IN extended deny ip any any
 
         # Group should contain renderables (Panel, Table, etc.)
         self.assertGreater(len(formatted.renderables), 0, "Should contain at least one renderable")
+
+    def test_format_inspect_rich_handles_set_endpoints(self):
+        """Ensure formatting tolerates set-based endpoints."""
+        rules = [
+            {
+                "acl": "INSIDE_IN",
+                "action": "permit",
+                "src": {"10.0.0.0/24"},
+                "dst": {"192.168.0.10"},
+                "proto": "tcp",
+            }
+        ]
+        result = InspectResult(
+            object_name="OBJ_SERVER_A",
+            resolved_addresses=["10.1.0.10"],
+            matching_rules=rules,
+            duplicates=[],
+            total_rules=len(rules),
+        )
+        formatted = format_inspect_rich(result)
+        self.assertIsInstance(formatted, Group)
+
+    def test_format_service_handles_fortigate_rule(self):
+        """Ensure Forti-style svc dict renders meaningfully."""
+        from analysis_core.formatters import _format_service
+
+        rule = {
+            "svc": {
+                "proto": "tcp",
+                "dst_ports": [("range", (80, 81)), ("eq", (443, 443))],
+                "dst_service_groups": {"HTTP-HTTPS"},
+                "dst_service_objects": {"HTTPS"},
+            }
+        }
+        text = _format_service(rule)
+        self.assertIn("tcp", text)
+        self.assertIn("80-81", text)
+        self.assertIn("443", text)
+        self.assertIn("group:HTTP-HTTPS", text)
 
     def test_format_compare_rich_returns_renderable(self):
         """Test that format_compare_rich returns a Rich renderable."""

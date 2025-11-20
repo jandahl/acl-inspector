@@ -5,7 +5,8 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Any, Optional
+from collections.abc import MutableMapping
+from typing import Dict, List, Any, Optional, Set, Tuple
 
 from textual.app import App, ComposeResult
 from textual.containers import Container, Vertical, Horizontal
@@ -17,6 +18,7 @@ from .widgets.suggestion_list import SuggestionList
 from .widgets.status_bar import StatusBar
 from .widgets.detail_view import DetailView
 from .widgets.action_tabs import ActionTabs
+from common.vendor_caps import get_caps
 
 
 # Set up file logging
@@ -38,6 +40,51 @@ def setup_logging():
 
 
 logger = setup_logging()
+
+
+class ParsedConfigStore(MutableMapping):
+    """Mapping that prefers path keys but falls back to filenames when requested."""
+
+    def __init__(self):
+        self._store: Dict[str, Any] = {}
+
+    def __getitem__(self, key: str) -> Any:
+        if key in self._store:
+            return self._store[key]
+        for path, value in self._store.items():
+            if Path(path).name == key:
+                return value
+        raise KeyError(key)
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        self._store[key] = value
+
+    def __delitem__(self, key: str) -> None:
+        del self._store[key]
+
+    def __iter__(self):
+        return iter(self._store)
+
+    def __len__(self) -> int:
+        return len(self._store)
+
+    def items(self):
+        return self._store.items()
+
+    def keys(self):
+        return self._store.keys()
+
+    def values(self):
+        return self._store.values()
+
+    def clear(self) -> None:
+        self._store.clear()
+
+    def get(self, key: str, default: Optional[Any] = None) -> Any:
+        try:
+            return self[key]
+        except KeyError:
+            return default
 
 
 class SingularityApp(App):
@@ -259,19 +306,30 @@ class SingularityApp(App):
         Binding("escape", "close_detail_or_clear", "Close/Clear", show=False),
     ]
 
-    def __init__(self, vendor: str = "asa", config_path: str = ""):
+    def __init__(
+        self,
+        vendor: str = "asa",
+        config_path: str = "",
+        vdom: str = "",
+        vendor_targets: Optional[List[tuple]] = None,
+    ):
         super().__init__()
         self.vendor = vendor
         self.config_path = config_path
-        self.is_directory = False
+        self.vdom = vdom
+        self.vendor_targets: List[Tuple[str, str]] = vendor_targets or [(vendor, config_path)]
         self.config_files: List[str] = []
-        self.parsed_configs: Dict[str, Any] = {}  # filename -> parsed config
+        self.parsed_configs = ParsedConfigStore()
+        self.parsed_config: Optional[Any] = None
         self.search_results = []
-        self.parsed_config = None  # For single file mode compatibility
         self.all_objects: List[Dict[str, Any]] = []
         self.selected_object: Optional[Dict[str, Any]] = None
         self.drill_down_active = False
         self.last_selected_index = 0  # Track which item was selected
+        self.modal_depth = 0
+        self.title_summary = f"[{self.vendor.upper()}] {self.config_path or 'No config loaded'}"
+        self.loaded_vendors: Set[str] = set()
+        self.is_directory: bool = False
 
         # Track current tab and data for export
         self.current_tab_id = "details"
@@ -296,7 +354,7 @@ class SingularityApp(App):
         with Container(id="main-container"):
             # Search section
             with Vertical(id="search-container"):
-                yield Static(f"[{self.vendor.upper()}] {self.config_path or 'No config loaded'}", classes="title")
+                yield Static(self.title_summary, classes="title")
                 yield SearchBar(placeholder="Type to search objects, ACLs, hosts...")
 
             # Breadcrumb section (hidden until item selected)
@@ -325,18 +383,23 @@ class SingularityApp(App):
 
         logger.info(f"TUI started: vendor={self.vendor}, config={self.config_path}")
 
-        # Parse config if available
-        if self.config_path:
+        # Parse config if vendor targets are configured
+        if self.vendor_targets:
             self._load_config()
         else:
-            logger.warning("No config file specified")
+            logger.warning("No vendor targets configured")
 
         # Focus search bar on startup
         self.query_one(SearchBar).focus()
 
+        self._apply_caps_to_tabs(self.vendor)
+
     def on_key(self, event) -> None:
         """Smart keyboard routing based on context."""
         key = event.key
+
+        if self.modal_depth > 0:
+            return
 
         # FIX #5a: Printable characters - additive typing (don't auto-focus in drill-down mode)
         if len(key) == 1 and key.isprintable():
@@ -403,141 +466,343 @@ class SingularityApp(App):
                         action_tabs.focus()
                         return
 
+    def _default_path_for_vendor(self, vendor: str) -> Path:
+        defaults = {
+            "asa": Path("configs/cisco"),
+            "fortigate": Path("configs/fortigate"),
+        }
+        return defaults.get(vendor, Path("configs"))
+
     def _load_config(self) -> None:
         """Load and parse the firewall config(s)."""
         try:
             import sys
-            from pathlib import Path
-            import os
 
-            # Add parent directory to path to import parsers
             parent_dir = Path(__file__).parent.parent
             if str(parent_dir) not in sys.path:
                 sys.path.insert(0, str(parent_dir))
 
-            config_path = Path(self.config_path)
+            self.config_files = []
+            self.parsed_configs.clear()
+            self.all_objects = []
+            self.loaded_vendors.clear()
+            self.is_directory = False
+            self.parsed_config = None
 
-            # Check if path is a directory
-            if config_path.is_dir():
-                self.is_directory = True
-                logger.info(f"Loading configs from directory: {config_path}")
+            had_success = False
+            for vendor_name, target in self.vendor_targets:
+                try:
+                    self._load_vendor_configs(vendor_name, target)
+                    had_success = True
+                except Exception as exc:
+                    logger.error(f"Failed to load configs for {vendor_name}: {exc}")
+                    self.notify(
+                        f"Failed to load {vendor_name} configs: {str(exc)[:80]}",
+                        severity="warning",
+                        timeout=5,
+                    )
 
-                # Find all config files in directory
-                self.config_files = sorted([
-                    str(f) for f in config_path.iterdir()
-                    if f.is_file() and not f.name.startswith('.')
-                ])
+            if not had_success:
+                raise ValueError("No valid configurations loaded.")
 
-                if not self.config_files:
-                    raise ValueError(f"No config files found in directory: {config_path}")
-
-                logger.info(f"Found {len(self.config_files)} config files")
-
-                # Load all configs
-                self.all_objects = []
-                for config_file in self.config_files:
-                    self._load_single_config(config_file)
-
-                logger.info(f"Loaded {len(self.all_objects)} total objects from {len(self.config_files)} configs")
-
-                # Update title bar to show config count
-                title_static = self.query_one("#search-container Static.title")
-                title_static.update(f"[{self.vendor.upper()}] {len(self.config_files)} configs loaded from {config_path.name}")
-
-            else:
-                # Single file mode
-                self.is_directory = False
-                self._load_single_config(str(config_path))
-                logger.info(f"Loaded {len(self.all_objects)} objects from single config")
-
-                # Update title bar for single file
-                title_static = self.query_one("#search-container Static.title")
-                title_static.update(f"[{self.vendor.upper()}] {config_path.name}")
+            self._update_title_summary()
 
         except Exception as e:
             import traceback
+
             error_details = traceback.format_exc()
             logger.error(f"Error loading config: {e}\n{error_details}")
             self.notify(
                 f"Failed to load config: {str(e)[:100]}...\nCheck ./logs/TUI.log for details",
                 severity="error",
-                timeout=10
+                timeout=10,
             )
 
-    def _load_single_config(self, config_file: str) -> None:
-        """Load and parse a single config file.
+    def _load_vendor_configs(self, vendor: str, config_path: str) -> None:
+        """Load configs for a specific vendor."""
+        base_path = Path(config_path) if config_path else self._default_path_for_vendor(vendor)
+        self.is_directory = self.is_directory or base_path.is_dir()
+        if not base_path.exists():
+            raise ValueError(f"{base_path} does not exist")
 
-        Args:
-            config_file: Path to the config file
-        """
-        from pathlib import Path
+        if base_path.is_dir():
+            files = sorted(
+                str(f)
+                for f in base_path.iterdir()
+                if f.is_file() and not f.name.startswith(".")
+            )
+            if not files:
+                raise ValueError(f"No config files found in directory: {base_path}")
+            for file_path in files:
+                self._load_single_config(vendor, file_path)
+        else:
+            self._load_single_config(vendor, str(base_path))
+
+    def _load_single_config(self, vendor: str, config_file: str) -> None:
+        """Load and parse a single config file."""
         filename = Path(config_file).name
+        logger.info(f"Loading {vendor} config: {config_file}")
 
         try:
-            if self.vendor == "asa":
+            if vendor == "asa":
                 from parsers.cisco.asa.parser import ASAConfig
-                with open(config_file, 'r') as f:
-                    config_text = f.read()
+
+                with open(config_file, "r") as handle:
+                    config_text = handle.read()
                 parsed = ASAConfig(config_text)
+                self.parsed_config = parsed
+                self._index_asa_objects(parsed, filename, config_file)
 
-                # Store parsed config
-                self.parsed_configs[filename] = parsed
-
-                # For single file mode, also set as main config
-                if not self.is_directory:
-                    self.parsed_config = parsed
-
-                # Build search index from objects
-                for obj_name, networks in parsed.network_objects.items():
-                    # Convert network set to string representation
-                    detail = ", ".join(str(net) for net in list(networks)[:3])
-                    if len(networks) > 3:
-                        detail += f" (+{len(networks)-3} more)"
-
-                    # Add source file to object
-                    obj_entry = {
-                        "name": obj_name,
-                        "type": "object",
-                        "detail": detail,
-                        "source_file": filename,
-                        "config": parsed  # Keep reference to parsed config
-                    }
-                    self.all_objects.append(obj_entry)
-
-                # Add object groups
-                for group_name, members in parsed.network_object_groups.items():
-                    member_count = len(members)
-                    obj_entry = {
-                        "name": group_name,
-                        "type": "group",
-                        "detail": f"{member_count} members",
-                        "source_file": filename,
-                        "config": parsed
-                    }
-                    self.all_objects.append(obj_entry)
-
-                logger.info(f"Loaded {filename}: {len(parsed.network_objects)} objects, {len(parsed.network_object_groups)} groups")
-
-            elif self.vendor == "fortigate":
+            elif vendor == "fortigate":
                 from parsers.fortigate.config import FTGConfig
-                with open(config_file, 'r') as f:
-                    config_text = f.read()
-                parsed = FTGConfig(config_text)
-                self.parsed_configs[filename] = parsed
 
-                if not self.is_directory:
-                    self.parsed_config = parsed
+                with open(config_file, "r") as handle:
+                    config_text = handle.read()
+                parsed = FTGConfig(config_text, vdom=self.vdom or None)
+                self.parsed_config = parsed
+                self._index_fortigate_objects(parsed, filename, config_file, vendor)
 
-                logger.warning(f"FortiGate parsing not yet fully implemented for TUI: {filename}")
+            else:
+                raise ValueError(f"Unsupported vendor: {vendor}")
 
-        except Exception as e:
-            logger.error(f"Failed to load {filename}: {e}")
-            # Don't fail the entire load, just skip this file
-            self.notify(f"Failed to load {filename}: {str(e)[:50]}", severity="warning", timeout=3)
+            self.config_files.append(config_file)
+            self.parsed_configs[config_file] = parsed
+            self.loaded_vendors.add(vendor)
+            self._add_config_entry(vendor, filename, config_file, parsed)
+
+        except Exception as exc:
+            logger.error(f"Failed to load {config_file}: {exc}")
+            raise
+
+    def _index_asa_objects(self, parsed, filename: str, full_path: str) -> None:
+        for obj_name, networks in parsed.network_objects.items():
+            detail = ", ".join(str(net) for net in list(networks)[:3])
+            if len(networks) > 3:
+                detail += f" (+{len(networks) - 3} more)"
+            self.all_objects.append(
+                {
+                    "name": obj_name,
+                    "type": "object",
+                    "detail": detail,
+                    "source_file": filename,
+                    "source_path": full_path,
+                    "config": parsed,
+                    "vendor": "asa",
+                }
+            )
+
+        for group_name, members in parsed.network_object_groups.items():
+            member_count = len(members)
+            self.all_objects.append(
+                {
+                    "name": group_name,
+                    "type": "group",
+                    "detail": f"{member_count} members",
+                    "source_file": filename,
+                    "source_path": full_path,
+                    "config": parsed,
+                    "vendor": "asa",
+                }
+            )
+
+    def _index_fortigate_objects(self, parsed, filename: str, full_path: str, vendor: str) -> None:
+        """Populate object list for FortiGate configs."""
+        for obj_name, networks in parsed.addresses.items():
+            literals = sorted(str(net) for net in networks)
+            detail = ", ".join(literals[:3]) if literals else "dynamic"
+            if len(literals) > 3:
+                detail += f" (+{len(literals) - 3} more)"
+            self.all_objects.append(
+                {
+                    "name": obj_name,
+                    "type": "object",
+                    "detail": detail,
+                    "source_file": filename,
+                    "source_path": full_path,
+                    "config": parsed,
+                    "vendor": vendor,
+                    "vdom": parsed.vdom,
+                }
+            )
+        for group_name, members in parsed.addrgrps.items():
+            detail = f"{len(members)} members"
+            self.all_objects.append(
+                {
+                    "name": group_name,
+                    "type": "group",
+                    "detail": detail,
+                    "source_file": filename,
+                    "source_path": full_path,
+                    "config": parsed,
+                    "vendor": vendor,
+                    "vdom": parsed.vdom,
+                }
+            )
+
+    def _add_config_entry(self, vendor: str, filename: str, full_path: str, parsed) -> None:
+        """Add a searchable entry for the raw configuration file."""
+        summary_parts: List[str] = []
+        if hasattr(parsed, "network_objects"):
+            summary_parts.append(f"{len(parsed.network_objects)} objects")
+        if hasattr(parsed, "network_object_groups"):
+            summary_parts.append(f"{len(parsed.network_object_groups)} groups")
+        if hasattr(parsed, "acls"):
+            summary_parts.append(f"{len(parsed.acls)} ACLs")
+        if hasattr(parsed, "addresses"):
+            summary_parts.append(f"{len(parsed.addresses)} addresses")
+        if hasattr(parsed, "addrgrps"):
+            summary_parts.append(f"{len(parsed.addrgrps)} addrgrps")
+        detail = ", ".join(summary_parts) if summary_parts else "Full configuration"
+        self.all_objects.append(
+            {
+                "name": filename,
+                "type": "config",
+                "detail": detail,
+                "source_file": filename,
+                "source_path": full_path,
+                "config": parsed,
+                "vendor": vendor,
+                "vdom": getattr(parsed, "vdom", None),
+            }
+        )
+
+    def _update_title_summary(self) -> None:
+        if self.loaded_vendors:
+            vendors = sorted(self.loaded_vendors)
+        else:
+            vendors = [self.vendor]
+
+        if len(vendors) > 1:
+            summary = f"[MULTI] {len(self.config_files)} configs loaded ({', '.join(vendors).upper()})"
+        else:
+            label = vendors[0].upper()
+            if len(self.config_files) == 1:
+                summary = f"[{label}] {Path(self.config_files[0]).name}"
+            else:
+                summary = f"[{label}] {len(self.config_files)} configs loaded"
+
+        self.title_summary = summary
+        try:
+            title_static = self.query_one("#search-container Static.title")
+            title_static.update(summary)
+        except Exception:
+            pass
+
+    def _apply_caps_to_tabs(self, vendor: str) -> None:
+        """Update the action tabs when the selected vendor changes."""
+        caps = get_caps(vendor)
+        try:
+            self.query_one(ActionTabs).apply_vendor_caps(caps)
+        except Exception:
+            pass
+
+    def _get_object_config(self, obj: Optional[Dict[str, Any]]) -> Optional[Any]:
+        if not obj:
+            return None
+        config = obj.get("config")
+        if config is not None:
+            return config
+        source_path = obj.get("source_path")
+        if source_path:
+            return self.parsed_configs.get(source_path)
+        source_file = obj.get("source_file")
+        if source_file:
+            return self.parsed_configs.get(source_file)
+        return None
+
+    def _format_fortigate_inspect(self, result) -> Group:
+        """Build a rich renderable summarizing FortiGate inspect output."""
+        from rich.table import Table
+        from rich.panel import Panel
+        from rich.text import Text
+        from rich.console import Group
+
+        header = Text()
+        header.append(f"Object: {result.object_name}\n", style="bold cyan")
+        header.append("Resolved to: ", style="bold yellow")
+        if result.resolved_addresses:
+            header.append(", ".join(result.resolved_addresses[:5]), style="green")
+            if len(result.resolved_addresses) > 5:
+                header.append(f" (+{len(result.resolved_addresses) - 5} more)", style="dim")
+        else:
+            header.append("(not found)", style="red")
+        header.append("\nMatching policies: ", style="bold yellow")
+        header.append(str(result.total_rules), style="cyan")
+
+        rules_table = Table(title="Policies", show_lines=True, header_style="bold")
+        rules_table.add_column("Policy", justify="left", style="cyan")
+        rules_table.add_column("Src Zones", style="green")
+        rules_table.add_column("Dst Zones", style="blue")
+        rules_table.add_column("Service", style="yellow")
+        rules_table.add_column("Action", style="magenta")
+
+        vip_lines: List[str] = []
+
+        for rule in result.matching_rules[:50]:
+            binding = rule.get("binding") or {}
+            policy = binding.get("policy_id") or binding.get("name") or rule.get("acl", "policy")
+            src_zone = ", ".join(binding.get("srczone") or binding.get("srcintf") or ["any"])
+            dst_zone = ", ".join(binding.get("dstzone") or binding.get("dstintf") or ["any"])
+            svc = self._describe_service(rule)
+            action = rule.get("action", "permit")
+            rules_table.add_row(str(policy), src_zone, dst_zone, svc, action.upper())
+
+            if binding.get("vip_refs"):
+                for vip in binding["vip_refs"]:
+                    vip_lines.append(f"{policy}: {vip}")
+
+        extras: List[Panel] = []
+        if vip_lines:
+            vip_text = "\n".join(vip_lines)
+            extras.append(Panel(vip_text, title="VIP References", border_style="blue"))
+
+        if len(result.matching_rules) > 50:
+            footer = Text(f"... and {len(result.matching_rules) - 50} more policies", style="dim")
+            extras.append(Panel(footer, border_style="dim"))
+
+        return Group(Panel(header, border_style="cyan"), rules_table, *extras)
+
+    @staticmethod
+    def _describe_service(rule: dict) -> str:
+        svc = rule.get("svc") or {}
+        proto = svc.get("proto") or rule.get("proto") or "any"
+        parts: List[str] = []
+        if proto and proto != "any":
+            parts.append(proto)
+        ports: List[str] = []
+        for op, (p1, p2) in svc.get("dst_ports", []):
+            if op == "range" and p1 is not None and p2 is not None and p1 != p2:
+                ports.append(f"{p1}-{p2}")
+            elif p1 is not None:
+                ports.append(f"{op} {p1}")
+        for name in svc.get("dst_service_groups", []) or []:
+            ports.append(f"group:{name}")
+        for name in svc.get("dst_service_objects", []) or []:
+            ports.append(f"object:{name}")
+        if ports:
+            parts.append("ports=" + ",".join(ports))
+        return " ".join(parts) if parts else "any"
+
+    def _search_objects(self, query: str, limit: int = 20) -> List[Dict[str, Any]]:
+        """Return search results for a query."""
+        if not query:
+            return []
+        query_lower = query.lower()
+        matches: List[Dict[str, Any]] = []
+        for obj in self.all_objects:
+            name_hit = query_lower in obj["name"].lower()
+            source_hit = query_lower in (obj.get("source_file", "") or "").lower()
+            path_hit = query_lower in (obj.get("source_path", "") or "").lower()
+            detail_hit = query_lower in (obj.get("detail", "") or "").lower()
+            if name_hit or source_hit or path_hit or detail_hit:
+                matches.append(obj)
+                if len(matches) >= limit:
+                    break
+        return matches
 
     def on_search_bar_searched(self, message: SearchBar.Searched) -> None:
         """Handle debounced search events."""
-        query = message.value.strip().lower()
+        query = message.value.strip()
 
         logger.debug(f"Search event received: query='{query}'")
 
@@ -545,17 +810,9 @@ class SingularityApp(App):
             self.clear_results()
             return
 
-        # Search through loaded objects (simple substring match)
-        results = []
-        for obj in self.all_objects:
-            if query in obj["name"].lower():
-                results.append(obj)
-                if len(results) >= 20:  # Limit results
-                    break
-
+        results = self._search_objects(query)
         logger.debug(f"Found {len(results)} matching objects for query '{query}'")
 
-        # Update suggestions
         suggestions = self.query_one(SuggestionList)
         suggestions.update_results(results)
 
@@ -578,14 +835,18 @@ class SingularityApp(App):
         suggestions = self.query_one(SuggestionList)
         self.last_selected_index = suggestions.selected_index
 
+        obj_vendor = message.item.get("vendor", self.vendor)
+        self._apply_caps_to_tabs(obj_vendor)
+
         # Update breadcrumb
         breadcrumb = self.query_one("#breadcrumb", Static)
         obj_type = message.item.get("type", "object").upper()
         breadcrumb.update(f"▶ Selected: {message.item['name']} [{obj_type}]")
 
-        # Show breadcrumb and action tabs
+        # Show breadcrumb
         self.query_one("#breadcrumb-container").add_class("visible")
-        self.query_one("#actions-container").add_class("visible")
+        actions_container = self.query_one("#actions-container")
+        actions_container.remove_class("visible")
 
         # Hide results container (don't show empty list)
         suggestions_container = self.query_one("#suggestions-container")
@@ -593,11 +854,17 @@ class SingularityApp(App):
 
         # Show detail view with default tab (details)
         detail_view = self.query_one(DetailView)
-        detail_view.update_object(message.item, self.parsed_config)
+        obj_config = self._get_object_config(message.item)
+        detail_view.update_object(message.item, obj_config)
         self.query_one("#detail-container").add_class("visible")
 
-        # Focus action tabs for keyboard navigation
-        self.query_one(ActionTabs).focus()
+        is_config_entry = message.item.get("type") == "config"
+        if is_config_entry:
+            actions_container.remove_class("visible")
+        else:
+            actions_container.add_class("visible")
+            # Focus action tabs for keyboard navigation
+            self.query_one(ActionTabs).focus()
 
     def _show_inspect_tab(self, obj_config) -> None:
         """Show Inspect tab with filter bar and results.
@@ -608,9 +875,22 @@ class SingularityApp(App):
         from analysis_core import inspect_object, format_inspect_rich
         from rich.console import Group
         from rich.text import Text
+        from rich.panel import Panel
+        from textual.widgets import Static
         from .widgets.filter_bar import FilterBar
 
         detail_view = self.query_one(DetailView)
+
+        if obj_config is None:
+            detail_view.remove_children()
+            detail_view.mount(
+                Static(
+                    "No configuration data available for this object.",
+                    classes="detail-content",
+                )
+            )
+            self.current_tab_result = None
+            return
 
         # Clear detail view and add filter bar + results container
         detail_view.remove_children()
@@ -620,13 +900,24 @@ class SingularityApp(App):
         detail_view.mount(filter_bar)
 
         # Run inspect with current filters
-        result = inspect_object(
-            obj_config,
-            self.selected_object['name'],
-            protocol=self.inspect_filters.get("protocol"),
-            dport=self.inspect_filters.get("port"),
-            include_any=False
-        )
+        try:
+            result = inspect_object(
+                obj_config,
+                self.selected_object['name'],
+                protocol=self.inspect_filters.get("protocol"),
+                dport=self.inspect_filters.get("port"),
+                include_any=False
+            )
+        except RuntimeError as err:
+            detail_view.remove_children()
+            detail_view.mount(
+                Static(
+                    f"Inspect unavailable: {err}",
+                    classes="detail-content",
+                )
+            )
+            self.current_tab_result = None
+            return
 
         # Apply action filter client-side if specified
         if self.inspect_filters.get("action"):
@@ -649,7 +940,11 @@ class SingularityApp(App):
         self.current_tab_result = result
 
         # Format and show results
-        rich_content = format_inspect_rich(result)
+        obj_vendor = self.selected_object.get("vendor", self.vendor)
+        if obj_vendor == "fortigate":
+            rich_content = self._format_fortigate_inspect(result)
+        else:
+            rich_content = format_inspect_rich(result)
 
         # Add filter summary if filters are active
         filter_parts = []
@@ -667,7 +962,6 @@ class SingularityApp(App):
             filter_text.append("\n", style="dim")
             rich_content = Group(filter_text, rich_content)
 
-        from textual.widgets import Static
         detail_view.mount(Static(rich_content, classes="detail-content"))
 
         logger.info(f"Inspect completed: {result.total_rules} rules found (filters: {self.inspect_filters})")
@@ -685,7 +979,7 @@ class SingularityApp(App):
 
         # Re-run inspect if we're on the inspect tab
         if self.current_tab_id == "inspect" and self.selected_object:
-            obj_config = self.selected_object.get('config', self.parsed_config)
+            obj_config = self._get_object_config(self.selected_object)
             try:
                 self._show_inspect_tab(obj_config)
             except Exception as e:
@@ -718,6 +1012,7 @@ class SingularityApp(App):
 
         # Form container
         form_container = Vertical(id="path-form")
+        detail_view.mount(form_container)
 
         # Source field (pre-filled with selected object)
         form_container.mount(Static("Source IP/Object:", classes="filter-field-label"))
@@ -743,8 +1038,6 @@ class SingularityApp(App):
         run_button = Button("Simulate Packet Flow", variant="primary", id="btn-run-path")
         form_container.mount(run_button)
 
-        detail_view.mount(form_container)
-
         # Placeholder for results
         detail_view.mount(Static("", id="path-results", classes="detail-content"))
 
@@ -757,15 +1050,18 @@ class SingularityApp(App):
             protocol: Protocol (tcp, udp, icmp, etc.)
             port: Destination port
         """
-        from parsers.cisco.asa.path import path_check
+        from parsers.cisco.asa.path import path_check as asa_path_check
+        from parsers.fortigate.path import path_check as forti_path_check
         from rich.table import Table
         from rich.panel import Panel
         from rich.text import Text
         from rich.console import Group
         from textual.widgets import Static
 
-        # Get config for selected object
-        obj_config = self.selected_object.get('config', self.parsed_config)
+        obj_config = self._get_object_config(self.selected_object)
+        if obj_config is None:
+            self.notify("No configuration available for this object", severity="error")
+            return
 
         # Get raw config text
         if hasattr(obj_config, 'raw_text'):
@@ -775,14 +1071,26 @@ class SingularityApp(App):
 
         # Run path check
         dports = {port} if port else set()
-        result = path_check(
-            cfg_text,
-            src=src,
-            dst=dst,
-            proto=protocol,
-            dports=dports,
-            include_any=True
-        )
+        object_vendor = self.selected_object.get("vendor", self.vendor)
+        if object_vendor == "fortigate":
+            result = forti_path_check(
+                cfg_text,
+                src=src,
+                dst=dst,
+                proto=protocol,
+                dports=dports,
+                include_any=True,
+                vdom=self.vdom or getattr(obj_config, "vdom", None),
+            )
+        else:
+            result = asa_path_check(
+                cfg_text,
+                src=src,
+                dst=dst,
+                proto=protocol,
+                dports=dports,
+                include_any=True
+            )
 
         # Format results
         content_parts = []
@@ -907,7 +1215,7 @@ class SingularityApp(App):
 
         detail_view = self.query_one(DetailView)
         # Use the config from the old_obj (selected object)
-        obj_config = message.old_obj.get('config', self.parsed_config)
+        obj_config = self._get_object_config(message.old_obj)
 
         try:
             # Perform comparison and store result for export
@@ -946,7 +1254,7 @@ class SingularityApp(App):
         detail_view = self.query_one(DetailView)
 
         # Get the config for the selected object
-        obj_config = self.selected_object.get('config', self.parsed_config)
+        obj_config = self._get_object_config(self.selected_object)
 
         if message.tab_id == "details":
             # Show object details
@@ -1016,6 +1324,8 @@ class SingularityApp(App):
             self.drill_down_active = False
             self.selected_object = None
 
+            self._apply_caps_to_tabs(self.vendor)
+
             # Hide breadcrumb, actions, and detail
             self.query_one("#breadcrumb-container").remove_class("visible")
             self.query_one("#actions-container").remove_class("visible")
@@ -1070,6 +1380,17 @@ class SingularityApp(App):
         self.settings.set("display", "theme", self.theme)
         self.settings.save()
 
+    def _push_modal_screen(self, screen, callback=None) -> None:
+        """Push a modal screen and track modal depth for key handling."""
+
+        def _wrapped(result):
+            self.modal_depth = max(0, self.modal_depth - 1)
+            if callback:
+                callback(result)
+
+        self.modal_depth += 1
+        super().push_screen(screen, _wrapped)
+
     def action_open_menu(self) -> None:
         """Open the main menu modal."""
         from .screens.menu_screen import MenuScreen
@@ -1088,7 +1409,7 @@ class SingularityApp(App):
             elif action == "theme":
                 self.action_toggle_theme()
 
-        self.push_screen(MenuScreen(self.theme, config_info), handle_menu_result)
+        self._push_modal_screen(MenuScreen(self.theme, config_info), handle_menu_result)
 
     def action_show_settings(self) -> None:
         """Show settings screen."""
@@ -1103,7 +1424,7 @@ class SingularityApp(App):
             elif result == "error":
                 self.notify("Error saving settings", severity="error", timeout=5)
 
-        self.push_screen(SettingsScreen(self.settings), handle_settings_result)
+        self._push_modal_screen(SettingsScreen(self.settings), handle_settings_result)
 
     def _apply_settings(self) -> None:
         """Apply settings that can be changed at runtime."""
@@ -1115,12 +1436,12 @@ class SingularityApp(App):
     def action_show_help(self) -> None:
         """Show help screen."""
         from .screens.help_screen import HelpScreen
-        self.push_screen(HelpScreen())
+        self._push_modal_screen(HelpScreen())
 
     def action_show_about(self) -> None:
         """Show about screen."""
         from .screens.about_screen import AboutScreen
-        self.push_screen(AboutScreen())
+        self._push_modal_screen(AboutScreen())
 
     def action_export_current(self) -> None:
         """Export current tab data."""
@@ -1151,7 +1472,7 @@ class SingularityApp(App):
         action_tabs = self.query_one(ActionTabs)
         tab_label = next((t["label"] for t in action_tabs.tabs if t["id"] == self.current_tab_id), self.current_tab_id)
 
-        self.push_screen(
+        self._push_modal_screen(
             ExportScreen(
                 tab_name=tab_label,
                 object_name=self.selected_object['name'],
@@ -1267,7 +1588,9 @@ class SingularityApp(App):
             elif format_type == "txt":
                 # Plain text format with original config syntax
                 result = self.current_tab_result
-                obj_config = self.selected_object.get('config', self.parsed_config)
+                obj_config = self._get_object_config(self.selected_object)
+                if obj_config is None:
+                    raise ValueError("No configuration data available")
                 obj_name = result.object_name
 
                 lines = []
@@ -1339,35 +1662,28 @@ class SingularityApp(App):
         suggestions.update_results([])
 
 
-def main():
+def main(argv=None):
     """Entry point for TUI application."""
     import argparse
-    from pathlib import Path
 
     parser = argparse.ArgumentParser(description="ACL-inspector Singularity TUI")
-    parser.add_argument("--vendor", default="asa", choices=["asa", "fortigate"], help="Firewall vendor")
+    parser.add_argument("--vendor", default="all", choices=["asa", "fortigate", "all"], help="Firewall vendor")
     parser.add_argument("--config", dest="config_path", default="", help="Path to config file")
     parser.add_argument("--vdom", default="", help="FortiGate VDOM (if applicable)")
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
-    # Fall back to first config file in vendor's default directory if not specified
-    config_path = args.config_path
-    if not config_path:
-        # Default config directories
-        default_dirs = {
-            "asa": "configs/cisco",
-            "fortigate": "configs/fortigate"
-        }
+    if args.vendor == "all":
+        vendor_targets = [("asa", args.config_path), ("fortigate", args.config_path)]
+    else:
+        vendor_targets = [(args.vendor, args.config_path)]
 
-        default_dir = Path(default_dirs.get(args.vendor, "configs"))
-        if default_dir.exists() and default_dir.is_dir():
-            # Get first config file in directory (files only, not subdirs)
-            config_files = sorted([f for f in default_dir.iterdir() if f.is_file()])
-            if config_files:
-                config_path = str(config_files[0])
-
-    app = SingularityApp(vendor=args.vendor, config_path=config_path)
+    app = SingularityApp(
+        vendor=args.vendor,
+        config_path=args.config_path,
+        vdom=args.vdom or "",
+        vendor_targets=vendor_targets,
+    )
     app.run()
 
 

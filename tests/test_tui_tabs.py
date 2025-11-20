@@ -6,6 +6,7 @@ Tests that all tabs can be activated without errors.
 import unittest
 from unittest.mock import Mock, MagicMock, patch
 from parsers.cisco.asa import ASAConfig
+from common.vendor_caps import VendorCaps
 
 
 class TestTUITabs(unittest.TestCase):
@@ -33,22 +34,40 @@ access-list TEST_ACL extended deny ip any any
             'type': 'object',
             'detail': '10.1.0.50'
         }
+        self._detail_view_cache = None
 
-    def test_details_tab_no_errors(self):
-        """Test that Details tab doesn't raise errors."""
-        # Import here to avoid requiring textual for all tests
+    def _with_detail_view(self, action):
+        """Execute a DetailView action inside a minimal Textual app."""
         try:
+            from textual.app import App
             from tui.widgets.detail_view import DetailView
+            from textual._context import active_app
         except ImportError:
             self.skipTest("textual not installed")
 
-        detail_view = DetailView()
+        class Harness(App):
+            def __init__(app_self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                app_self.detail_view = DetailView()
 
-        # Should not raise any errors
-        try:
-            detail_view.update_object(self.test_object, self.config)
-        except Exception as e:
-            self.fail(f"Details tab raised unexpected error: {e}")
+            def compose(app_self):
+                yield app_self.detail_view
+
+            async def on_mount(app_self):
+                token = active_app.set(app_self)
+                try:
+                    action(app_self.detail_view)
+                    await app_self.action_quit()
+                finally:
+                    active_app.reset(token)
+
+        harness = Harness()
+        harness.run(headless=True)
+        return harness.detail_view
+
+    def test_details_tab_no_errors(self):
+        """Test that Details tab doesn't raise errors."""
+        self._with_detail_view(lambda view: view.update_object(self.test_object, self.config))
 
     def test_inspect_tab_no_errors(self):
         """Test that Inspect tab functionality doesn't raise errors."""
@@ -68,26 +87,17 @@ access-list TEST_ACL extended deny ip any any
 
     def test_compare_tab_prompt_no_errors(self):
         """Test that Compare tab prompt doesn't raise errors."""
-        try:
-            from tui.widgets.detail_view import DetailView
-        except ImportError:
-            self.skipTest("textual not installed")
-
-        detail_view = DetailView()
         all_objects = [
             {'name': 'OBJ1', 'type': 'object', 'detail': '10.0.0.1'},
             {'name': 'OBJ2', 'type': 'object', 'detail': '10.0.0.2'},
         ]
 
-        # Should not raise any errors when showing compare prompt
-        try:
-            detail_view.show_compare_prompt(self.test_object, all_objects)
-            # Verify compare mode is set
-            self.assertTrue(detail_view.compare_mode)
-            self.assertEqual(detail_view.current_object, self.test_object)
-            self.assertEqual(len(detail_view.compare_suggestions), 2)
-        except Exception as e:
-            self.fail(f"Compare tab prompt raised unexpected error: {e}")
+        detail_view = self._with_detail_view(
+            lambda view: view.show_compare_prompt(self.test_object, all_objects)
+        )
+        self.assertTrue(detail_view.compare_mode)
+        self.assertEqual(detail_view.current_object, self.test_object)
+        self.assertEqual(len(detail_view.compare_suggestions), 2)
 
     def test_compare_tab_results_no_errors(self):
         """Test that Compare tab results display doesn't raise errors."""
@@ -219,81 +229,54 @@ access-list TEST_ACL extended deny ip any any
 
     def test_compare_input_handler(self):
         """Test that compare input submission handler works correctly."""
+        def _action(view):
+            view.show_compare_prompt(self.test_object)
+            mock_event = Mock()
+            mock_event.input = view.compare_input
+            mock_event.value = "OBJ_OTHER_SERVER"
+            view.on_input_submitted(mock_event)
+
         try:
-            from tui.widgets.detail_view import DetailView
-            from textual.widgets import Input
-        except ImportError:
-            self.skipTest("textual not installed")
-
-        detail_view = DetailView()
-        detail_view.show_compare_prompt(self.test_object)
-
-        # Simulate input submission
-        mock_event = Mock()
-        mock_event.input = detail_view.compare_input
-        mock_event.value = "OBJ_OTHER_SERVER"
-
-        # Should not raise errors
-        try:
-            # This will post a message, which is fine
-            detail_view.on_input_submitted(mock_event)
+            self._with_detail_view(_action)
+        except unittest.SkipTest:
+            raise
         except Exception as e:
             self.fail(f"Compare input handler raised unexpected error: {e}")
 
     def test_detail_view_clear(self):
         """Test that detail view clear works correctly."""
+        def _action(view):
+            view.update_object(self.test_object, self.config)
+            view.clear()
+            self.assertIsNone(view.current_object)
+            self.assertFalse(view.compare_mode)
+
         try:
-            from tui.widgets.detail_view import DetailView
-        except ImportError:
-            self.skipTest("textual not installed")
-
-        detail_view = DetailView()
-
-        # Set up detail view with object
-        detail_view.update_object(self.test_object, self.config)
-
-        # Clear should not raise errors
-        try:
-            detail_view.clear()
-            self.assertIsNone(detail_view.current_object)
-            self.assertFalse(detail_view.compare_mode)
+            self._with_detail_view(_action)
+        except unittest.SkipTest:
+            raise
         except Exception as e:
             self.fail(f"Detail view clear raised unexpected error: {e}")
 
     def test_show_content_with_various_types(self):
         """Test that show_content handles different content types."""
         try:
-            from tui.widgets.detail_view import DetailView
             from rich.text import Text
             from rich.table import Table
             from rich.panel import Panel
         except ImportError:
             self.skipTest("textual/rich not installed")
 
-        detail_view = DetailView()
+        self._with_detail_view(lambda view: view.show_content(Text("Test content")))
 
-        # Test with Text
-        try:
-            text = Text("Test content")
-            detail_view.show_content(text)
-        except Exception as e:
-            self.fail(f"show_content failed with Text: {e}")
-
-        # Test with Table
-        try:
+        def _table_action(view):
             table = Table()
             table.add_column("Column")
             table.add_row("Row")
-            detail_view.show_content(table)
-        except Exception as e:
-            self.fail(f"show_content failed with Table: {e}")
+            view.show_content(table)
 
-        # Test with Panel
-        try:
-            panel = Panel("Panel content")
-            detail_view.show_content(panel)
-        except Exception as e:
-            self.fail(f"show_content failed with Panel: {e}")
+        self._with_detail_view(_table_action)
+        self._with_detail_view(lambda view: view.show_content(Panel("Panel content")))
 
 
     def test_compare_suggestions_filtering(self):
@@ -303,7 +286,6 @@ access-list TEST_ACL extended deny ip any any
         except ImportError:
             self.skipTest("textual not installed")
 
-        detail_view = DetailView()
         all_objects = [
             {'name': 'WEB_SERVER_01', 'type': 'object', 'detail': '10.0.0.1'},
             {'name': 'WEB_SERVER_02', 'type': 'object', 'detail': '10.0.0.2'},
@@ -311,8 +293,9 @@ access-list TEST_ACL extended deny ip any any
             {'name': 'APP_SERVER_01', 'type': 'object', 'detail': '10.0.2.1'},
         ]
 
-        # Show compare prompt with suggestions
-        detail_view.show_compare_prompt(self.test_object, all_objects)
+        detail_view = self._with_detail_view(
+            lambda view: view.show_compare_prompt(self.test_object, all_objects)
+        )
 
         # Verify suggestions are available
         self.assertEqual(len(detail_view.compare_suggestions), 4)
@@ -336,6 +319,51 @@ access-list TEST_ACL extended deny ip any any
                          "on_key should check if Input has focus")
         except ImportError:
             self.skipTest("textual not installed")
+
+
+class TestActionTabsCapabilities(unittest.TestCase):
+    """Ensure vendor caps hide tabs as expected."""
+
+    def _mount_tabs(self, caps):
+        try:
+            from textual.app import App
+            from textual._context import active_app
+            from tui.widgets.action_tabs import ActionTabs
+        except ImportError:
+            self.skipTest("textual not installed")
+
+        class Harness(App):
+            def compose(app_self):
+                app_self.tabs = ActionTabs()
+                yield app_self.tabs
+
+            async def on_mount(app_self):
+                token = active_app.set(app_self)
+                try:
+                    app_self.tabs.apply_vendor_caps(caps)
+                    await app_self.action_quit()
+                finally:
+                    active_app.reset(token)
+
+        harness = Harness()
+        harness.run(headless=True)
+        return harness.tabs
+
+    def test_compare_tab_hidden_when_vendor_lacks_compare(self):
+        caps = VendorCaps(
+            name="test",
+            label="Test",
+            config_field="config",
+            requires_vdom=False,
+            supports_inspect=True,
+            supports_compare=False,
+            supports_find=True,
+            supports_packet=True,
+        )
+        tabs = self._mount_tabs(caps)
+        compare_btn = next((btn for btn in tabs._buttons if btn.id == "tab-compare"), None)
+        self.assertIsNotNone(compare_btn)
+        self.assertTrue(compare_btn.hidden)
 
 
 if __name__ == '__main__':

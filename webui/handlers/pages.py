@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -13,8 +14,26 @@ from . import api as api_handlers
 from ..router import Request, Response, Router
 from ..state import AppState
 from .. import __version__ as WEBUI_VERSION
+from dataclasses import asdict
+
 from ..design import dot_to_svg, markdown_to_html, DiagramRenderError, read_text_file
 from ..themes import build_singularity_palette
+from ..vendor_caps import all_caps
+
+
+def _asset_digest(filename: str) -> str:
+    try:
+        payload = resources.read_binary("webui.static", filename)
+    except (FileNotFoundError, ModuleNotFoundError, IsADirectoryError):
+        static_path = Path(__file__).resolve().parent.parent / "static" / filename
+        try:
+            payload = static_path.read_bytes()
+        except Exception:
+            return WEBUI_VERSION
+    return hashlib.sha1(payload).hexdigest()[:12]
+
+
+APP_JS_DIGEST = _asset_digest("app.js")
 
 
 def _options_for_vendor(state: AppState, vendor: str) -> str:
@@ -37,6 +56,7 @@ def _render_home(state: AppState) -> str:
     context = {
         "themes_json": themes_json,
         "config_options": json.dumps(config_options),
+        "vendor_caps": json.dumps({name: asdict(cap) for name, cap in all_caps().items()}),
         "history_enabled": "true" if state.settings.features.history_tracking else "false",
         "search_limit": str(state.settings.features.predictive_search.limit),
         "beta_modules": json.dumps(list(state.settings.beta.enabled_modules)),
@@ -45,6 +65,7 @@ def _render_home(state: AppState) -> str:
         "cwd": os.getcwd(),
         "version": WEBUI_VERSION,
         "theme_preview_speed": str(state.settings.ui.theme_preview_speed),
+        "app_js_url": f"/static/app.js?v={APP_JS_DIGEST}",
     }
     partial_map = {
         "tab_rules": "tab_rules.html",
