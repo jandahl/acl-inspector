@@ -6,7 +6,7 @@ Migration Plan
 - Factor the web UI into modular packages (`webui/server.py`, `webui/handlers`, `webui/templates`, `webui/themes`, `webui/indexer`, `webui/state`, `webui/settings`) to keep responsibilities focused and tests targeted.
 - Add a JSON settings loader that feeds both local CLI runs and Docker builds while allowing CLI/env overrides.
 - Ship experimental features as opt-in modules under `webui/beta/`, controlled via the settings file.
-- Remove the monolithic `access-list-web.py` once the refactor lands; the new, slimmer entrypoint will simply bootstrap the modular server.
+- Remove the monolithic `cli/access-list-web.py` once the refactor lands; the new, slimmer entrypoint will simply bootstrap the modular server.
 
 Scope
 -----
@@ -38,7 +38,7 @@ New features in this iteration
 
 Quality and linting
 -------------------
-- Always run a quick syntax check: `python3 -m py_compile access-list-inspector.py parsers/cisco/asa.py parsers/fortigate/fortigate.py`
+- Always run a quick syntax check: `python3 -m py_compile cli/access-list-inspector.py parsers/cisco/asa.py parsers/fortigate/fortigate.py`
 - If Python linters (ruff/flake8) are available locally, run them; otherwise rely on unit tests and compilation
 - For shell scripts (if any), run `shellcheck` as appropriate
 
@@ -65,7 +65,7 @@ Near-term roadmap (execution order)
   - Establish matching order and rule precedence; add unit tests with sample snippets.
 - Interface and ACL mapping (ASA)
   - Bind ACLs to interfaces/direction; capture global policy placement when possible.
-- Path check prototype (ASA only to start)
+- Path check prototype (ASA + FortiGate)
   - CLI tool and web tab to evaluate a 5‑tuple across one device, applying NAT and ACL checks stepwise.
 - Config to YAML export
   - Extend the IR/CLI output pipeline to emit YAML alongside JSON, keeping dependencies optional.
@@ -97,7 +97,7 @@ Docker notes
 ------------
 - Containerization plan:
   - Base image with Python 3.11+; copy repo; optional install of linters
-  - Entrypoints: CLI (`access-list-inspector.py`) and web UI (`access-list-web.py`)
+  - Entrypoints: CLI (`cli/access-list-inspector.py`) and web UI (`cli/access-list-web.py`)
   - Expose a port for web UI; mount `configs/` from host for UAT files
   - Optionally place Nginx in front of the web UI for TLS/headers, or run UI directly
   - Local testing will be using `podman`, production will be using `docker`
@@ -122,7 +122,7 @@ Config directories
 - Default directories scanned by the web UI and TUI:
   - ASA: `configs/cisco`
   - FortiGate: `configs/fortigate`
-- Web UI: Override via CLI flags in `access-list-web.py`: `--configs-cisco`, `--configs-fortigate`.
+- Web UI: Override via CLI flags in `cli/access-list-web.py`: `--configs-cisco`, `--configs-fortigate`.
 - TUI: Override via CLI flags in `python3 -m tui`: `--vendor`, `--config` (file or directory).
 
 TUI (Terminal User Interface)
@@ -154,11 +154,13 @@ TUI (Terminal User Interface)
   - Covers: export, filters, settings, tabs, navigation, multiconfig support
   - Most TUI tests skip in CI (textual framework not available in test environment)
 - Documentation:
-  - `TUI_QUICKSTART_GUIDE.md`: User guide with examples
-  - `TUI_FEATURE_PLAN.md`: Roadmap and feature completeness plan
-  - `TUI_IMPLEMENTATION_SUMMARY.md`: Technical implementation details
-  - `TUI_COMPLETION_SUMMARY.md`: Feature completion summary
-  - `INTERACTIVE_SETTINGS_SUMMARY.md`: Settings screen implementation details
+  - `docs/ROOT_STRUCTURE.md`: Current repository layout and dispatcher usage
+  - `docs/SINGULARITY_SMOOTHING_PLAN.md`: Planning-only backlog for Singularity UX improvements
+  - `docs/TUI_QUICKSTART_GUIDE.md`: User guide with examples
+  - `docs/TUI_FEATURE_PLAN.md`: Roadmap and feature completeness plan
+  - `docs/TUI_IMPLEMENTATION_SUMMARY.md`: Technical implementation details
+  - `docs/TUI_COMPLETION_SUMMARY.md`: Feature completion summary
+  - `docs/INTERACTIVE_SETTINGS_SUMMARY.md`: Settings screen implementation details
 CLI output & structured formats
 ------------------------------
 - Text output aims to be explicit and readable:

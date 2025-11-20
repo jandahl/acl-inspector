@@ -43,7 +43,7 @@ Core data structures:
 
 Translate ASA config to FortiGate:
 ```bash
-./access-list-inspector.py \
+./aclinspector.py inspect \
   --vendor asa \
   --config asa-firewall.conf \
   --translate \
@@ -53,7 +53,7 @@ Translate ASA config to FortiGate:
 
 Translate FortiGate config to ASA:
 ```bash
-./access-list-inspector.py \
+./aclinspector.py inspect \
   --vendor fortigate \
   --config fortigate.conf \
   --translate \
@@ -65,7 +65,7 @@ Translate FortiGate config to ASA:
 
 View the intermediate representation as JSON:
 ```bash
-./access-list-inspector.py \
+./aclinspector.py inspect \
   --vendor asa \
   --config asa-firewall.conf \
   --translate \
@@ -78,7 +78,7 @@ View the intermediate representation as JSON:
 
 Specify a device name for the IR export:
 ```bash
-./access-list-inspector.py \
+./aclinspector.py inspect \
   --vendor asa \
   --config fw01.conf \
   --translate \
@@ -91,7 +91,7 @@ Specify a device name for the IR export:
 When working with FortiGate VDOMs:
 ```bash
 # Export specific VDOM
-./access-list-inspector.py \
+./aclinspector.py inspect \
   --vendor fortigate \
   --config multi-vdom.conf \
   --vdom "production" \
@@ -99,7 +99,7 @@ When working with FortiGate VDOMs:
   --target-vendor asa
 
 # Import to specific VDOM
-./access-list-inspector.py \
+./aclinspector.py inspect \
   --vendor asa \
   --config asa.conf \
   --translate \
@@ -231,13 +231,13 @@ router bgp 65001
 
 1. **Convert ASA to FortiGate**:
    ```bash
-   ./access-list-inspector.py --vendor asa --config old-asa.conf \
+   ./aclinspector.py inspect --vendor asa --config old-asa.conf \
      --translate --target-vendor fortigate > new-fortigate.conf
    ```
 
 2. **Validate by reverse translation**:
    ```bash
-   ./access-list-inspector.py --vendor fortigate --config new-fortigate.conf \
+   ./aclinspector.py inspect --vendor fortigate --config new-fortigate.conf \
      --translate --target-vendor asa > reverse-asa.conf
    ```
 
@@ -250,10 +250,10 @@ router bgp 65001
 
 Export both configs to IR JSON and compare:
 ```bash
-./access-list-inspector.py --vendor asa --config fw1.conf \
+./aclinspector.py inspect --vendor asa --config fw1.conf \
   --translate --target-vendor fortigate --format json > fw1.ir.json
 
-./access-list-inspector.py --vendor fortigate --config fw2.conf \
+./aclinspector.py inspect --vendor fortigate --config fw2.conf \
   --translate --target-vendor asa --format json > fw2.ir.json
 
 # Use jq to compare specific fields
@@ -290,7 +290,7 @@ To add support for a new vendor:
        pass
    ```
 
-3. Add CLI integration in `access-list-inspector.py`
+3. Add CLI integration in `cli/access-list-inspector.py`
 4. Write round-trip tests in `tests/test_ir_translation.py`
 
 ## Future Enhancements
@@ -308,7 +308,7 @@ To add support for a new vendor:
 
 Check the IR JSON to see how the config was parsed:
 ```bash
-./access-list-inspector.py --vendor asa --config test.conf \
+./aclinspector.py inspect --vendor asa --config test.conf \
   --translate --target-vendor fortigate --format json | jq .
 ```
 

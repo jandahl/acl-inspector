@@ -3,6 +3,15 @@ WEB_PORT ?= 8083
 THEMES_REPO ?= https://github.com/mbadolato/iTerm2-Color-Schemes.git
 THEMES_DIR ?= themes
 
+# Prefer the project virtualenv if it exists
+VENV_DIR ?= .venv
+VENV_BIN := $(VENV_DIR)/bin
+ifneq ($(wildcard $(VENV_BIN)/python),)
+PYTHON ?= $(VENV_BIN)/python
+else
+PYTHON ?= python3
+endif
+
 .PHONY: help venv lint test unit examples web web-watch build clean themes themes-refresh fonts
 
 help:
@@ -36,27 +45,30 @@ lint:
 	@command -v flake8 >/dev/null 2>&1 && flake8 || echo "flake8 not installed; skipping"
 
 unit:
-	python3 -m unittest discover -s tests -v
+	$(PYTHON) -m unittest discover -s tests -v
 
 test:
-	./access-list-inspector.py --self-test
+	PYTHONPYCACHEPREFIX=.pyc_cache $(PYTHON) aclinspector.py inspect --self-test
+
+test-minimal:
+	@PYTHONPYCACHEPREFIX=.pyc_cache $(PYTHON) aclinspector.py inspect --self-test 2>&1 | awk 'NF==0 || /^(PYTHONPYCACHEPREFIX|FAILED|ERROR|Ran|OK|Skipped)/'
 
 examples:
-	./access-list-inspector.py --examples
+	$(PYTHON) aclinspector.py inspect --examples
 
 web:
 	$(if $(CONFIGS_CISCO),ACLINSPECTOR_CONFIGS_CISCO=$(CONFIGS_CISCO) ,)\
 	$(if $(CONFIGS_FORTIGATE),ACLINSPECTOR_CONFIGS_FORTIGATE=$(CONFIGS_FORTIGATE) ,)\
-	./access-list-web.py --port $(WEB_PORT)
+	$(PYTHON) aclinspector.py web --port $(WEB_PORT)
 
 web-watch:
-	PYTHONPYCACHEPREFIX=.pyc_cache python3 scripts/web_autoreload.py --port $(WEB_PORT) \
+	PYTHONPYCACHEPREFIX=.pyc_cache $(PYTHON) scripts/web_autoreload.py --port $(WEB_PORT) \
 		$(if $(CONFIGS_CISCO),--configs-cisco $(CONFIGS_CISCO),) \
 		$(if $(CONFIGS_FORTIGATE),--configs-fortigate $(CONFIGS_FORTIGATE),) \
 		$(if $(POLL),--poll $(POLL),)
 
 web-e2e:
-	PYTHONPYCACHEPREFIX=.pyc_cache python3 -m unittest tests.test_ui_playwright
+	PYTHONPYCACHEPREFIX=.pyc_cache $(PYTHON) -m unittest tests.test_ui_playwright
 
 themes:
 	@mkdir -p $(THEMES_DIR)
@@ -74,7 +86,7 @@ themes-refresh:
 	$(MAKE) themes
 
 fonts:
-	@python3 scripts/download_fonts.py $(if $(FORCE),--force,)
+	@$(PYTHON) scripts/download_fonts.py $(if $(FORCE),--force,)
 
 # Container targets
 CONTAINER_COMPOSE :=
@@ -143,7 +155,7 @@ container-clean:
 	$(CONTAINER_COMPOSE) -f Dockersetup/podman-compose.yaml -p aclinspector down --rmi all --volumes
 
 build: themes fonts
-	PYTHONPYCACHEPREFIX=.pyc_cache python3 -m py_compile access-list-inspector.py parsers/cisco/asa.py parsers/fortigate/fortigate.py access-list-web.py
+PYTHONPYCACHEPREFIX=.pyc_cache $(PYTHON) -m py_compile cli/access-list-inspector.py parsers/cisco/asa.py parsers/fortigate/fortigate.py cli/access-list-web.py
 
 clean:
 	rm -rf __pycache__ */__pycache__ .pyc_cache
@@ -151,4 +163,4 @@ clean:
 index:
 	@if [ -z "$(ROOT)" ]; then echo "Usage: make index ROOT=/path/to/repo CACHE=./cache"; exit 1; fi
 	@mkdir -p $(CACHE)
-	python3 scripts/index_repo.py --root $(ROOT) --cache-dir $(CACHE)
+	$(PYTHON) scripts/index_repo.py --root $(ROOT) --cache-dir $(CACHE)

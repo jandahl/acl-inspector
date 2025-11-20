@@ -11,6 +11,7 @@ semantics and validates the IR schema stability.
 """
 
 import unittest
+from pathlib import Path
 from parsers.cisco.asa.parser import ASAConfig
 from parsers.cisco.asa import ir_export as asa_export
 from parsers.cisco.asa import ir_import as asa_import
@@ -18,6 +19,8 @@ from parsers.fortigate.config import FTGConfig
 from parsers.fortigate import ir_export as ftg_export
 from parsers.fortigate import ir_import as ftg_import
 from parsers import model as ir
+
+FIXTURES = Path(__file__).parent / "fixtures" / "configs" / "fortigate"
 
 
 class TestASARoundTrip(unittest.TestCase):
@@ -247,6 +250,21 @@ end
         # Round-trip
         output = ftg_import.from_ir(device)
         self.assertIn('config firewall policy', output)
+
+    def test_policy_interfaces_and_vips_roundtrip(self):
+        """Ensure interfaces/NAT/VIP metadata survive IR round-trip."""
+        config = (FIXTURES / "advanced_policy_nat.conf").read_text()
+        cfg = FTGConfig(config)
+        device = ftg_export.to_ir(cfg)
+
+        output = ftg_import.from_ir(device)
+        self.assertIn('set srcintf "port2"', output)
+        self.assertIn('set dstintf "port1"', output)
+        self.assertIn('config firewall vip', output)
+        self.assertIn('edit "WEB-VIP"', output)
+        self.assertIn('set nat enable', output)
+        self.assertIn('config firewall central-snat-map', output)
+        self.assertIn('set nat-ippool "OUT_POOL"', output)
 
 
 class TestCrossVendorTranslation(unittest.TestCase):

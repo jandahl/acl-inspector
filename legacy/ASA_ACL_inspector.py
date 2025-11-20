@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Deprecated entry point.
 
-Use ./access-list-inspector.py for the CLI and ./access-list-web.py for the web UI.
+Use ./aclinspector.py inspect for the CLI and ./aclinspector.py web for the web UI.
 Vendor-specific ASA parsing has moved into parsers/asa.py.
 """
 
@@ -9,7 +9,7 @@ import sys
 
 
 def main() -> None:
-    print("This script is deprecated. Use ./access-list-inspector.py instead.")
+    print("This script is deprecated. Use ./aclinspector.py inspect instead.")
     sys.exit(2)
 
 

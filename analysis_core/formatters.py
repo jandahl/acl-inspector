@@ -161,24 +161,52 @@ def _format_endpoint(endpoint_list) -> str:
     """Format endpoint (src/dst) for display."""
     if not endpoint_list:
         return "any"
-    if len(endpoint_list) == 1:
-        return str(endpoint_list[0])
+
+    if isinstance(endpoint_list, set):
+        endpoints = sorted(endpoint_list, key=lambda value: str(value))
+    elif isinstance(endpoint_list, (list, tuple)):
+        endpoints = list(endpoint_list)
     else:
-        return f"{endpoint_list[0]} (+{len(endpoint_list)-1})"
+        try:
+            endpoints = list(endpoint_list)  # type: ignore[arg-type]
+        except TypeError:
+            endpoints = [endpoint_list]
+
+    if not endpoints:
+        return "any"
+    if len(endpoints) == 1:
+        return str(endpoints[0])
+    return f"{endpoints[0]} (+{len(endpoints)-1})"
 
 
 def _format_service(rule: dict) -> str:
     """Format service/protocol info from rule."""
-    proto = rule.get("proto", "any")
-    if proto == "any":
-        return "any"
+    svc = rule.get("svc") or {}
+    proto = svc.get("proto") or rule.get("proto") or "any"
 
-    service_parts = [proto]
+    service_parts = []
+    if proto and proto != "any":
+        service_parts.append(proto)
 
-    # Add ports if present
-    if "service" in rule:
+    port_chunks: List[str] = []
+
+    for op, (p1, p2) in svc.get("dst_ports", []):
+        if op == "range" and p1 is not None and p2 is not None and p1 != p2:
+            port_chunks.append(f"{p1}-{p2}")
+        elif p1 is not None:
+            port_chunks.append(f"{op} {p1}")
+    for name in svc.get("dst_service_groups", []) or []:
+        port_chunks.append(f"group:{name}")
+    for name in svc.get("dst_service_objects", []) or []:
+        port_chunks.append(f"object:{name}")
+
+    if port_chunks:
+        service_parts.append("ports=" + ",".join(port_chunks))
+    elif "service" in rule and rule["service"]:
         service_parts.append(str(rule["service"]))
 
+    if not service_parts:
+        return "any"
     return " ".join(service_parts)
 
 

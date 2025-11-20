@@ -4,7 +4,7 @@ import importlib.util
 import unittest
 
 
-_MOD_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'access-list-web.py')
+_MOD_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'cli', 'cli/access-list-web.py')
 spec = importlib.util.spec_from_file_location('access_list_web', _MOD_PATH)
 mod = importlib.util.module_from_spec(spec)
 assert spec and spec.loader

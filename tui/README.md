@@ -12,10 +12,10 @@ pip install textual rich
 
 ```bash
 # Launch TUI with ASA config
-./acl-inspector-tui.py --vendor asa --config path/to/firewall.conf
+./aclinspector.py tui --vendor asa --config path/to/firewall.conf
 
 # Launch with FortiGate config
-./acl-inspector-tui.py --vendor fortigate --config path/to/fortigate.conf --vdom root
+./aclinspector.py tui --vendor fortigate --config path/to/fortigate.conf --vdom root
 ```
 
 ### Status

@@ -10,5 +10,5 @@ the repository for reference:
   untouched for context; it is *not* part of the active test suite.
 
 Nothing under this directory is expected to evolve. New development should
-focus on the modern entry points (`access-list-inspector.py`, `access-list-web.py`)
+focus on the modern entry points (`cli/access-list-inspector.py`, `cli/access-list-web.py`)
 and the tests in `tests/`.

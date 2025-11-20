@@ -21,7 +21,6 @@ RUN pip install playwright && playwright install --with-deps chromium
 # Expose the port the web UI will listen on
 EXPOSE 8083
 
-# Command to run the web UI
-# The docs/AGENTS.md mentions `access-list-web.py` as the entrypoint for the web UI.
-# Assuming it runs directly with python.
-CMD ["python", "access-list-web.py", "--port", "8083", "--addr", "0.0.0.0"]
+# Command to run the web UI via the dispatcher
+# `aclinspector.py web` wraps the new cli/access-list-web.py location.
+CMD ["python", "aclinspector.py", "web", "--port", "8083", "--addr", "0.0.0.0"]

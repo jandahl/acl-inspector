@@ -9,15 +9,17 @@
     <script>
       window.ACL_THEMES = $themes_json;
       window.ACL_CONFIG_OPTIONS = $config_options;
+      window.ACL_VENDOR_CAPS = $vendor_caps;
       window.ACL_HISTORY_ENABLED = $history_enabled;
       window.ACL_SEARCH_LIMIT = $search_limit;
       window.ACL_VERSION = "$version";
       window.ACL_BETA_MODULES = $beta_modules;
       window.ACL_THEME_PREVIEW_SPEED = $theme_preview_speed;
     </script>
-    <script defer src="/static/app.js"></script>
+    <script defer src="$app_js_url"></script>
   </head>
   <body class="theme-dark">
+    <div id="boot_status" class="boot-status" role="alert" aria-live="polite"></div>
     <div class="app">
       <div class="toolbar">
         <h2>ACL Inspector</h2>
@@ -49,9 +51,9 @@
       <div class="tab-shell">
         <div class="mode-tabs">
           <button type="button" class="tab active" data-tab="rules">Inspect / Compare</button>
-          <button type="button" class="tab" data-tab="find">Find host</button>
-          <button type="button" class="tab" data-tab="packet" data-beta-module="packet-check" data-beta-optional="1">Packet check<span class="badge beta" data-beta-badge="packet-check">Beta</span></button>
-          <button type="button" class="tab" data-tab="packet-probe" data-beta-module="packet-probe" data-beta-optional="1">Packet probe<span class="badge beta" data-beta-badge="packet-probe">Beta</span></button>
+          <button type="button" class="tab" data-tab="find" data-requires="find">Find host</button>
+          <button type="button" class="tab" data-tab="packet" data-requires="packet" data-beta-module="packet-check" data-beta-optional="1">Packet check<span class="badge beta" data-beta-badge="packet-check">Beta</span></button>
+          <button type="button" class="tab" data-tab="packet-probe" data-requires="packet" data-beta-module="packet-probe" data-beta-optional="1">Packet probe<span class="badge beta" data-beta-badge="packet-probe">Beta</span></button>
           <button type="button" class="tab" data-tab="config">Config Viewer</button>
           <button type="button" class="tab" data-tab="prefs">Preferences</button>
           <button type="button" class="tab" data-tab="about">About</button>
@@ -76,6 +78,10 @@
               <select name="config" id="config_ftg">
                 $fortigate_options
               </select>
+            </div>
+            <div id="ftg_vdom" style="display:none">
+              <label>FortiGate VDOM:</label>
+              <input type="text" name="vdom" id="vdom" placeholder="root" class="mono-input">
             </div>
           </fieldset>
           <input type="hidden" name="mode" id="mode" value="inspect">

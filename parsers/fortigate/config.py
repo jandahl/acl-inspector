@@ -1,28 +1,34 @@
-"""FortiGate parser and evaluation helpers (rudimentary).
+"""FortiGate parser and evaluation helpers.
 
-This module parses a subset of FortiOS configuration relevant to IPv4 policy
-evaluation and object resolution:
+This module parses the FortiOS CLI syntax used across configuration blocks and
+captures the subset required for ACL/NAT analysis and IR export:
 
-- config firewall address / addrgrp
-- config firewall policy (IPv4)
+- config system interface / zone
+- config firewall address / addrgrp / vip / vipgrp / ippool
 - config firewall service custom / group
+- config firewall policy (IPv4)
+- config firewall central-snat-map
+- config router static / ospf / bgp
 
 Assumptions and scope
 ---------------------
-- IPv4 only. VDOM-awareness is not implemented yet; parsing is global.
-- Time-ranges are out of scope per requirements.
-- Service objects are resolved from 'service custom' and 'service group' blocks
-  where available; unknown names fall back to best-effort (socket name lookup)
-  or wildcard behavior.
+- IPv4 focused. IPv6, SD-WAN, and fabric connectors are future work.
+- VDOM-awareness is supported via `_select_vdom_lines`, but only one VDOM is
+  parsed per FTGConfig instance (first or user-selected).
+- Time-ranges and UTM profile resolution are out of scope for now.
+- Service objects referenced by name fall back to socket lookup when not
+  defined in `service custom` or `service group`.
 - Policy default action 'accept' maps to 'permit', 'deny' to 'deny'.
 
 The flattened rule structure matches parsers.cisco.asa output to enable
-cross-vendor compare at the CLI level.
+cross-vendor comparison at the CLI level while preserving Forti-specific
+metadata (interfaces, NAT flags, UUIDs) for IR consumption.
 """
 
 from __future__ import annotations
 
 import ipaddress
+import shlex
 import socket
 from collections import defaultdict
 from typing import Dict, List, Optional, Set, Tuple, Union
@@ -53,6 +59,7 @@ class FTGConfig:
         the first VDOM encountered is parsed. If no 'config vdom' is present,
         the whole file is parsed as a single context.
         """
+        self.raw_text = text
         self._raw_lines = [line.rstrip() for line in text.splitlines()]
         self.vdom = vdom
         # Extract VDOM-specific view if applicable
@@ -61,11 +68,20 @@ class FTGConfig:
         self.addrgrps: Dict[str, List[Union[dict, ipaddress.IPv4Address, ipaddress.IPv4Network]]] = {}
         self.services: Dict[str, dict] = {}
         self.service_groups: Dict[str, Set[str]] = {}
+        self.interfaces: Dict[str, dict] = {}
+        self.zones: Dict[str, dict] = {}
+        self.interface_zones: Dict[str, str] = {}
+        self.vips: Dict[str, dict] = {}
+        self.vipgrps: Dict[str, List[str]] = {}
+        self.ippools: Dict[str, dict] = {}
+        self.central_snat_map: List[dict] = []
         self.policies: List[dict] = []
+        self.policy_vip_refs: Dict[str, Set[str]] = defaultdict(set)
         self.static_routes: List[dict] = []
         self.dynamic_routing: Dict[str, dict] = {}  # key: protocol_processid
         self._parse()
         self._build_reverse_indexes()
+        self._map_zones()
 
     # ---------- Block parsers ----------
     def _parse(self) -> None:
@@ -87,6 +103,24 @@ class FTGConfig:
                 continue
             if line.startswith('config firewall policy'):
                 i = self._parse_policy(i + 1)
+                continue
+            if line.startswith('config system interface'):
+                i = self._parse_system_interface(i + 1)
+                continue
+            if line.startswith('config system zone'):
+                i = self._parse_system_zone(i + 1)
+                continue
+            if line.startswith('config firewall vipgrp'):
+                i = self._parse_firewall_vipgrp(i + 1)
+                continue
+            if line.startswith('config firewall vip'):
+                i = self._parse_firewall_vip(i + 1)
+                continue
+            if line.startswith('config firewall ippool'):
+                i = self._parse_firewall_ippool(i + 1)
+                continue
+            if line.startswith('config firewall central-snat-map'):
+                i = self._parse_central_snat(i + 1)
                 continue
             if line.startswith('config router static'):
                 i = self._parse_static_routes(i + 1)
@@ -162,6 +196,23 @@ class FTGConfig:
             i += 1
         return i, acc
 
+    # ---------- Helpers ----------
+    @staticmethod
+    def _strip_quotes(token: str) -> str:
+        if token.startswith('"') and token.endswith('"'):
+            return token[1:-1]
+        return token
+
+    @staticmethod
+    def _tokenize(line: str) -> List[str]:
+        lexer = shlex.shlex(line, posix=True)
+        lexer.whitespace_split = True
+        lexer.commenters = ''
+        try:
+            return list(lexer)
+        except ValueError:
+            return line.split()
+
     def _parse_addresses(self, i: int) -> int:
         i, blk = self._parse_block(i)
         cur: Optional[str] = None
@@ -200,6 +251,91 @@ class FTGConfig:
                 self.addrgrps[cur] = members[:]
                 cur = None
         return i
+
+    def _parse_system_interface(self, i: int) -> int:
+        i, blk = self._parse_block(i)
+        cur: Optional[str] = None
+        cur_data: Dict[str, Union[str, List[str], bool]] = {}
+        for line in blk:
+            s = line.strip()
+            if not s:
+                continue
+            tokens = self._tokenize(s)
+            if not tokens:
+                continue
+            head = tokens[0].lower()
+            if head == 'edit' and len(tokens) >= 2:
+                cur = self._strip_quotes(tokens[1])
+                cur_data = {}
+            elif head == 'set' and len(tokens) >= 3 and cur:
+                key = tokens[1].lower()
+                values = [self._strip_quotes(t) for t in tokens[2:]]
+                if key == 'ip':
+                    cur_data['ip'] = ' '.join(values)
+                elif key == 'allowaccess':
+                    cur_data['allowaccess'] = values
+                elif key == 'alias':
+                    cur_data['alias'] = ' '.join(values)
+                elif key == 'description':
+                    cur_data['description'] = ' '.join(values)
+                else:
+                    cur_data[key] = values if len(values) > 1 else values[0]
+            elif head == 'next' and cur:
+                self.interfaces[cur] = cur_data.copy()
+                cur = None
+        return i
+
+    def _parse_system_zone(self, i: int) -> int:
+        i, blk = self._parse_block(i)
+        cur: Optional[str] = None
+        cur_data: Dict[str, Union[str, List[str]]] = {}
+        for line in blk:
+            s = line.strip()
+            if not s:
+                continue
+            tokens = self._tokenize(s)
+            if not tokens:
+                continue
+            head = tokens[0].lower()
+            if head == 'edit' and len(tokens) >= 2:
+                cur = self._strip_quotes(tokens[1])
+                cur_data = {}
+            elif head == 'set' and len(tokens) >= 3 and cur:
+                key = tokens[1].lower()
+                values = [self._strip_quotes(t) for t in tokens[2:]]
+                # Most zone properties are multi-value; collapse singletons for readability
+                cur_data[key] = values if len(values) > 1 else values
+            elif head == 'next' and cur:
+                self.zones[cur] = cur_data.copy()
+                cur = None
+        return i
+
+    def _map_zones(self) -> None:
+        """Build interface→zone mapping from parsed zone data."""
+        self.interface_zones = {}
+        for zone, data in self.zones.items():
+            interfaces = data.get('interface')
+            if interfaces is None:
+                continue
+            if isinstance(interfaces, list):
+                names = interfaces
+            else:
+                names = [interfaces]
+            for iface in names:
+                if iface:
+                    self.interface_zones[iface] = zone
+
+    def _interfaces_to_zones(self, interfaces: Union[List[str], str]) -> List[str]:
+        if isinstance(interfaces, str):
+            iface_list = [interfaces]
+        else:
+            iface_list = interfaces
+        zones: List[str] = []
+        for iface in iface_list:
+            zone = self.interface_zones.get(iface)
+            if zone:
+                zones.append(zone)
+        return zones
 
     def _parse_service_custom(self, i: int) -> int:
         i, blk = self._parse_block(i)
@@ -241,23 +377,165 @@ class FTGConfig:
                 cur = None
         return i
 
-    def _parse_policy(self, i: int) -> int:
+    def _parse_firewall_vip(self, i: int) -> int:
         i, blk = self._parse_block(i)
-        cur: Dict[str, Union[str, List[str]]] = {}
+        cur: Optional[str] = None
+        current: Dict[str, Union[str, List[str], bool]] = {}
         for line in blk:
             s = line.strip()
-            if s.startswith('edit '):
-                cur = {'srcaddr': [], 'dstaddr': [], 'service': []}
-            elif s.startswith('set action '):
-                act = s.split()[-1].strip('"')
-                cur['action'] = 'permit' if act == 'accept' else 'deny'
-            elif s.startswith('set srcaddr '):
-                cur['srcaddr'] = [x.strip('"') for x in s.split()[2:]]
-            elif s.startswith('set dstaddr '):
-                cur['dstaddr'] = [x.strip('"') for x in s.split()[2:]]
-            elif s.startswith('set service '):
-                cur['service'] = [x.strip('"') for x in s.split()[2:]]
-            elif s.startswith('next'):
+            if not s:
+                continue
+            tokens = self._tokenize(s)
+            if not tokens:
+                continue
+            head = tokens[0].lower()
+            if head == 'edit' and len(tokens) >= 2:
+                cur = self._strip_quotes(tokens[1])
+                current = {}
+            elif head == 'set' and len(tokens) >= 3 and cur:
+                key = tokens[1].lower()
+                values = [self._strip_quotes(t) for t in tokens[2:]]
+                if key in {'extip', 'mappedip'}:
+                    current[key] = values
+                elif key in {'extintf', 'type'}:
+                    current[key] = values[0]
+                elif key in {'extport', 'mappedport'} and values:
+                    current[key] = values[0]
+                elif key == 'portforward' and values:
+                    current[key] = values[0].lower() == 'enable'
+                else:
+                    current[key] = values if len(values) > 1 else values[0]
+            elif head == 'next' and cur:
+                self.vips[cur] = current.copy()
+                cur = None
+        return i
+
+    def _parse_firewall_vipgrp(self, i: int) -> int:
+        i, blk = self._parse_block(i)
+        cur: Optional[str] = None
+        members: List[str] = []
+        for line in blk:
+            s = line.strip()
+            if not s:
+                continue
+            tokens = self._tokenize(s)
+            if not tokens:
+                continue
+            head = tokens[0].lower()
+            if head == 'edit' and len(tokens) >= 2:
+                cur = self._strip_quotes(tokens[1])
+                members = []
+            elif head == 'set' and len(tokens) >= 3 and tokens[1].lower() == 'member':
+                members.extend(self._strip_quotes(t) for t in tokens[2:])
+            elif head == 'next' and cur:
+                self.vipgrps[cur] = members[:]
+                cur = None
+        return i
+
+    def _parse_firewall_ippool(self, i: int) -> int:
+        i, blk = self._parse_block(i)
+        cur: Optional[str] = None
+        current: Dict[str, Union[str, bool]] = {}
+        for line in blk:
+            s = line.strip()
+            if not s:
+                continue
+            tokens = self._tokenize(s)
+            if not tokens:
+                continue
+            head = tokens[0].lower()
+            if head == 'edit' and len(tokens) >= 2:
+                cur = self._strip_quotes(tokens[1])
+                current = {}
+            elif head == 'set' and len(tokens) >= 3 and cur:
+                key = tokens[1].lower()
+                values = [self._strip_quotes(t) for t in tokens[2:]]
+                if key in {'startip', 'endip', 'type'}:
+                    current[key] = values[0]
+                else:
+                    current[key] = values if len(values) > 1 else values[0]
+            elif head == 'next' and cur:
+                self.ippools[cur] = current.copy()
+                cur = None
+        return i
+
+    def _parse_central_snat(self, i: int) -> int:
+        i, blk = self._parse_block(i)
+        current: Dict[str, Union[str, List[str]]] = {}
+        for line in blk:
+            s = line.strip()
+            if not s:
+                continue
+            tokens = self._tokenize(s)
+            if not tokens:
+                continue
+            head = tokens[0].lower()
+            if head == 'edit':
+                current = {'seq': self._strip_quotes(tokens[1])} if len(tokens) >= 2 else {}
+            elif head == 'set' and len(tokens) >= 3:
+                key = tokens[1].lower()
+                values = [self._strip_quotes(t) for t in tokens[2:]]
+                current[key] = values if len(values) > 1 else values[0]
+            elif head == 'next' and current:
+                self.central_snat_map.append(current.copy())
+                current = {}
+        return i
+
+    def _parse_policy(self, i: int) -> int:
+        i, blk = self._parse_block(i)
+        cur: Dict[str, Union[str, List[str], bool]] = {}
+        for line in blk:
+            s = line.strip()
+            if not s:
+                continue
+            tokens = self._tokenize(s)
+            if not tokens:
+                continue
+            head = tokens[0].lower()
+            if head == 'edit' and len(tokens) >= 2:
+                cur = {
+                    'id': self._strip_quotes(tokens[1]),
+                    'srcaddr': [],
+                    'dstaddr': [],
+                    'service': [],
+                    'srcintf': [],
+                    'dstintf': [],
+                }
+            elif head == 'set' and len(tokens) >= 3:
+                key = tokens[1].lower()
+                values = [self._strip_quotes(t) for t in tokens[2:]]
+                if key == 'action' and values:
+                    act = values[0].lower()
+                    cur['action'] = 'permit' if act == 'accept' else 'deny'
+                elif key == 'srcaddr':
+                    cur['srcaddr'] = values
+                elif key == 'dstaddr':
+                    cur['dstaddr'] = values
+                elif key == 'service':
+                    cur['service'] = values
+                elif key == 'srcintf':
+                    cur['srcintf'] = values
+                elif key == 'dstintf':
+                    cur['dstintf'] = values
+                elif key == 'schedule' and values:
+                    cur['schedule'] = values[0]
+                elif key == 'name' and values:
+                    cur['name'] = values[0]
+                elif key == 'uuid' and values:
+                    cur['uuid'] = values[0]
+                elif key == 'logtraffic' and values:
+                    cur['logtraffic'] = values[0]
+                elif key == 'nat' and values:
+                    cur['nat'] = values[0].lower() == 'enable'
+                elif key == 'ippool' and values:
+                    cur['ippool'] = values[0].lower() == 'enable'
+                elif key == 'poolname':
+                    cur['poolname'] = values
+                elif key == 'status' and values:
+                    cur['status'] = values[0]
+                elif key == 'comments' and values:
+                    cur['comments'] = ' '.join(values)
+            elif head == 'next':
                 if cur:
                     self.policies.append(cur.copy())
                 cur = {}
@@ -277,6 +555,16 @@ class FTGConfig:
             return {ipaddress.ip_network('0.0.0.0/0')}
         if token in self.addresses:
             return self.addresses[token]
+        if token in self.vips:
+            literals: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]] = set()
+            vip = self.vips[token]
+            extips = vip.get('extip')
+            if isinstance(extips, list):
+                for ip in extips:
+                    literals.add(to_ip_network(ip))
+            elif isinstance(extips, str):
+                literals.add(to_ip_network(extips))
+            return literals
         if token in self.addrgrps:
             visited = set() if visited is None else visited
             if token in visited:
@@ -289,7 +577,30 @@ class FTGConfig:
                 else:
                     out.add(m)
             return out
+        if token in self.vipgrps:
+            visited = set() if visited is None else visited
+            if token in visited:
+                return set()
+            visited.add(token)
+            out: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network, str]] = set()
+            for member in self.vipgrps[token]:
+                out.update(self.resolve_addr_token(member, visited))
+            return out
         return {token}
+
+    def _collect_vip_names(self, token: str, visited: Optional[Set[str]] = None) -> Set[str]:
+        visited = set() if visited is None else visited
+        if token in visited:
+            return set()
+        visited.add(token)
+        if token in self.vips:
+            return {token}
+        if token in self.vipgrps:
+            names: Set[str] = set()
+            for member in self.vipgrps[token]:
+                names.update(self._collect_vip_names(member, visited))
+            return names
+        return set()
 
     def _split_ranges(self, spec: str) -> List[Tuple[Optional[int], Optional[int]]]:
         """Split FortiGate port range string like '80-81 443' into numeric ranges."""
@@ -346,16 +657,54 @@ class FTGConfig:
     # ---------- Flattening and evaluation ----------
     def flatten_policies(self) -> List[dict]:
         entries: List[dict] = []
+        self.policy_vip_refs = defaultdict(set)
         for p in self.policies:
             srcs: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network, str]] = set()
             dsts: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network, str]] = set()
+            vip_refs_for_policy: Set[str] = set()
             for token in p.get('srcaddr', []):
                 srcs.update(self.resolve_addr_token(token))
             for token in p.get('dstaddr', []):
                 dsts.update(self.resolve_addr_token(token))
+                vip_refs_for_policy.update(self._collect_vip_names(token))
             svc = self.resolve_service_names(p.get('service', []))
-            raw = f"policy action {p.get('action','permit')} srcaddr {p.get('srcaddr',[])} dstaddr {p.get('dstaddr',[])} service {p.get('service',[])}"
-            entries.append({'acl': 'policy', 'action': p.get('action', 'permit'), 'proto': 'ip', 'src': srcs, 'dst': dsts, 'svc': svc, 'raw': raw})
+            binding = {
+                'srcintf': p.get('srcintf'),
+                'dstintf': p.get('dstintf'),
+                'schedule': p.get('schedule'),
+                'uuid': p.get('uuid'),
+                'name': p.get('name'),
+            }
+            policy_id = str(p.get('id')) if p.get('id') is not None else None
+            src_zones = self._interfaces_to_zones(p.get('srcintf') or [])
+            dst_zones = self._interfaces_to_zones(p.get('dstintf') or [])
+            if src_zones:
+                binding['srczone'] = src_zones
+            if dst_zones:
+                binding['dstzone'] = dst_zones
+            if policy_id:
+                binding['policy_id'] = policy_id
+            if vip_refs_for_policy:
+                binding['vip_refs'] = sorted(vip_refs_for_policy)
+            binding = {k: v for k, v in binding.items() if v}
+            raw = f"policy {p.get('id')} action {p.get('action','permit')} srcaddr {p.get('srcaddr',[])} dstaddr {p.get('dstaddr',[])} service {p.get('service',[])}"
+            if policy_id:
+                for vip_name in vip_refs_for_policy:
+                    self.policy_vip_refs[vip_name].add(policy_id)
+            entries.append({
+                'acl': 'policy',
+                'action': p.get('action', 'permit'),
+                'proto': 'ip',
+                'src': srcs,
+                'dst': dsts,
+                'svc': svc,
+                'raw': raw,
+                'binding': binding,
+                'policy_id': p.get('id'),
+                'nat': p.get('nat', False),
+                'ippool': p.get('ippool', False),
+                'poolname': p.get('poolname', []),
+            })
         return entries
 
     def _parse_static_routes(self, i: int) -> int:
@@ -586,5 +935,3 @@ def _service_matches(entry: dict, svc_filter: Optional[dict]) -> bool:
             if start is not None and end is None and p >= start:
                 return True
     return False
-
-

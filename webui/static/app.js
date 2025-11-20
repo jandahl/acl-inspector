@@ -1,11 +1,22 @@
 (() => {
   const THEMES = window.ACL_THEMES || [];
   const CONFIG_OPTIONS = window.ACL_CONFIG_OPTIONS || { asa: [], fortigate: [] };
+  const VENDOR_CAPS = window.ACL_VENDOR_CAPS || {};
   const HISTORY_ENABLED = window.ACL_HISTORY_ENABLED !== false;
   const SEARCH_LIMIT = window.ACL_SEARCH_LIMIT || 50;
   let previewSpeed = Number(window.ACL_THEME_PREVIEW_SPEED || 12);
   if (!Number.isFinite(previewSpeed) || previewSpeed <= 0) {
     previewSpeed = 12;
+  }
+
+  function refreshRuleModes(caps) {
+    const current = getInputValue("mode", "inspect") || "inspect";
+    const sanitized = sanitizeModeForCaps(current, caps);
+    if (sanitized !== current) {
+      setMode(sanitized);
+    } else {
+      updateRuleModeUI(sanitized, caps);
+    }
   }
   const THEME_PREVIEW_SPEED = Math.min(Math.max(previewSpeed, 1), 120);
   const PREF_COOKIE = "acl_theme_pref";
@@ -65,6 +76,47 @@
     courier: "'Courier New','Courier',monospace",
   };
 
+  function capsForVendor(vendor) {
+    const fallback = {
+      config_field: "config",
+      requires_vdom: false,
+      supports_inspect: true,
+      supports_compare: true,
+      supports_find: true,
+      supports_packet: true,
+    };
+    if (!vendor) {
+      return { ...fallback };
+    }
+    const entry = VENDOR_CAPS[vendor] || {};
+    return {
+      config_field: entry.config_field || fallback.config_field,
+      requires_vdom: !!entry.requires_vdom,
+      supports_inspect:
+        entry.supports_inspect !== undefined ? !!entry.supports_inspect : fallback.supports_inspect,
+      supports_compare:
+        entry.supports_compare !== undefined ? !!entry.supports_compare : fallback.supports_compare,
+      supports_find: entry.supports_find !== undefined ? !!entry.supports_find : fallback.supports_find,
+      supports_packet:
+        entry.supports_packet !== undefined ? !!entry.supports_packet : fallback.supports_packet,
+    };
+  }
+
+  function featureSupportedByCaps(caps, feature) {
+    switch ((feature || "").toLowerCase()) {
+      case "inspect":
+        return !!caps.supports_inspect;
+      case "compare":
+        return !!caps.supports_compare;
+      case "find":
+        return !!caps.supports_find;
+      case "packet":
+        return !!caps.supports_packet;
+      default:
+        return true;
+    }
+  }
+
   const BODY_FONT_LABELS = {
     auto: "System default",
     inter: "Inter",
@@ -107,6 +159,7 @@
     const vendor = (trigger.dataset.vendor || "asa").toLowerCase();
     const config = trigger.dataset.config || "";
     const targetValue = (trigger.dataset.target || "").trim();
+    const targetVdom = (trigger.dataset.vdom || "").trim();
 
     const vendorSelect = document.getElementById("vendor");
     if (vendorSelect && vendorSelect.value !== vendor) {
@@ -127,6 +180,11 @@
         configSelect.value = config;
       }
     }
+    const vdomValue = trigger.dataset.vdom || "";
+    const vdomInput = document.getElementById("vdom");
+    if (vdomInput) {
+      vdomInput.value = vdomValue;
+    }
 
     const tabSelect = document.getElementById("config_select_tab");
     if (tabSelect && vendor === "asa") {
@@ -134,6 +192,9 @@
       if (option) {
         tabSelect.value = config;
       }
+    }
+    if (vdomInput) {
+      vdomInput.value = targetVdom;
     }
 
     syncConfigViewerControls();
@@ -320,6 +381,22 @@
     }
   }
 
+  function getInputValue(id, fallback = "") {
+    const elem = document.getElementById(id);
+    if (!elem || typeof elem.value === "undefined") {
+      return fallback;
+    }
+    return elem.value;
+  }
+
+  function getCheckboxValue(id, fallback = false) {
+    const elem = document.getElementById(id);
+    if (!elem || typeof elem.checked === "undefined") {
+      return fallback;
+    }
+    return !!elem.checked;
+  }
+
   function cookieGet(name) {
     if (typeof document === "undefined") {
       return null;
@@ -352,6 +429,133 @@
 
   function clamp(value, min, max) {
     return Math.min(Math.max(value, min), max);
+  }
+
+  function encodeFormData(formData) {
+    if (!formData || typeof formData.forEach !== "function") {
+      return "";
+    }
+    const pairs = [];
+    formData.forEach((value, key) => {
+      const encodedKey = encodeURIComponent(key);
+      const encodedValue = encodeURIComponent(value);
+      pairs.push(`${encodedKey}=${encodedValue}`);
+    });
+    return pairs.join("&");
+  }
+
+  function legacyFetch(url, options) {
+    const opts = options || {};
+    if (typeof window !== "undefined" && typeof window.fetch === "function") {
+      return window.fetch(url, opts);
+    }
+    return new Promise((resolve, reject) => {
+      try {
+        const xhr = new XMLHttpRequest();
+        xhr.open(opts.method || "GET", url, true);
+        const headers = opts.headers || {};
+        Object.keys(headers).forEach((key) => {
+          try {
+            xhr.setRequestHeader(key, headers[key]);
+          } catch (err) {
+            console.warn("Failed to set header", key, err);
+          }
+        });
+        if (opts.credentials === "include") {
+          xhr.withCredentials = true;
+        }
+        xhr.onload = function onload() {
+          const responseText =
+            xhr.responseText === undefined || xhr.responseText === null ? "" : xhr.responseText;
+          const response = {
+            ok: xhr.status >= 200 && xhr.status < 300,
+            status: xhr.status,
+            statusText: xhr.statusText || "",
+            url,
+            headers: {
+              get(name) {
+                return xhr.getResponseHeader(name);
+              },
+            },
+            text() {
+              return Promise.resolve(responseText);
+            },
+            json() {
+              if (!responseText) {
+                return Promise.resolve({});
+              }
+              try {
+                return Promise.resolve(JSON.parse(responseText));
+              } catch (err) {
+                return Promise.reject(err);
+              }
+            },
+          };
+          resolve(response);
+        };
+        xhr.onerror = function onerror() {
+          reject(new Error("Network request failed"));
+        };
+        xhr.ontimeout = function ontimeout() {
+          reject(new Error("Network request timed out"));
+        };
+        xhr.send(opts.body || null);
+      } catch (err) {
+        reject(err);
+      }
+    });
+  }
+
+  function showBootStatus(message) {
+    const box = document.getElementById("boot_status");
+    if (!box) {
+      return;
+    }
+    box.textContent = message;
+    box.classList.add("active");
+  }
+
+  function describeError(err) {
+    if (!err && err !== 0) {
+      return "Unknown error";
+    }
+    if (typeof err === "string") {
+      return err;
+    }
+    if (err && typeof err.message === "string" && err.message) {
+      return err.message;
+    }
+    try {
+      return JSON.stringify(err);
+    } catch (jsonErr) {
+      return String(err);
+    }
+  }
+
+  function reportBootstrapError(err, context) {
+    const prefix = context ? `[${context}] ` : "";
+    const message = describeError(err);
+    try {
+      console.error("ACL Inspector UI error:", context || "runtime", err);
+    } catch (consoleErr) {
+      // ignore logging failures
+    }
+    showBootStatus(`${prefix}${message}`.trim());
+  }
+
+  if (typeof window !== "undefined") {
+    window.addEventListener(
+      "error",
+      (event) => {
+        if (!event) {
+          reportBootstrapError("Unknown error", "window");
+          return;
+        }
+        const source = event.filename ? `${event.filename}:${event.lineno || 0}` : "window";
+        reportBootstrapError(event.error || event.message || "Unknown error", source);
+      },
+      true
+    );
   }
 
   function rorschachSpeedFromPreview(seconds) {
@@ -391,7 +595,11 @@
         RORSCHACH_SPEED_SECONDS.max
       );
     } else {
-      const baseline = Number(sourcePrefs.previewSpeed ?? THEME_PREVIEW_SPEED) || THEME_PREVIEW_SPEED;
+      const prefValue =
+        sourcePrefs && sourcePrefs.previewSpeed !== undefined && sourcePrefs.previewSpeed !== null
+          ? sourcePrefs.previewSpeed
+          : THEME_PREVIEW_SPEED;
+      const baseline = Number(prefValue) || THEME_PREVIEW_SPEED;
       effective = clamp(baseline, RORSCHACH_SPEED_SECONDS.min, RORSCHACH_SPEED_SECONDS.max);
     }
     label.textContent = `${Math.round(effective)}s`;
@@ -1310,7 +1518,7 @@
     const highlightToggle = document.getElementById("hlToggle");
     const enableHighlight = highlightToggle ? highlightToggle.checked : true;
     refreshHighlights(enableHighlight);
-    updateConfigViewer(document.getElementById("config_filter")?.value || "");
+    updateConfigViewer(getInputValue("config_filter"));
     refreshBetaVisibility();
     applyLayoutPrefs();
     syncRorschachPreview();
@@ -1683,8 +1891,12 @@
     const darkCard = box.querySelector(".preview-card[data-theme-preview='dark']");
     const lightBanner = box.querySelector(".preview-banner[data-theme-preview='light']");
     const darkBanner = box.querySelector(".preview-banner[data-theme-preview='dark']");
+    const previewSpeedPref =
+      previewPrefs && previewPrefs.previewSpeed !== undefined && previewPrefs.previewSpeed !== null
+        ? previewPrefs.previewSpeed
+        : THEME_PREVIEW_SPEED;
     let previewSeconds = clamp(
-      Number(previewPrefs.previewSpeed ?? THEME_PREVIEW_SPEED) || THEME_PREVIEW_SPEED,
+      Number(previewSpeedPref) || THEME_PREVIEW_SPEED,
       RORSCHACH_SPEED_SECONDS.min,
       RORSCHACH_SPEED_SECONDS.max
     );
@@ -2123,7 +2335,7 @@
   }
 
   function toggleHighlight() {
-    const checked = document.getElementById("hlToggle")?.checked;
+    const checked = getCheckboxValue("hlToggle");
     highlightAll(!!checked);
   }
 
@@ -2144,14 +2356,40 @@
 
   function toggleVendor() {
     const vendor = document.getElementById("vendor").value;
+    const caps = capsForVendor(vendor);
     const asa = document.getElementById("asa_cfg");
     const ftg = document.getElementById("ftg_cfg");
+    const vdomWrapper = document.getElementById("ftg_vdom");
     if (asa) {
-      asa.style.display = vendor === "asa" ? "block" : "none";
+      asa.style.display = caps.config_field === "config" ? "block" : "none";
     }
     if (ftg) {
-      ftg.style.display = vendor === "fortigate" ? "block" : "none";
+      ftg.style.display = caps.config_field === "config_ftg" ? "block" : "none";
     }
+    if (vdomWrapper) {
+      vdomWrapper.style.display = caps.requires_vdom ? "block" : "none";
+      if (!caps.requires_vdom) {
+        const vdomInput = document.getElementById("vdom");
+        if (vdomInput) {
+          vdomInput.value = "";
+        }
+      }
+    }
+    const guessToggle = document.getElementById("pkt_guess");
+    const guessLabel = document.getElementById("pkt_guess_label");
+    if (guessToggle) {
+      const enableGuess = vendor === "asa";
+      guessToggle.disabled = !enableGuess;
+      if (!enableGuess) {
+        guessToggle.checked = true;
+      }
+    }
+    if (guessLabel) {
+      const disabled = vendor !== "asa";
+      guessLabel.classList.toggle("is-disabled", disabled);
+      guessLabel.setAttribute("aria-disabled", disabled ? "true" : "false");
+    }
+    refreshVendorCapabilities();
     syncConfigViewerControls();
   }
 
@@ -2160,7 +2398,7 @@
     if (!panel || !HISTORY_ENABLED) {
       return;
     }
-    fetch("/api/history")
+    legacyFetch("/api/history")
       .then((resp) => (resp.ok ? resp.json() : Promise.reject()))
       .then((data) => {
         const items = data.entries || [];
@@ -2227,6 +2465,41 @@
     }
   }
 
+  function refreshTabsForCaps(caps) {
+    document.querySelectorAll(".mode-tabs .tab").forEach((btn) => {
+      const requires = btn.dataset.requires;
+      const supported =
+        !requires ||
+        requires
+          .split(",")
+          .some((req) => featureSupportedByCaps(caps, req.trim()));
+      btn.hidden = !supported;
+      btn.style.display = supported ? "inline-flex" : "none";
+    });
+    document.querySelectorAll(".tab-panel").forEach((panel) => {
+      const requires = panel.dataset.requires;
+      const supported =
+        !requires ||
+        requires
+          .split(",")
+          .some((req) => featureSupportedByCaps(caps, req.trim()));
+      panel.hidden = !supported;
+      if (!supported) {
+        panel.classList.remove("active");
+      }
+    });
+    document.querySelectorAll(".actions-run").forEach((node) => {
+      const requires = node.dataset.requires;
+      const supported =
+        !requires ||
+        requires
+          .split(",")
+          .some((req) => featureSupportedByCaps(caps, req.trim()));
+      node.hidden = !supported;
+      node.style.display = supported ? "block" : "none";
+    });
+  }
+
   function refreshBetaVisibility() {
     const showBeta = !!prefs.showBeta;
     document.querySelectorAll("[data-beta-module]").forEach((node) => {
@@ -2273,6 +2546,13 @@
   function mainVendor() {
     const vendorSelect = document.getElementById("vendor");
     return (vendorSelect ? vendorSelect.value : "asa").toLowerCase();
+  }
+
+  function refreshVendorCapabilities() {
+    const { caps } = currentConfig();
+    refreshTabsForCaps(caps);
+    refreshRuleModes(caps);
+    ensureActiveTabAvailable();
   }
 
   function getMainConfigSelect(vendor) {
@@ -2430,21 +2710,41 @@
     triggerRun();
   }
 
+  function sanitizeModeForCaps(mode, caps) {
+    let next = mode;
+    if (next === "inspect" && !caps.supports_inspect) {
+      next = caps.supports_compare ? "compare" : "inspect";
+    }
+    if (next === "compare" && !caps.supports_compare) {
+      next = caps.supports_inspect ? "inspect" : "compare";
+    }
+    if (next === "find" && !caps.supports_find) {
+      next = caps.supports_inspect ? "inspect" : "packet";
+    }
+    if (next === "packet" && !caps.supports_packet) {
+      next = caps.supports_inspect ? "inspect" : "find";
+    }
+    return next;
+  }
+
   function setMode(mode) {
+    const { caps } = currentConfig();
+    const sanitized = sanitizeModeForCaps(mode, caps);
     const modeInput = document.getElementById("mode");
     if (modeInput) {
-      modeInput.value = mode;
+      modeInput.value = sanitized;
     }
-    if (mode === "inspect" || mode === "compare") {
-      const radio = document.querySelector(`input[name='rule_mode'][value='${mode}']`);
-      if (radio && !radio.checked) {
+    if (sanitized === "inspect" || sanitized === "compare") {
+      const radio = document.querySelector(`input[name='rule_mode'][value='${sanitized}']`);
+      if (radio && !radio.checked && !radio.disabled) {
         radio.checked = true;
       }
     }
-    updateRuleModeUI(mode);
+    updateRuleModeUI(sanitized, caps);
   }
 
-  function updateRuleModeUI(mode) {
+  function updateRuleModeUI(mode, capsOverride) {
+    const caps = capsOverride || capsForVendor(mainVendor());
     const inspect = document.getElementById("inspect_fields");
     const compare = document.getElementById("compare_fields");
     if (inspect) {
@@ -2452,6 +2752,22 @@
     }
     if (compare) {
       compare.style.display = mode === "compare" ? "block" : "none";
+    }
+    const inspectRadio = document.querySelector("input[name='rule_mode'][value='inspect']");
+    const compareRadio = document.querySelector("input[name='rule_mode'][value='compare']");
+    if (inspectRadio) {
+      const label = inspectRadio.closest("label");
+      inspectRadio.disabled = !caps.supports_inspect;
+      if (label) {
+        label.classList.toggle("is-disabled", !caps.supports_inspect);
+      }
+    }
+    if (compareRadio) {
+      const label = compareRadio.closest("label");
+      compareRadio.disabled = !caps.supports_compare;
+      if (label) {
+        label.classList.toggle("is-disabled", !caps.supports_compare);
+      }
     }
   }
 
@@ -2555,11 +2871,13 @@
   }
 
   function currentConfig() {
-    const vendor = document.getElementById("vendor").value;
-    const config = vendor === "asa"
-      ? document.getElementById("config").value
-      : document.getElementById("config_ftg").value;
-    return { vendor, config };
+    const vendor = mainVendor();
+    const caps = capsForVendor(vendor);
+    const select = document.getElementById(caps.config_field) || document.getElementById("config");
+    const config = select ? select.value : "";
+    const vdomInput = document.getElementById("vdom");
+    const vdom = vdomInput ? vdomInput.value : "";
+    return { vendor, config, vdom, caps };
   }
 
   function fillDatalist(items) {
@@ -2576,7 +2894,7 @@
     }
   }
 
-  const fetchSuggest = debounce(async function (event) {
+  const fetchSuggest = debounce(function (event) {
     if (activeTab !== "rules") {
       fillDatalist([]);
       return;
@@ -2588,20 +2906,22 @@
     }
     const { vendor, config } = currentConfig();
     const mode = document.getElementById("fuzzy").checked ? "fuzzy" : "prefix";
-    try {
-      const resp = await fetch(
-        `/api/objects?vendor=${vendor}&os=${vendor.toUpperCase()}&version=auto&config=${encodeURIComponent(
-          config
-        )}&q=${encodeURIComponent(q)}&mode=${mode}&limit=${SEARCH_LIMIT}`
-      );
-      if (!resp.ok) {
-        return;
-      }
-      const data = await resp.json();
-      fillDatalist(data.items || []);
-    } catch (err) {
-      console.warn("fetchSuggest failed", err);
-    }
+    const url = `/api/objects?vendor=${vendor}&os=${vendor.toUpperCase()}&version=auto&config=${encodeURIComponent(
+      config
+    )}&q=${encodeURIComponent(q)}&mode=${mode}&limit=${SEARCH_LIMIT}`;
+    legacyFetch(url)
+      .then((resp) => {
+        if (!resp.ok) {
+          throw new Error(`HTTP ${resp.status}`);
+        }
+        return resp.json();
+      })
+      .then((data) => {
+        fillDatalist((data && data.items) || []);
+      })
+      .catch((err) => {
+        console.warn("fetchSuggest failed", err);
+      });
   },
   150);
 
@@ -2615,12 +2935,13 @@
   }
 
   function gatherState() {
-    const vendor = document.getElementById("vendor").value;
+    const vendor = mainVendor();
     return {
       tab: activeTab,
       vendor,
       config: document.getElementById("config").value,
       config_ftg: document.getElementById("config_ftg").value,
+      vdom: document.getElementById("vdom") ? document.getElementById("vdom").value : "",
       mode: document.getElementById("mode").value,
       inspect: document.getElementById("inspect").value,
       old: document.getElementById("old").value,
@@ -2661,6 +2982,7 @@
     assign("vendor", state.vendor);
     assign("config", state.config);
     assign("config_ftg", state.config_ftg);
+    assign("vdom", state.vdom);
     assign("inspect", state.inspect);
     assign("old", state.old);
     assign("new", state.new);
@@ -2717,6 +3039,7 @@
     take("vendor", "vendor");
     take("config", "config");
     take("config_ftg", "config_ftg");
+    take("vdom", "vdom");
     take("inspect", "inspect");
     take("old", "old");
     take("new", "new");
@@ -2774,6 +3097,7 @@
       };
       assign("config", payload.config);
       assign("config_ftg", payload.config_ftg);
+      assign("vdom", payload.vdom);
       assign("inspect", payload.inspect);
       assign("old", payload.old);
       assign("new", payload.new);
@@ -3048,16 +3372,16 @@
     }
     if (!config) {
       currentConfigText = "";
-      updateConfigViewer(document.getElementById("config_filter")?.value || "");
+      updateConfigViewer(getInputValue("config_filter"));
       setConfigLoading(false);
       return;
     }
     setConfigLoading(true);
-    fetch(`/api/config?vendor=${vendor}&config=${encodeURIComponent(config)}`)
+    legacyFetch(`/api/config?vendor=${vendor}&config=${encodeURIComponent(config)}`)
       .then((resp) => (resp.ok ? resp.json() : Promise.reject()))
       .then((data) => {
         currentConfigText = (data.text || "").replace(/\r\n?/g, "\n");
-        updateConfigViewer(document.getElementById("config_filter")?.value || "");
+        updateConfigViewer(getInputValue("config_filter"));
       })
       .catch(() => {
         currentConfigText = "";
@@ -3088,6 +3412,19 @@
     const enable = highlightToggle ? highlightToggle.checked : true;
     highlightAll(enable);
     if (meta) {
+      if (meta.vendor) {
+        const vendorSelect = document.getElementById("vendor");
+        if (vendorSelect) {
+          vendorSelect.value = meta.vendor;
+        }
+        toggleVendor();
+      }
+      if (meta.vdom !== undefined) {
+        const vdomInput = document.getElementById("vdom");
+        if (vdomInput) {
+          vdomInput.value = meta.vdom || "";
+        }
+      }
       if (meta.mode) {
         const modeInput = document.getElementById("mode");
         if (modeInput) {
@@ -3230,7 +3567,7 @@
 `;
   }
 
-  async function runPacketProbe(formData) {
+  function runPacketProbe(formData) {
     const container = probeResultsContainer();
     if (!container) {
       return;
@@ -3248,7 +3585,8 @@
       dst: String(formData.get("probe_dst") || "").trim(),
       proto: String(formData.get("probe_proto") || "").trim(),
       dports: [],
-      include_any: document.getElementById("probe_include_any")?.checked || false,
+      include_any: getCheckboxValue("probe_include_any", false),
+      vdom: getInputValue("vdom").trim(),
     };
     const dportRaw = String(formData.get("probe_dport") || "").trim();
     if (dportRaw) {
@@ -3258,22 +3596,30 @@
       setProbeResults("<div class='section'><p style='color:red'>Source and destination are required.</p></div>");
       return;
     }
-    try {
-      const resp = await fetch("/api/probe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+    legacyFetch("/api/probe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+      .then((resp) =>
+        resp
+          .json()
+          .then((data) => ({ resp, data }))
+          .catch((err) => ({ resp, data: { error: String(err) } }))
+      )
+      .then(({ resp, data }) => {
+        if (!resp.ok || (data && data.error)) {
+          const err = (data && data.error) || `Probe failed (HTTP ${resp.status})`;
+          setProbeResults(`<div class='section'><p style='color:red'>${escapeHtml(String(err))}</p></div>`);
+          return;
+        }
+        setProbeResults(renderProbeResult(data.config || config, data));
+      })
+      .catch((err) => {
+        setProbeResults(
+          `<div class='section'><p style='color:red'>Probe request failed: ${escapeHtml(String(err))}</p></div>`
+        );
       });
-      const data = await resp.json();
-      if (!resp.ok || data.error) {
-        const err = (data && data.error) || `Probe failed (HTTP ${resp.status})`;
-        setProbeResults(`<div class='section'><p style='color:red'>${escapeHtml(String(err))}</p></div>`);
-        return;
-      }
-      setProbeResults(renderProbeResult(data.config || config, data));
-    } catch (err) {
-      setProbeResults(`<div class='section'><p style='color:red'>Probe request failed: ${escapeHtml(String(err))}</p></div>`);
-    }
   }
 
   function updateDebugStatus(message, isError = false) {
@@ -3285,24 +3631,30 @@
     statusElem.style.color = isError ? "#ff7b72" : "var(--sub)";
   }
 
-  async function flushServerCache(includeDisk = true) {
+  function flushServerCache(includeDisk = true) {
     updateDebugStatus("Flushing server caches…");
-    try {
-      const resp = await fetch("/api/cache/flush", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ disk: includeDisk }),
+    legacyFetch("/api/cache/flush", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ disk: includeDisk }),
+    })
+      .then((resp) =>
+        resp
+          .json()
+          .then((data) => ({ resp, data }))
+          .catch((err) => ({ resp, data: { error: String(err) } }))
+      )
+      .then(({ resp, data }) => {
+        if (!resp.ok || (data && data.error)) {
+          updateDebugStatus((data && data.error) || `Flush failed (HTTP ${resp.status})`, true);
+          return;
+        }
+        updateDebugStatus("Server caches flushed.");
+        listHistory();
+      })
+      .catch((err) => {
+        updateDebugStatus(`Flush failed: ${err}`, true);
       });
-      const data = await resp.json();
-      if (!resp.ok || data.error) {
-        updateDebugStatus((data && data.error) || `Flush failed (HTTP ${resp.status})`, true);
-        return;
-      }
-      updateDebugStatus("Server caches flushed.");
-      listHistory();
-    } catch (err) {
-      updateDebugStatus(`Flush failed: ${err}`, true);
-    }
   }
 
   function clearClientCache() {
@@ -3338,7 +3690,7 @@
     }
   }
 
-  async function submitForm(event) {
+  function submitForm(event) {
     if (event && typeof event.preventDefault === "function") {
       event.preventDefault();
     }
@@ -3349,38 +3701,40 @@
     const formData = new FormData(form);
     const modeValue = formData.get("mode");
     if (modeValue === "packet-probe") {
-      try {
-        await runPacketProbe(formData);
-        saveState();
-        listHistory();
-      } finally {
-        setHistoryReplayFlag(false);
-      }
-      return;
-    }
-    const params = new URLSearchParams();
-    formData.forEach((value, key) => {
-      params.append(key, value);
-    });
-    try {
-      const resp = await fetch("/run", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: params.toString(),
-      });
-      const data = await resp.json();
-      if (!resp.ok || data.error) {
-        setRunResults("rules", `<div class="section"><p style="color:red">${(data && data.error) || "Failed to run"}</p></div>`);
-        return;
-      }
-      setRunResults(data.tab || "rules", data.html || "", data.meta || null);
+      runPacketProbe(formData);
       saveState();
       listHistory();
-    } catch (err) {
-      setRunResults("rules", `<div class="section"><p style="color:red">Request failed: ${err}</p></div>`);
-    } finally {
       setHistoryReplayFlag(false);
+      return;
     }
+    const finalize = () => setHistoryReplayFlag(false);
+    legacyFetch("/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: encodeFormData(formData),
+    })
+      .then((resp) =>
+        resp
+          .json()
+          .then((data) => ({ resp, data }))
+          .catch((err) => ({ resp, data: { error: String(err) } }))
+      )
+      .then(({ resp, data }) => {
+        if (!resp.ok || (data && data.error)) {
+          setRunResults(
+            "rules",
+            `<div class="section"><p style="color:red">${(data && data.error) || "Failed to run"}</p></div>`
+          );
+          return;
+        }
+        setRunResults(data.tab || "rules", data.html || "", data.meta || null);
+        saveState();
+        listHistory();
+      })
+      .catch((err) => {
+        setRunResults("rules", `<div class="section"><p style="color:red">Request failed: ${err}</p></div>`);
+      })
+      .then(finalize, finalize);
   }
 
   function triggerRun() {
@@ -3398,7 +3752,7 @@
     if (!config || !metaSpan) {
       return;
     }
-    fetch(`/api/meta?vendor=${vendor}&config=${encodeURIComponent(config)}`)
+    legacyFetch(`/api/meta?vendor=${vendor}&config=${encodeURIComponent(config)}`)
       .then((resp) => (resp.ok ? resp.json() : Promise.reject()))
       .then((data) => {
         metaSpan.textContent = data.version ? `${data.os} ${data.version}` : data.os || vendor.toUpperCase();
@@ -3445,8 +3799,8 @@
     const configSelectTab = document.getElementById("config_select_tab");
     if (configSelectTab) {
       configSelectTab.addEventListener("change", () => {
-        const vendor =
-          (document.getElementById("config_vendor_tab")?.value || mainVendor()).toLowerCase();
+        const vendorValue = getInputValue("config_vendor_tab", mainVendor());
+        const vendor = (vendorValue || mainVendor()).toLowerCase();
         const vendorSelect = document.getElementById("vendor");
         if (vendorSelect && vendorSelect.value !== vendor) {
           vendorSelect.value = vendor;
@@ -3659,7 +4013,7 @@
           return;
         }
         setPreference("configRegex", event.target.checked, "prefs-ui");
-        updateConfigViewer(document.getElementById("config_filter")?.value || "");
+        updateConfigViewer(getInputValue("config_filter"));
       });
     }
     const prefShowBeta = document.getElementById("pref_show_beta");
@@ -3833,7 +4187,7 @@
           return;
         }
         setPreference("configRegex", event.target.checked, "config-ui");
-        updateConfigViewer(document.getElementById("config_filter")?.value || "");
+        updateConfigViewer(getInputValue("config_filter"));
       });
     }
 
@@ -3885,9 +4239,17 @@
     }
   }
 
+  function safeInit() {
+    try {
+      init();
+    } catch (err) {
+      reportBootstrapError(err, "init");
+    }
+  }
+
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", init);
+    document.addEventListener("DOMContentLoaded", safeInit);
   } else {
-    init();
+    safeInit();
   }
 })();
