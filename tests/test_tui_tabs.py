@@ -320,6 +320,205 @@ access-list TEST_ACL extended deny ip any any
         except ImportError:
             self.skipTest("textual not installed")
 
+    def test_action_tabs_has_prev_next_selectors(self):
+        """Ensure action tabs support previous/next selection used by on_key."""
+        try:
+            from tui.widgets.action_tabs import ActionTabs
+            from tui.app import SingularityApp
+            from analysis_core import path_check_supported
+        except ImportError:
+            self.skipTest("textual not installed")
+
+        tabs = ActionTabs()
+        # default selected is "details"; previous should wrap to last tab
+        tabs._select_previous_tab()
+        self.assertEqual(tabs.selected_tab, "path")
+        # next should advance
+        tabs._select_next_tab()
+        self.assertEqual(tabs.selected_tab, "details")
+
+        # Verify effective caps helper can disable path when unsupported
+        class DummyConfig:
+            vendor = "asa"
+
+        app = SingularityApp(vendor="asa", config_path="", vdom="", vendor_targets=[])
+        caps = app._effective_caps("asa", DummyConfig())
+        self.assertTrue(caps.supports_packet)
+
+    def test_path_tab_gating(self):
+        """Path tab should be hidden when capability check fails."""
+        try:
+            from tui.widgets.action_tabs import ActionTabs
+            from tui.app import SingularityApp
+        except ImportError:
+            self.skipTest("textual not installed")
+
+        class NoPathConfig:
+            vendor = "asa"
+        class AsaConfig(NoPathConfig):
+            pass
+        class FortiConfig:
+            vendor = "fortigate"
+
+        app = SingularityApp(vendor="asa", config_path="", vdom="", vendor_targets=[])
+        tabs = ActionTabs()
+        # Force-compose buttons for headless test
+        list(tabs.compose())
+
+        # When path not supported, ensure hidden flag is set
+        caps_no_path = app._effective_caps("asa", config=None)
+        tabs.apply_vendor_caps(caps_no_path)
+        path_btn = next((b for b in tabs._buttons if b.id == "tab-path"), None)
+        self.assertIsNotNone(path_btn)
+        self.assertEqual(path_btn.hidden, not caps_no_path.supports_packet)
+
+        # ASA supported case
+        caps_asa = app._effective_caps("asa", AsaConfig())
+        tabs.apply_vendor_caps(caps_asa)
+        self.assertFalse(path_btn.hidden)
+
+        # Forti supported case
+        caps_ftg = app._effective_caps("fortigate", FortiConfig())
+        tabs.apply_vendor_caps(caps_ftg)
+        self.assertFalse(path_btn.hidden)
+
+    def test_close_detail_restores_cached_results(self):
+        """ESC should restore the cached result set and selection."""
+        try:
+            from tui.app import SingularityApp
+            from tui.widgets.search_bar import SearchBar
+            from tui.widgets.suggestion_list import SuggestionList
+        except ImportError:
+            self.skipTest("textual not installed")
+
+        app = SingularityApp(vendor="asa", config_path="", vdom="", vendor_targets=[])
+        app._apply_caps_to_tabs = lambda _vendor: None
+        app.display_results = [
+            {"name": "obj1", "type": "object"},
+            {"name": "obj2", "type": "group"},
+            {"name": "obj3", "type": "object"},
+        ]
+        app.last_results = app.display_results[:]
+        app.last_selected_index = 1
+        app.drill_down_active = True
+
+        class DummyContainer:
+            def __init__(self):
+                self.classes = set()
+
+            def remove_class(self, _name):
+                self.classes.discard(_name)
+
+            def add_class(self, name):
+                self.classes.add(name)
+
+        class DummySearchBar:
+            def __init__(self):
+                self.value = "obj"
+                self.has_focus = False
+                self._focused = False
+
+            def focus(self):
+                self._focused = True
+
+        class DummySuggestionList:
+            def __init__(self):
+                self.results = []
+                self.selected_index = 0
+                self.has_focus = False
+
+            def update_results(self, results):
+                self.results = list(results)
+                if self.selected_index >= len(self.results):
+                    self.selected_index = 0
+
+        search_bar = DummySearchBar()
+        suggestions = DummySuggestionList()
+
+        containers = {
+            "#breadcrumb-container": DummyContainer(),
+            "#actions-container": DummyContainer(),
+            "#detail-container": DummyContainer(),
+            "#suggestions-container": DummyContainer(),
+        }
+
+        def fake_query(selector, *_, **__):
+            if selector is SearchBar:
+                return search_bar
+            if selector is SuggestionList:
+                return suggestions
+            if isinstance(selector, str) and selector in containers:
+                return containers[selector]
+            raise KeyError(selector)
+
+        app.query_one = fake_query
+
+        app.action_close_detail_or_clear()
+
+        self.assertEqual(suggestions.results, app.display_results)
+        self.assertEqual(suggestions.selected_index, app.last_selected_index)
+        self.assertTrue(getattr(search_bar, "_focused", False))
+
+    def test_on_key_does_not_double_step_results(self):
+        """Navigation should not jump two items when suggestions already have focus."""
+        try:
+            from tui.app import SingularityApp
+            from tui.widgets.search_bar import SearchBar
+            from tui.widgets.suggestion_list import SuggestionList
+        except ImportError:
+            self.skipTest("textual not installed")
+
+        # Minimal fake event to track prevent_default calls
+        class DummyEvent:
+            def __init__(self, key):
+                self.key = key
+                self.prevented = False
+
+            def prevent_default(self):
+                self.prevented = True
+
+        class DummyContainer:
+            def __init__(self):
+                self.classes = set()
+
+        app = SingularityApp(vendor="asa", config_path="", vdom="", vendor_targets=[])
+        app.drill_down_active = False
+
+        suggestions_container = DummyContainer()
+
+        search_bar = type("DummySearch", (), {"has_focus": True})()
+        class DummySuggestions:
+            def __init__(self):
+                self.results = [{"name": "a"}, {"name": "b"}, {"name": "c"}]
+                self.selected_index = 0
+                self.has_focus = False
+
+        suggestions = DummySuggestions()
+
+        # When search has focus, app drives list
+        def fake_query(selector, *_, **__):
+            if selector == "#suggestions-container":
+                return suggestions_container
+            if selector is SearchBar:
+                return search_bar
+            if selector.__name__ == "SuggestionList":
+                return suggestions
+            raise KeyError(selector)
+
+        app.query_one = fake_query
+
+        evt = DummyEvent("down")
+        app.on_key(evt)
+        self.assertEqual(suggestions.selected_index, 1)
+        self.assertTrue(evt.prevented)
+
+        # If suggestions already have focus, app should not change index
+        suggestions.has_focus = True
+        evt2 = DummyEvent("down")
+        app.on_key(evt2)
+        self.assertEqual(suggestions.selected_index, 1)
+        self.assertFalse(evt2.prevented)
+
 
 class TestActionTabsCapabilities(unittest.TestCase):
     """Ensure vendor caps hide tabs as expected."""

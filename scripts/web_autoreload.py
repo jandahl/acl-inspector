@@ -13,7 +13,9 @@ import time
 from pathlib import Path
 from typing import Dict, Iterable, List, Sequence
 
-ROOT = Path(__file__).resolve().parents[1]
+from common.project_paths import ensure_pythonpath_env, project_root
+
+ROOT = project_root()
 DEFAULT_PATTERNS = ["*.py", "*.html", "*.css", "*.js"]
 DEFAULT_PATHS = [
     ROOT / "cli" / "cli/access-list-web.py",
@@ -66,7 +68,7 @@ def changes_since(previous: Dict[Path, int], paths: Iterable[Path], patterns: Se
 
 
 def launch(args: argparse.Namespace) -> subprocess.Popen:
-    env = os.environ.copy()
+    env = ensure_pythonpath_env()
     if args.configs_cisco:
         env["ACLINSPECTOR_CONFIGS_CISCO"] = args.configs_cisco
     if args.configs_fortigate:

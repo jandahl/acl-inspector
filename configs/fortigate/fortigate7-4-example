@@ -482,6 +482,18 @@ edit "Charlie"
             set service "ALL"
             set nat disable
         next
+
+        edit 6
+            set name "Lobby-Host1-Direct"
+            set srcintf "lobby"
+            set dstintf "dest1"
+            set srcaddr "lobby-host1"
+            set dstaddr "dest1-host1"
+            set action accept
+            set schedule "always"
+            set service "HTTP"
+            set nat disable
+        next
     end
 next
 end

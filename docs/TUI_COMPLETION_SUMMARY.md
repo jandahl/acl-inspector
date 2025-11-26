@@ -11,6 +11,20 @@ This document summarizes the major TUI enhancements completed during this autono
 
 ---
 
+## Latest Fixes (2026-02-XX)
+
+- Restored full result lists after drill-down/ESC using cached search results while keeping selection.
+- Path Check now pre-fills the selected object as *destination*; source is free-form.
+- Inspect tab focuses its filter bar on open to keep keyboard navigation inside the panel.
+- FortiGate "Used in ACLs" counts policy hits (direct and via groups) and carries VDOM metadata; nested addrgrp and VIP/VIPGRP memberships are now included.
+- Ctrl+C handler exits immediately (no nags) for the TUI entrypoint.
+- Search is VDOM-aware; VDOM names stay visible with a header row in results.
+- Added regression tests for ESC restore, FortiGate ACL usage (including VIPs and nested groups), compare core (ASA/Forti), and path-check capability detection.
+- Shared helper `path_check_supported` added for frontends to gate the Path tab based on vendor/config capabilities.
+- New test fixtures for compare/usage live in `configs/fixtures/` (ASA and FortiGate variants).
+- Web API path/packet probe now uses the shared capability gate; see `docs/API_PATH_CHECK.md`.
+- TUI settings modal renders categories on open; result list size now respects settings (display/advanced results_per_page).
+
 ## Completed Features
 
 ### 1. Export Functionality (ALL TABS)

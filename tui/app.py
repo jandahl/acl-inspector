@@ -3,22 +3,30 @@
 from __future__ import annotations
 
 import logging
+import signal
 from datetime import datetime
+import os
 from pathlib import Path
 from collections.abc import MutableMapping
 from typing import Dict, List, Any, Optional, Set, Tuple
+
+# Suppress Textual's Ctrl+C nag; we handle SIGINT ourselves.
+os.environ.setdefault("TEXTUAL_DISABLE_EARLY_EXIT", "1")
 
 from textual.app import App, ComposeResult
 from textual.containers import Container, Vertical, Horizontal
 from textual.widgets import Header, Footer, Static, Input
 from textual.binding import Binding
+from textual.css.query import NoMatches
+from rich.text import Text
 
 from .widgets.search_bar import SearchBar
 from .widgets.suggestion_list import SuggestionList
 from .widgets.status_bar import StatusBar
 from .widgets.detail_view import DetailView
 from .widgets.action_tabs import ActionTabs
-from common.vendor_caps import get_caps
+from common.vendor_caps import get_caps, VendorCaps
+from analysis_core import path_check_supported
 
 
 # Set up file logging
@@ -181,6 +189,13 @@ class SingularityApp(App):
         width: 100%;
     }
 
+    #vendor-hint {
+        width: 100%;
+        padding: 0 0 1 0;
+        color: $text-muted;
+        text-style: italic;
+    }
+
     .suggestion-item {
         width: 100%;
         height: 1;
@@ -321,7 +336,10 @@ class SingularityApp(App):
         self.config_files: List[str] = []
         self.parsed_configs = ParsedConfigStore()
         self.parsed_config: Optional[Any] = None
-        self.search_results = []
+        self.search_results: List[Dict[str, Any]] = []
+        self.display_results: List[Dict[str, Any]] = []
+        self.last_results: List[Dict[str, Any]] = []
+        self.last_query: str = ""
         self.all_objects: List[Dict[str, Any]] = []
         self.selected_object: Optional[Dict[str, Any]] = None
         self.drill_down_active = False
@@ -331,8 +349,13 @@ class SingularityApp(App):
         self.loaded_vendors: Set[str] = set()
         self.is_directory: bool = False
 
+        # Initialize settings manager
+        from .state import TUISettings
+        self.settings = TUISettings()
+
         # Track current tab and data for export
         self.current_tab_id = "details"
+        self.last_tab_id = "details"
         self.current_tab_data: Optional[Any] = None
         self.current_tab_result: Optional[Any] = None  # Stores InspectResult, CompareResult, etc.
 
@@ -343,9 +366,12 @@ class SingularityApp(App):
             "action": None,
         }
 
-        # Initialize settings manager
-        from .state import TUISettings
-        self.settings = TUISettings()
+        # Result limits from settings (advanced overrides display)
+        self.results_limit = self.settings.get(
+            "advanced",
+            "results_per_page",
+            self.settings.get("display", "results_per_page", 20),
+        )
 
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
@@ -355,6 +381,7 @@ class SingularityApp(App):
             # Search section
             with Vertical(id="search-container"):
                 yield Static(self.title_summary, classes="title")
+                yield Static("", id="vendor-hint")
                 yield SearchBar(placeholder="Type to search objects, ACLs, hosts...")
 
             # Breadcrumb section (hidden until item selected)
@@ -383,6 +410,18 @@ class SingularityApp(App):
 
         logger.info(f"TUI started: vendor={self.vendor}, config={self.config_path}")
 
+        # Apply settings defaults for vendor/path if provided
+        try:
+            default_vendor = self.settings.get("config", "last_vendor", self.vendor)
+            default_path = self.settings.get("config", "last_path", self.config_path)
+            if default_vendor:
+                self.vendor = default_vendor
+            if default_path:
+                self.config_path = default_path
+                self.vendor_targets = [(self.vendor, self.config_path)]
+        except Exception:
+            pass
+
         # Parse config if vendor targets are configured
         if self.vendor_targets:
             self._load_config()
@@ -392,7 +431,7 @@ class SingularityApp(App):
         # Focus search bar on startup
         self.query_one(SearchBar).focus()
 
-        self._apply_caps_to_tabs(self.vendor)
+        self._apply_caps_to_tabs(self.vendor, self.parsed_config)
 
     def on_key(self, event) -> None:
         """Smart keyboard routing based on context."""
@@ -431,9 +470,11 @@ class SingularityApp(App):
                 suggestions = self.query_one(SuggestionList)
                 if suggestions.results:
                     search_bar = self.query_one(SearchBar)
-                    # If EITHER search bar OR suggestions have focus, navigate suggestions
-                    if search_bar.has_focus or suggestions.has_focus:
-                        # Manually update selection in suggestions
+                    # If list has focus, let it handle navigation to avoid double-steps
+                    if suggestions.has_focus:
+                        return
+                    # If search bar has focus, steer the suggestion list directly
+                    if search_bar.has_focus:
                         if key in ("down", "j"):
                             suggestions.selected_index = min(
                                 len(suggestions.results) - 1,
@@ -444,29 +485,39 @@ class SingularityApp(App):
                         event.prevent_default()
                         return
 
-        # Left/Right arrows: route to action tabs if in drill-down mode
-        # But only if an input field doesn't have focus
-        if key in ("left", "right"):
-            if self.drill_down_active:
-                # Check if any input field has focus
-                try:
-                    from textual.widgets import Input
-                    focused = self.focused
-                    if not isinstance(focused, Input):
-                        # No input has focus, route to tabs
-                        action_tabs = self.query_one(ActionTabs)
-                        if not action_tabs.has_focus:
-                            action_tabs.focus()
-                            # Let the event propagate to ActionTabs
-                            return
-                except:
-                    # If we can't check, default to old behavior
-                    action_tabs = self.query_one(ActionTabs)
-                    if not action_tabs.has_focus:
-                        action_tabs.focus()
-                        return
+        # Emergency exit: Ctrl+C should quit immediately
+        if key == "ctrl+c":
+            try:
+                print("\n\n", flush=True)
+            except Exception:
+                pass
+            os._exit(0)
+
+        # Left/Right arrows: change tabs in one step when in drill-down mode
+        if key in ("left", "right") and self.drill_down_active:
+            from textual.widgets import Input
+            focused = self.focused
+            # Allow tab switching even when filter/path inputs have focus
+            filter_inputs = {"filter-protocol", "filter-port", "filter-action", "path-src", "path-dst", "path-proto", "path-port"}
+            if isinstance(focused, Input) and getattr(focused, "id", None) not in filter_inputs:
+                return
+            action_tabs = self.query_one(ActionTabs)
+            if key == "left":
+                action_tabs._select_previous_tab()
+            else:
+                action_tabs._select_next_tab()
+            action_tabs.focus()
+            event.prevent_default()
+            return
 
     def _default_path_for_vendor(self, vendor: str) -> Path:
+        env_map = {
+            "asa": os.getenv("ACLINSPECTOR_CONFIGS_CISCO"),
+            "fortigate": os.getenv("ACLINSPECTOR_CONFIGS_FORTIGATE"),
+        }
+        env_path = env_map.get(vendor)
+        if env_path:
+            return Path(env_path)
         defaults = {
             "asa": Path("configs/cisco"),
             "fortigate": Path("configs/fortigate"),
@@ -552,23 +603,31 @@ class SingularityApp(App):
                 parsed = ASAConfig(config_text)
                 self.parsed_config = parsed
                 self._index_asa_objects(parsed, filename, config_file)
+                self.config_files.append(config_file)
+                self.parsed_configs[config_file] = parsed
+                self.loaded_vendors.add(vendor)
+                self._add_config_entry(vendor, filename, config_file, parsed)
 
             elif vendor == "fortigate":
-                from parsers.fortigate.config import FTGConfig
+                from parsers.fortigate.config import load_fortigate_vdoms
 
                 with open(config_file, "r") as handle:
                     config_text = handle.read()
-                parsed = FTGConfig(config_text, vdom=self.vdom or None)
-                self.parsed_config = parsed
-                self._index_fortigate_objects(parsed, filename, config_file, vendor)
+                vdoms = load_fortigate_vdoms(config_text, target_vdom=self.vdom or None)
+                if not vdoms:
+                    raise ValueError(f"No VDOMs parsed from {config_file}")
+                for parsed in vdoms:
+                    source_key = f"{config_file}#vdom={parsed.vdom or 'default'}"
+                    self.parsed_config = parsed
+                    self._index_fortigate_objects(parsed, filename, source_key, vendor)
+                    self.config_files.append(source_key)
+                    self.parsed_configs[source_key] = parsed
+                    self.loaded_vendors.add(vendor)
+                    self._add_config_entry(vendor, filename, source_key, parsed)
+                return
 
             else:
                 raise ValueError(f"Unsupported vendor: {vendor}")
-
-            self.config_files.append(config_file)
-            self.parsed_configs[config_file] = parsed
-            self.loaded_vendors.add(vendor)
-            self._add_config_entry(vendor, filename, config_file, parsed)
 
         except Exception as exc:
             logger.error(f"Failed to load {config_file}: {exc}")
@@ -605,7 +664,7 @@ class SingularityApp(App):
                 }
             )
 
-    def _index_fortigate_objects(self, parsed, filename: str, full_path: str, vendor: str) -> None:
+    def _index_fortigate_objects(self, parsed, filename: str, source_path: str, vendor: str) -> None:
         """Populate object list for FortiGate configs."""
         for obj_name, networks in parsed.addresses.items():
             literals = sorted(str(net) for net in networks)
@@ -618,7 +677,40 @@ class SingularityApp(App):
                     "type": "object",
                     "detail": detail,
                     "source_file": filename,
-                    "source_path": full_path,
+                    "source_path": source_path,
+                    "config": parsed,
+                    "vendor": vendor,
+                    "vdom": parsed.vdom,
+                }
+            )
+
+        # VIPs
+        for vip_name, vip in getattr(parsed, "vips", {}).items():
+            extip = vip.get("extip")
+            detail = f"VIP to {extip}" if extip else "VIP"
+            self.all_objects.append(
+                {
+                    "name": vip_name,
+                    "type": "vip",
+                    "detail": detail,
+                    "source_file": filename,
+                    "source_path": source_path,
+                    "config": parsed,
+                    "vendor": vendor,
+                    "vdom": parsed.vdom,
+                }
+            )
+
+        # VIP groups
+        for vipgrp_name, members in getattr(parsed, "vipgrps", {}).items():
+            detail = f"{len(members)} VIP members"
+            self.all_objects.append(
+                {
+                    "name": vipgrp_name,
+                    "type": "vipgrp",
+                    "detail": detail,
+                    "source_file": filename,
+                    "source_path": source_path,
                     "config": parsed,
                     "vendor": vendor,
                     "vdom": parsed.vdom,
@@ -632,7 +724,22 @@ class SingularityApp(App):
                     "type": "group",
                     "detail": detail,
                     "source_file": filename,
-                    "source_path": full_path,
+                    "source_path": source_path,
+                    "config": parsed,
+                    "vendor": vendor,
+                    "vdom": parsed.vdom,
+                }
+            )
+
+        # VDOM entry for search visibility
+        if getattr(parsed, "vdom", None):
+            self.all_objects.append(
+                {
+                    "name": parsed.vdom,
+                    "type": "vdom",
+                    "detail": f"VDOM ({len(parsed.policies)} policies)",
+                    "source_file": filename,
+                    "source_path": source_path,
                     "config": parsed,
                     "vendor": vendor,
                     "vdom": parsed.vdom,
@@ -653,9 +760,12 @@ class SingularityApp(App):
         if hasattr(parsed, "addrgrps"):
             summary_parts.append(f"{len(parsed.addrgrps)} addrgrps")
         detail = ", ".join(summary_parts) if summary_parts else "Full configuration"
+        label_name = filename
+        if getattr(parsed, "vdom", None):
+            label_name = f"{filename} ({parsed.vdom})"
         self.all_objects.append(
             {
-                "name": filename,
+                "name": label_name,
                 "type": "config",
                 "detail": detail,
                 "source_file": filename,
@@ -688,13 +798,73 @@ class SingularityApp(App):
         except Exception:
             pass
 
-    def _apply_caps_to_tabs(self, vendor: str) -> None:
-        """Update the action tabs when the selected vendor changes."""
+    def _effective_caps(self, vendor: str, config: Optional[Any] = None) -> Optional[VendorCaps]:
+        """Return vendor caps adjusted for config-specific support (e.g., path check)."""
         caps = get_caps(vendor)
+        if not caps:
+            return None
+        try:
+            if config is not None and not path_check_supported(config):
+                caps = VendorCaps(
+                    name=caps.name,
+                    label=caps.label,
+                    config_field=caps.config_field,
+                    requires_vdom=caps.requires_vdom,
+                    supports_inspect=caps.supports_inspect,
+                    supports_compare=caps.supports_compare,
+                    supports_find=caps.supports_find,
+                    supports_packet=False,
+                )
+        except Exception:
+            pass
+        return caps
+
+    def _apply_caps_to_tabs(self, vendor: str, config: Optional[Any] = None) -> None:
+        """Update the action tabs when the selected vendor changes."""
+        caps = self._effective_caps(vendor, config)
         try:
             self.query_one(ActionTabs).apply_vendor_caps(caps)
         except Exception:
             pass
+        self._update_vendor_hint(vendor, caps)
+
+    @staticmethod
+    def _describe_vendor_caps(caps: Optional[VendorCaps], vendor: str) -> str:
+        """Return a user-facing capability summary string."""
+        if caps:
+            label = caps.label
+            features = []
+            if caps.supports_inspect:
+                features.append("Inspect")
+            if caps.supports_compare:
+                features.append("Compare")
+            if caps.supports_find:
+                features.append("Find")
+            if caps.supports_packet:
+                features.append("Packet")
+            feature_text = ", ".join(features) if features else "No features enabled"
+            suffix = "Requires VDOM" if caps.requires_vdom else ""
+        elif vendor == "all":
+            label = "ALL"
+            feature_text = "Multi-vendor: capabilities depend on each config"
+            suffix = ""
+        else:
+            label = vendor.upper() if vendor else "Unknown"
+            feature_text = "Capabilities unknown"
+            suffix = ""
+        parts = [f"{label}: {feature_text}"]
+        if suffix:
+            parts.append(suffix)
+        return " · ".join(parts)
+
+    def _update_vendor_hint(self, vendor: str, caps: Optional[VendorCaps]) -> None:
+        """Update the vendor capability hint beneath the title."""
+        try:
+            widget = self.query_one("#vendor-hint", Static)
+        except NoMatches:
+            return
+        summary = self._describe_vendor_caps(caps, vendor)
+        widget.update(Text(summary))
 
     def _get_object_config(self, obj: Optional[Dict[str, Any]]) -> Optional[Any]:
         if not obj:
@@ -783,10 +953,12 @@ class SingularityApp(App):
             parts.append("ports=" + ",".join(ports))
         return " ".join(parts) if parts else "any"
 
-    def _search_objects(self, query: str, limit: int = 20) -> List[Dict[str, Any]]:
+    def _search_objects(self, query: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         """Return search results for a query."""
         if not query:
             return []
+        if limit is None:
+            limit = self.results_limit
         query_lower = query.lower()
         matches: List[Dict[str, Any]] = []
         for obj in self.all_objects:
@@ -794,7 +966,8 @@ class SingularityApp(App):
             source_hit = query_lower in (obj.get("source_file", "") or "").lower()
             path_hit = query_lower in (obj.get("source_path", "") or "").lower()
             detail_hit = query_lower in (obj.get("detail", "") or "").lower()
-            if name_hit or source_hit or path_hit or detail_hit:
+            vdom_hit = query_lower in (obj.get("vdom", "") or "").lower()
+            if name_hit or source_hit or path_hit or detail_hit or vdom_hit:
                 matches.append(obj)
                 if len(matches) >= limit:
                     break
@@ -807,12 +980,18 @@ class SingularityApp(App):
         logger.debug(f"Search event received: query='{query}'")
 
         if not query:
+            self.last_query = ""
+            self.last_results = []
+            self.display_results = []
             self.clear_results()
             return
 
         results = self._search_objects(query)
         logger.debug(f"Found {len(results)} matching objects for query '{query}'")
 
+        self.last_query = query.lower()
+        self.last_results = results[:]
+        self.display_results = results[:]
         suggestions = self.query_one(SuggestionList)
         suggestions.update_results(results)
 
@@ -830,13 +1009,14 @@ class SingularityApp(App):
 
         self.selected_object = message.item
         self.drill_down_active = True
+        self.current_tab_id = "details"
 
         # Save the current selection index from SuggestionList
         suggestions = self.query_one(SuggestionList)
         self.last_selected_index = suggestions.selected_index
 
         obj_vendor = message.item.get("vendor", self.vendor)
-        self._apply_caps_to_tabs(obj_vendor)
+        self._apply_caps_to_tabs(obj_vendor, obj_config)
 
         # Update breadcrumb
         breadcrumb = self.query_one("#breadcrumb", Static)
@@ -852,13 +1032,33 @@ class SingularityApp(App):
         suggestions_container = self.query_one("#suggestions-container")
         suggestions_container.add_class("collapsed")
 
-        # Show detail view with default tab (details)
+        # Show detail view with remembered tab (falls back to details)
         detail_view = self.query_one(DetailView)
         obj_config = self._get_object_config(message.item)
         detail_view.update_object(message.item, obj_config)
         self.query_one("#detail-container").add_class("visible")
 
         is_config_entry = message.item.get("type") == "config"
+        try:
+            action_tabs = self.query_one(ActionTabs)
+            target_tab = "details" if is_config_entry else getattr(self, "last_tab_id", "details") or "details"
+            btn = next((b for b in action_tabs._buttons if b.id == f"tab-{target_tab}"), None)
+            if btn and btn.hidden:
+                target_tab = "details"
+            if is_config_entry:
+                self.last_tab_id = "details"
+            self.current_tab_id = target_tab
+            action_tabs._select_tab(target_tab)
+            tab_label = next((t["label"] for t in action_tabs.tabs if t["id"] == target_tab), target_tab)
+            self.on_action_tabs_tab_selected(ActionTabs.TabSelected(target_tab, tab_label))
+        except Exception as exc:
+            logger.error(f"Failed to restore tab selection, falling back to details: {exc}", exc_info=True)
+            self.current_tab_id = "details"
+            try:
+                self.on_action_tabs_tab_selected(ActionTabs.TabSelected("details", "Details"))
+            except Exception:
+                pass
+
         if is_config_entry:
             actions_container.remove_class("visible")
         else:
@@ -876,7 +1076,7 @@ class SingularityApp(App):
         from rich.console import Group
         from rich.text import Text
         from rich.panel import Panel
-        from textual.widgets import Static
+        from textual.widgets import Static, Input
         from .widgets.filter_bar import FilterBar
 
         detail_view = self.query_one(DetailView)
@@ -898,6 +1098,7 @@ class SingularityApp(App):
         # Mount filter bar
         filter_bar = FilterBar()
         detail_view.mount(filter_bar)
+        self.current_filter_bar = filter_bar
 
         # Run inspect with current filters
         try:
@@ -963,6 +1164,13 @@ class SingularityApp(App):
             rich_content = Group(filter_text, rich_content)
 
         detail_view.mount(Static(rich_content, classes="detail-content"))
+        try:
+            filter_bar.query_one("#filter-protocol", Input).focus()
+        except Exception:
+            try:
+                detail_view.focus()
+            except Exception:
+                pass
 
         logger.info(f"Inspect completed: {result.total_rules} rules found (filters: {self.inspect_filters})")
 
@@ -1006,7 +1214,7 @@ class SingularityApp(App):
         help_text = Text()
         help_text.append("Path Check - Packet Flow Simulation\n\n", style="bold cyan")
         help_text.append("Simulate a packet flow through the firewall to see NAT + ACL outcome.\n", style="white")
-        help_text.append("Source is pre-filled with the selected object.\n\n", style="dim")
+        help_text.append("Destination is pre-filled with the selected object.\n\n", style="dim")
 
         detail_view.mount(Static(help_text, classes="detail-content"))
 
@@ -1014,14 +1222,14 @@ class SingularityApp(App):
         form_container = Vertical(id="path-form")
         detail_view.mount(form_container)
 
-        # Source field (pre-filled with selected object)
+        # Source field
         form_container.mount(Static("Source IP/Object:", classes="filter-field-label"))
-        src_input = Input(value=self.selected_object['name'], id="path-src", classes="filter-input")
+        src_input = Input(placeholder="e.g., 10.1.1.1 or InsideHost", id="path-src", classes="filter-input")
         form_container.mount(src_input)
 
         # Destination field
         form_container.mount(Static("Destination IP/Object:", classes="filter-field-label"))
-        dst_input = Input(placeholder="e.g., 10.1.1.1 or WebServer", id="path-dst", classes="filter-input")
+        dst_input = Input(value=self.selected_object['name'], placeholder="e.g., 10.1.1.1 or WebServer", id="path-dst", classes="filter-input")
         form_container.mount(dst_input)
 
         # Protocol field
@@ -1248,6 +1456,7 @@ class SingularityApp(App):
 
         # Update current tab tracking
         self.current_tab_id = message.tab_id
+        self.last_tab_id = message.tab_id
         self.current_tab_data = None
         self.current_tab_result = None
 
@@ -1337,26 +1546,27 @@ class SingularityApp(App):
 
             # Restore full search results (FIX #5b: keep search term)
             search_bar = self.query_one(SearchBar)
-            query = search_bar.value.strip().lower()
-            if query:
-                # Re-run search to restore results
-                results = []
-                for obj in self.all_objects:
-                    if query in obj["name"].lower():
-                        results.append(obj)
-                        if len(results) >= 20:
-                            break
-                suggestions = self.query_one(SuggestionList)
-                suggestions.update_results(results)
+            query = search_bar.value.strip().lower() or self.last_query or ""
 
-                # Restore the previous selection
-                if 0 <= self.last_selected_index < len(results):
-                    suggestions.selected_index = self.last_selected_index
+            # Prefer cached display results to avoid truncation
+            cached_results = list(self.display_results or self.last_results or [])
+            results = cached_results
 
-                # FIX #5b: Focus search bar (not suggestions)
-                search_bar.focus()
-            else:
-                self.clear_results()
+            # If cache is empty but query exists, re-run search
+            if not results and query:
+                results = self._search_objects(query, limit=len(self.all_objects))
+
+            suggestions = self.query_one(SuggestionList)
+            suggestions.update_results(results)
+
+            # Restore the previous selection
+            if 0 <= self.last_selected_index < len(results):
+                suggestions.selected_index = self.last_selected_index
+
+            # Prefer focusing suggestions so arrows continue list navigation
+            try:
+                suggestions.focus()
+            except Exception:
                 search_bar.focus()
 
             logger.info("Exited drill-down mode")
@@ -1658,6 +1868,7 @@ class SingularityApp(App):
 
     def clear_results(self) -> None:
         """Clear search results."""
+        self.display_results = []
         suggestions = self.query_one(SuggestionList)
         suggestions.update_results([])
 
@@ -1684,7 +1895,22 @@ def main(argv=None):
         vdom=args.vdom or "",
         vendor_targets=vendor_targets,
     )
-    app.run()
+    try:
+        def _sigint_handler(_sig, _frame):
+            try:
+                print("\n\n", flush=True)
+            except Exception:
+                pass
+            os._exit(0)
+
+        signal.signal(signal.SIGINT, _sigint_handler)
+    except Exception:
+        pass
+    try:
+        app.run()
+    except KeyboardInterrupt:
+        # Ensure silent exit without Textual admonition
+        os._exit(0)
 
 
 if __name__ == "__main__":

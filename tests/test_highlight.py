@@ -2,7 +2,9 @@ import unittest
 import importlib.util
 import os
 
-_MOD_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'cli', 'cli/access-list-web.py')
+from common.project_paths import cli_path
+
+_MOD_PATH = str(cli_path('access-list-web.py'))
 spec = importlib.util.spec_from_file_location('access_list_web', _MOD_PATH)
 mod = importlib.util.module_from_spec(spec)
 assert spec and spec.loader
@@ -23,4 +25,3 @@ class TestHighlight(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-

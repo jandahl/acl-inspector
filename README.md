@@ -142,6 +142,7 @@ TUI (Terminal User Interface)
   - **Interactive settings**: Configure display, search, and advanced options (Ctrl+Shift+S)
   - **Theme toggle**: Switch between dark/light themes (Ctrl+T)
   - **Path check**: Simulate packet flows through NAT and ACLs (ASA + FortiGate)
+  - **Vendor hints**: Title banner shows the selected vendor and which modes are supported (Inspect/Compare/Find/Packet)
 
 - Keyboard shortcuts:
   - `Ctrl+O`: Main menu

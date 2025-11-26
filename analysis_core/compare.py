@@ -62,9 +62,6 @@ def compare_objects(
         >>> print(f"Removing {len(result.old_only_rules)} rules")
         >>> print(f"Adding {len(result.new_only_rules)} rules")
     """
-    # Import here to avoid circular dependencies
-    from parsers.cisco.asa.inspect import compare_old_new
-
     # Build service filter
     service_filter = None
     if protocol:
@@ -72,31 +69,54 @@ def compare_objects(
         if dport:
             service_filter["dports"] = {dport}
 
-    # Get raw config text
-    if hasattr(config, 'raw_text'):
-        cfg_text = config.raw_text
-    elif isinstance(config, str):
-        cfg_text = config
-    else:
-        cfg_text = str(config)
+    # Determine vendor and invoke appropriate compare
+    result_dict = None
 
-    # Call existing compare logic
-    result_dict = compare_old_new(
-        cfg_text,
-        old_target,
-        new_target,
-        service_filter=service_filter,
-        include_any=include_any
-    )
+    # FortiGate path
+    try:
+        from parsers.fortigate.config import FTGConfig  # type: ignore
+        from parsers.fortigate.inspect import compare_old_new as ftg_compare  # type: ignore
+    except Exception:
+        FTGConfig = tuple()  # type: ignore
+        ftg_compare = None  # type: ignore
+
+    if ftg_compare and isinstance(config, FTGConfig):
+        cfg_text = getattr(config, "raw_text", str(config))
+        result_dict = ftg_compare(
+            cfg_text,
+            old_target,
+            new_target,
+            service_filter=service_filter,
+            vdom=getattr(config, "vdom", None),
+        )
+
+    # ASA/default path
+    if result_dict is None:
+        from parsers.cisco.asa.inspect import compare_old_new  # type: ignore
+
+        if hasattr(config, 'raw_text'):
+            cfg_text = config.raw_text
+        elif isinstance(config, str):
+            cfg_text = config
+        else:
+            cfg_text = str(config)
+
+        result_dict = compare_old_new(
+            cfg_text,
+            old_target,
+            new_target,
+            service_filter=service_filter,
+            include_any=include_any
+        )
 
     # Convert to CompareResult
     return CompareResult(
         old_name=old_target,
         new_name=new_target,
-        old_only_rules=result_dict["removed_from_old"],
-        new_only_rules=result_dict["added_to_new"],
+        old_only_rules=result_dict.get("removed_from_old", []),
+        new_only_rules=result_dict.get("added_to_new", []),
         common_rules=[
-            r for r in result_dict["old_hits"]
-            if r in result_dict["new_hits"]
+            r for r in result_dict.get("old_hits", [])
+            if r in result_dict.get("new_hits", [])
         ]
     )

@@ -301,6 +301,6 @@ Understanding the planned evolution helps maintain architecture alignment:
 
 - **AGENTS.md**: Full development guidelines (migration plan, parsing rules, conventions)
 - **README.md**: User-facing documentation (setup, examples, features)
-- **ABOUT.md**: Project context and motivation
+- **docs/ABOUT.md**: Project context and motivation
 - Unit testing is important
 - This is not in production yet so "backwards compatibility" doesn't matter yet

@@ -159,7 +159,7 @@ def register_pages(router: Router, state: AppState) -> None:
     design_docs = {
         "/design/hld": ("High-Level Design", Path("docs/HIGH-LEVEL-DESIGN.md")),
         "/design/api": ("API & Module Notes", Path("docs/AGENTS.md")),
-        "/design/about": ("About ACL Inspector", Path("ABOUT.md")),
+        "/design/about": ("About ACL Inspector", Path("docs/ABOUT.md")),
     }
 
     design_diagrams = {

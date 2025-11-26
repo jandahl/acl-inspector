@@ -4,6 +4,7 @@ from .index import IndexEntry, IndexManager
 from .inspect import inspect_object, InspectResult
 from .compare import compare_objects, CompareResult
 from .acl_usage import find_object_usage, UsageResult
+from .path_caps import path_check_supported
 
 # Formatters require rich/textual - import conditionally
 try:
@@ -41,6 +42,7 @@ __all__ = [
     "CompareResult",
     "find_object_usage",
     "UsageResult",
+    "path_check_supported",
     "format_inspect_rich",
     "format_compare_rich",
     "format_inspect_json",
