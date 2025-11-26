@@ -4,7 +4,9 @@ import os
 import types
 import unittest
 
-_MOD_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "cli", "cli/access-list-web.py")
+from common.project_paths import cli_path
+
+_MOD_PATH = str(cli_path("access-list-web.py"))
 spec = importlib.util.spec_from_file_location("access_list_web_static", _MOD_PATH)
 module = importlib.util.module_from_spec(spec)
 assert spec and spec.loader

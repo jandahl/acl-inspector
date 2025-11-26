@@ -12,7 +12,7 @@ else
 PYTHON ?= python3
 endif
 
-.PHONY: help venv lint test unit examples web web-watch build clean themes themes-refresh fonts
+.PHONY: help venv lint test unit examples tui web web-watch build clean themes themes-refresh fonts
 
 help:
 	@echo "Targets:"
@@ -21,6 +21,7 @@ help:
 	@echo "  unit      - run python -m unittest"
 	@echo "  test      - run self-test via CLI"
 	@echo "  examples  - print CLI examples"
+	@echo "  tui       - launch the terminal UI"
 	@echo "  web       - run the web UI (localhost:$(WEB_PORT))"
 	@echo "             (override config dirs: make web CONFIGS_CISCO=/path/to/asa CONFIGS_FORTIGATE=/path/to/ftg)"
 	@echo "  web-e2e   - run Playwright-based UI smoke tests"
@@ -55,6 +56,12 @@ test-minimal:
 
 examples:
 	$(PYTHON) aclinspector.py inspect --examples
+
+tui:
+	$(if $(CONFIGS_CISCO),ACLINSPECTOR_CONFIGS_CISCO=$(CONFIGS_CISCO) ,)\
+	$(if $(CONFIGS_FORTIGATE),ACLINSPECTOR_CONFIGS_FORTIGATE=$(CONFIGS_FORTIGATE) ,)\
+	$(if $(ACLINSPECTOR_PREWARM_ALL),ACLINSPECTOR_PREWARM_ALL=$(ACLINSPECTOR_PREWARM_ALL) ,)\
+	PYTHONPYCACHEPREFIX=.pyc_cache $(PYTHON) aclinspector.py tui $(ARGS)
 
 web:
 	$(if $(CONFIGS_CISCO),ACLINSPECTOR_CONFIGS_CISCO=$(CONFIGS_CISCO) ,)\

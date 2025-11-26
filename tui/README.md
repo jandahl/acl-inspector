@@ -18,6 +18,13 @@ pip install textual rich
 ./aclinspector.py tui --vendor fortigate --config path/to/fortigate.conf --vdom root
 ```
 
+### Highlights
+
+- Fuzzy search with keyboard navigation (Up/Down/j/k) and instant filtering.
+- Drill-down tabs for Details, Inspect, Compare, Used in ACLs, and Path Check.
+- Config-aware vendor hints directly under the title show which actions (Inspect/Compare/Find/Packet) are available for the active vendor and whether a VDOM is required.
+- Export manager (Ctrl+E) for JSON/CSV/TXT plus theme toggle (Ctrl+T) and interactive settings (Ctrl+Shift+S).
+
 ### Status
 
 **Current Implementation:** MVP skeleton (Phase 1)

@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from parsers.cisco import asa as asa_parser
 from parsers.fortigate import path_check as fortigate_path
+from analysis_core import path_check_supported
 from ..vendor_caps import get_caps
 from ..state import AppState
 from utils.config import clean_config_text, load_config_text
@@ -662,6 +663,8 @@ def packet_probe(
         return 500, {"error": f"read_failed: {exc}"}
     ports = _parse_ports(dports)
     try:
+        if not path_check_supported(text):
+            return 400, {"error": "packet_not_supported"}
         if vendor_lower == "asa":
             result = asa_parser.path_check(
                 text,

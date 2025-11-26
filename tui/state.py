@@ -34,6 +34,7 @@ class TUISettings:
             "enable_logging": True,
             "log_level": "INFO",  # DEBUG, INFO, WARNING, ERROR
             "cache_enabled": True,
+            "results_per_page": 50,
         },
     }
 

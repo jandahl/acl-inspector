@@ -35,6 +35,7 @@ class DetailView(VerticalScroll):
         self.compare_suggestions_widget: Optional[Static] = None
         self.compare_filtered_suggestions: List[Dict[str, Any]] = []
         self.compare_selected_index: int = 0
+        self.can_focus = True
 
     def _safe_remove_children(self) -> None:
         """Remove child widgets without requiring an active app context."""
@@ -55,6 +56,10 @@ class DetailView(VerticalScroll):
         """
         self._safe_remove_children()
         self.mount(Static(content, classes="detail-content"))
+        try:
+            self.focus()
+        except Exception:
+            pass
 
     def update_object(self, obj: Dict[str, Any], config=None) -> None:
         """Update the displayed object details.
@@ -71,6 +76,10 @@ class DetailView(VerticalScroll):
         # Create rich content
         content = self._format_detail(obj, config)
         self.mount(Static(content, classes="detail-content"))
+        try:
+            self.focus()
+        except Exception:
+            pass
 
     def _format_detail(self, obj: Dict[str, Any], config=None) -> RenderableType:
         """Format object details as a Rich table.

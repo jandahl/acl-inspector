@@ -44,4 +44,21 @@ be executed incrementally once priorities are confirmed.
 
 Once we begin implementation we can break these into discrete issues (preload,
 cache, keyboard UX, etc.) and track progress. For now this plan serves as the
-backlog for smoothing the experience.***
+backlog for smoothing the experience.
+
+## Priority Buckets
+
+- **Immediate (low effort, high impact)**
+  - Preload hint JSON + cached first query
+  - Inline skeleton while results stream
+  - Keyboard launcher (`Ctrl+K`) and arrow-key focus fixes
+
+- **Next (requires coordination with backend)**
+  - Aggressive caching of suggestions with cache invalidation hooks
+  - Telemetry plumbing (latency buckets, query metadata)
+  - Inline filter chips + result grouping
+
+- **Future (larger design work)**
+  - Multi-column/global suggestion layout overhaul
+  - Health/telemetry endpoints for ops dashboards
+  - Visual polish alignment with TUI (shared tokens/themes)
