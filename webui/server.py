@@ -24,7 +24,11 @@ from .handlers import register_api, register_pages
 from .handlers.static import register_static
 
 # Importing the legacy module lazily keeps top-level side effects contained.
-_legacy = import_module("access-list-web")
+# The script lives under cli/ in the modern layout; ensure it is importable.
+try:
+    _legacy = import_module("access-list-web")
+except ModuleNotFoundError:
+    _legacy = import_module("cli.access-list-web")
 
 
 @dataclass
@@ -197,6 +201,7 @@ def run_server(settings: settings_mod.Settings) -> None:
     register_pages(router, state)
     register_static(router, state)
     server = build_httpd(settings, state, router)
+
     if settings.server.prewarm_all and hasattr(_legacy, "prewarm_all_configs"):
         count = _legacy.prewarm_all_configs(server)
         print(f"Prewarmed indices for {count} config(s).")

@@ -22,6 +22,7 @@ from typing import List, Optional, Sequence, Tuple
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
 
+from common.project_paths import project_root
 from parsers.cisco import asa as asa_parser
 from webui.themes import DEFAULT_THEMES as _DEFAULT_THEMES, load_themes as _load_themes
 from webui.handlers import actions as actions_handlers
@@ -212,7 +213,7 @@ class WebHandler(BaseHTTPRequestHandler):
             html = pages_handlers._render_home(state)
             if 'function storageGet' not in html:
                 try:
-                    app_js_path = Path(__file__).resolve().parent / 'webui' / 'static' / 'app.js'
+                    app_js_path = project_root() / 'webui' / 'static' / 'app.js'
                     app_js = app_js_path.read_text(encoding='utf-8')
                     safe_js = app_js.replace('</', '<\\/')
                     marker = '</script>'

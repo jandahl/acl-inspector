@@ -176,16 +176,33 @@ class SettingsScreen(ModalScreen):
 
     def on_mount(self) -> None:
         """Initialize when mounted."""
-        # Select first category
-        category_list = self.query_one("#category-list", OptionList)
-        category_list.highlighted = 0
-        category_list.focus()
-        self._show_category_options("display")
+        # Select first category and render options after layout is ready
+        try:
+            category_list = self.query_one("#category-list", OptionList)
+            category_list.highlighted = 0
+            category_list.focus()
+        except Exception:
+            pass
+        try:
+            self._show_category_options(self.current_category)
+        except Exception:
+            self.call_after_refresh(lambda: self._show_category_options(self.current_category))
+
+    def on_screen_resume(self) -> None:
+        """Re-render options when screen is shown again."""
+        self._show_category_options(self.current_category)
 
     def on_option_list_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
         """Handle category highlight change (instant switching)."""
         if event.option_list.id == "category-list" and event.option_index is not None:
             # Map index to category ID
+            category_id, _ = self.categories[event.option_index]
+            self.current_category = category_id
+            self._show_category_options(category_id)
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        """Handle category selection via Enter/Click."""
+        if event.option_list.id == "category-list" and event.option_index is not None:
             category_id, _ = self.categories[event.option_index]
             self.current_category = category_id
             self._show_category_options(category_id)
@@ -217,6 +234,14 @@ class SettingsScreen(ModalScreen):
 
     def _build_display_widgets(self, container: VerticalScroll) -> None:
         """Build display settings widgets."""
+        def add_row(label_text, control_widget, desc: str = ""):
+            row = Horizontal(classes="setting-row")
+            container.mount(row)
+            row.mount(Label(label_text, classes="setting-label"))
+            row.mount(control_widget)
+            if desc:
+                container.mount(Static(desc, classes="setting-description"))
+
         # Theme (informational - toggle with Ctrl+T)
         theme = self.settings_manager.get("display", "theme", "textual-dark")
         theme_label = "Dark" if theme == "textual-dark" else "Light"
@@ -227,134 +252,187 @@ class SettingsScreen(ModalScreen):
         # Show line numbers
         show_lines = self.settings_manager.get("display", "show_line_numbers", True)
 
-        with container:
-            with Horizontal(classes="setting-row"):
-                yield Label("Show line numbers", classes="setting-label")
-                yield Switch(value=show_lines, id="setting-display-show_line_numbers", classes="setting-control")
-            yield Static("Display line numbers in detail views", classes="setting-description")
+        add_row(
+            "Show line numbers",
+            Switch(value=show_lines, id="setting-display-show_line_numbers", classes="setting-control"),
+            "Display line numbers in detail views",
+        )
 
         # Results per page
         results = self.settings_manager.get("display", "results_per_page", 20)
 
-        with container:
-            with Horizontal(classes="setting-row"):
-                yield Label("Results per page", classes="setting-label")
-                yield Select(
-                    [("10", 10), ("20", 20), ("50", 50), ("100", 100)],
-                    value=results,
-                    id="setting-display-results_per_page",
-                    classes="setting-control"
-                )
-            yield Static("Number of search results to display", classes="setting-description")
+        add_row(
+            "Results per page",
+            Select(
+                [("10", 10), ("20", 20), ("50", 50), ("100", 100)],
+                value=results,
+                id="setting-display-results_per_page",
+                classes="setting-control",
+            ),
+            "Number of search results to display",
+        )
 
         # Source file display
         source_display = self.settings_manager.get("display", "source_file_display", "auto")
 
-        with container:
-            with Horizontal(classes="setting-row"):
-                yield Label("Source file display", classes="setting-label")
-                yield Select(
-                    [("Auto (multi-config only)", "auto"), ("Always", "always"), ("Never", "never")],
-                    value=source_display,
-                    id="setting-display-source_file_display",
-                    classes="setting-control"
-                )
-            yield Static("When to show config file source", classes="setting-description")
+        add_row(
+            "Source file display",
+            Select(
+                [("Auto (multi-config only)", "auto"), ("Always", "always"), ("Never", "never")],
+                value=source_display,
+                id="setting-display-source_file_display",
+                classes="setting-control",
+            ),
+            "When to show config file source",
+        )
 
     def _build_search_widgets(self, container: VerticalScroll) -> None:
         """Build search settings widgets."""
+        def add_row(label_text, control_widget, desc: str = ""):
+            row = Horizontal(classes="setting-row")
+            container.mount(row)
+            row.mount(Label(label_text, classes="setting-label"))
+            row.mount(control_widget)
+            if desc:
+                container.mount(Static(desc, classes="setting-description"))
+
         # Search mode
         mode = self.settings_manager.get("search", "mode", "fuzzy")
 
-        with container:
-            with Horizontal(classes="setting-row"):
-                yield Label("Search mode", classes="setting-label")
-                yield Select(
-                    [("Fuzzy (substring)", "fuzzy"), ("Prefix", "prefix"), ("Exact", "exact")],
-                    value=mode,
-                    id="setting-search-mode",
-                    classes="setting-control"
-                )
-            yield Static("Fuzzy mode is recommended for most use cases", classes="setting-description")
+        add_row(
+            "Search mode",
+            Select(
+                [("Fuzzy (substring)", "fuzzy"), ("Prefix", "prefix"), ("Exact", "exact")],
+                value=mode,
+                id="setting-search-mode",
+                classes="setting-control",
+            ),
+            "Fuzzy mode is recommended for most use cases",
+        )
 
         # Case sensitive
         case_sens = self.settings_manager.get("search", "case_sensitive", False)
 
-        with container:
-            with Horizontal(classes="setting-row"):
-                yield Label("Case sensitive", classes="setting-label")
-                yield Switch(value=case_sens, id="setting-search-case_sensitive", classes="setting-control")
-            yield Static("When disabled, search ignores case", classes="setting-description")
+        add_row(
+            "Case sensitive",
+            Switch(value=case_sens, id="setting-search-case_sensitive", classes="setting-control"),
+            "When disabled, search ignores case",
+        )
 
         # Max results
         max_results = self.settings_manager.get("search", "max_results", 50)
 
-        with container:
-            with Horizontal(classes="setting-row"):
-                yield Label("Max results", classes="setting-label")
-                yield Select(
-                    [("20", 20), ("50", 50), ("100", 100), ("500", 500)],
-                    value=max_results,
-                    id="setting-search-max_results",
-                    classes="setting-control"
-                )
-            yield Static("Higher values may slow down large configs", classes="setting-description")
+        add_row(
+            "Max results",
+            Select(
+                [("20", 20), ("50", 50), ("100", 100), ("500", 500)],
+                value=max_results,
+                id="setting-search-max_results",
+                classes="setting-control",
+            ),
+            "Higher values may slow down large configs",
+        )
 
     def _build_config_widgets(self, container: VerticalScroll) -> None:
-        """Build config settings widgets (informational only)."""
+        """Build config settings widgets."""
+        def add_row(label_text, control_widget, desc: str = ""):
+            row = Horizontal(classes="setting-row")
+            container.mount(row)
+            row.mount(Label(label_text, classes="setting-label"))
+            row.mount(control_widget)
+            if desc:
+                container.mount(Static(desc, classes="setting-description"))
+
         # Last vendor
         vendor = self.settings_manager.get("config", "last_vendor", "asa")
 
-        container.mount(Static(f"\nLast vendor: {vendor.upper()}", classes="setting-description"))
+        add_row(
+            "Default vendor",
+            Select(
+                [("ASA", "asa"), ("FortiGate", "fortigate"), ("All", "all")],
+                value=vendor,
+                id="setting-config-last_vendor",
+                classes="setting-control",
+            ),
+            "Vendor to load by default on startup",
+        )
 
         # Last path
         last_path = self.settings_manager.get("config", "last_path", "")
-        container.mount(Static(f"Last config path: {last_path if last_path else '(none)'}", classes="setting-description"))
+        add_row(
+            "Last config path",
+            Input(
+                value=last_path,
+                placeholder="configs/cisco or configs/fortigate",
+                id="setting-config-last_path",
+                classes="setting-control",
+            ),
+            "Override default config path for next launch",
+        )
 
         # Auto reload
         auto_reload = self.settings_manager.get("config", "auto_reload", False)
 
-        with container:
-            with Horizontal(classes="setting-row"):
-                yield Label("Auto reload", classes="setting-label")
-                yield Switch(value=auto_reload, id="setting-config-auto_reload", classes="setting-control")
-            yield Static("Automatically reload config on file changes", classes="setting-description")
-
-        container.mount(Static("\nNote: Config loading is managed at startup.", classes="setting-description"))
+        add_row(
+            "Auto reload",
+            Switch(value=auto_reload, id="setting-config-auto_reload", classes="setting-control"),
+            "Automatically reload config on file changes",
+        )
 
     def _build_advanced_widgets(self, container: VerticalScroll) -> None:
         """Build advanced settings widgets."""
+        def add_row(label_text, control_widget, desc: str = ""):
+            row = Horizontal(classes="setting-row")
+            container.mount(row)
+            row.mount(Label(label_text, classes="setting-label"))
+            row.mount(control_widget)
+            if desc:
+                container.mount(Static(desc, classes="setting-description"))
+
         # Logging enabled
         logging_enabled = self.settings_manager.get("advanced", "enable_logging", True)
 
-        with container:
-            with Horizontal(classes="setting-row"):
-                yield Label("Enable logging", classes="setting-label")
-                yield Switch(value=logging_enabled, id="setting-advanced-enable_logging", classes="setting-control")
-            yield Static("Write diagnostic logs to logs/ directory", classes="setting-description")
+        add_row(
+            "Enable logging",
+            Switch(value=logging_enabled, id="setting-advanced-enable_logging", classes="setting-control"),
+            "Write diagnostic logs to logs/ directory",
+        )
 
         # Log level
         log_level = self.settings_manager.get("advanced", "log_level", "INFO")
 
-        with container:
-            with Horizontal(classes="setting-row"):
-                yield Label("Log level", classes="setting-label")
-                yield Select(
-                    [("DEBUG", "DEBUG"), ("INFO", "INFO"), ("WARNING", "WARNING"), ("ERROR", "ERROR")],
-                    value=log_level,
-                    id="setting-advanced-log_level",
-                    classes="setting-control"
-                )
-            yield Static("Verbosity of log messages", classes="setting-description")
+        add_row(
+            "Log level",
+            Select(
+                [("DEBUG", "DEBUG"), ("INFO", "INFO"), ("WARNING", "WARNING"), ("ERROR", "ERROR")],
+                value=log_level,
+                id="setting-advanced-log_level",
+                classes="setting-control",
+            ),
+            "Verbosity of log messages",
+        )
 
         # Cache enabled
         cache_enabled = self.settings_manager.get("advanced", "cache_enabled", True)
 
-        with container:
-            with Horizontal(classes="setting-row"):
-                yield Label("Cache enabled", classes="setting-label")
-                yield Switch(value=cache_enabled, id="setting-advanced-cache_enabled", classes="setting-control")
-            yield Static("Enable disk cache for faster startup", classes="setting-description")
+        add_row(
+            "Cache enabled",
+            Switch(value=cache_enabled, id="setting-advanced-cache_enabled", classes="setting-control"),
+            "Enable disk cache for faster startup",
+        )
+
+        # Results per page (global override)
+        results = self.settings_manager.get("advanced", "results_per_page", 50)
+        add_row(
+            "Results per page (global)",
+            Select(
+                [("20", 20), ("50", 50), ("100", 100), ("500", 500)],
+                value=results,
+                id="setting-advanced-results_per_page",
+                classes="setting-control",
+            ),
+            "Override display results per page for all tabs",
+        )
 
         container.mount(Static("\nNote: Advanced settings require restart to take effect.", classes="setting-description"))
 

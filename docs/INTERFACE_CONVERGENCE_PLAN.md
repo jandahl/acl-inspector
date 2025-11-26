@@ -52,8 +52,8 @@ Each surface (CLI/TUI/web) queries this to decide:
    - Vendor selection drives tab enablement + config dropdowns automatically (no manual `if vendor ==` checks).
    - History/export state records vendor + VDOM so replay works cross-vendor.
 3. **TUI alias / branding**:
-   - Add `--singularitty` CLI flag that maps to `python3 -m tui` (implemented via `cli/access-list-inspector.py`).
-   - Display vendor/capability hints in the TUI header so users know which modes work per device.
+  - [x] Add `--singularitty` CLI flag that maps to `python3 -m tui` (implemented via `cli/access-list-inspector.py`).
+  - [x] Display vendor/capability hints in the TUI header so users know which modes work per device.
 4. **Legacy web entry point** (`cli/access-list-web.py`):
    - Reuse the shared handlers/capability map to avoid ASA-only regressions; acts as a “bridge” for any future vendors.
 

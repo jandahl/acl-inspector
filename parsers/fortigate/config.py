@@ -63,7 +63,7 @@ class FTGConfig:
         self._raw_lines = [line.rstrip() for line in text.splitlines()]
         self.vdom = vdom
         # Extract VDOM-specific view if applicable
-        self.lines = self._select_vdom_lines(self._raw_lines, vdom)
+        self.lines, self.vdom = self._select_vdom_lines(self._raw_lines, vdom)
         self.addresses: Dict[str, Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]]] = {}
         self.addrgrps: Dict[str, List[Union[dict, ipaddress.IPv4Address, ipaddress.IPv4Network]]] = {}
         self.services: Dict[str, dict] = {}
@@ -133,12 +133,53 @@ class FTGConfig:
                 continue
             i += 1
 
-    def _select_vdom_lines(self, lines: List[str], want_vdom: Optional[str]) -> List[str]:
+    @staticmethod
+    def list_vdom_names(lines: List[str]) -> List[str]:
+        """Return the ordered list of unique VDOM names defined in the config."""
+        names: List[str] = []
+        seen: Set[str] = set()
+        i = 0
+        L = len(lines)
+        while i < L:
+            s = lines[i].strip()
+            if s.startswith("config vdom"):
+                i += 1
+                while i < L:
+                    s2 = lines[i].strip()
+                    if s2.startswith("edit "):
+                        name = s2.split("edit", 1)[1].strip().strip('"')
+                        if name not in seen:
+                            names.append(name)
+                            seen.add(name)
+                        # skip inner block
+                        i += 1
+                        nest = 0
+                        while i < L:
+                            s3 = lines[i].strip()
+                            if s3 == "next" and nest == 0:
+                                break
+                            if s3.startswith("config "):
+                                nest += 1
+                            if s3 == "end" and nest > 0:
+                                nest -= 1
+                            i += 1
+                        i += 1  # skip 'next'
+                    elif s2 == "end":
+                        i += 1
+                        break
+                    else:
+                        i += 1
+                continue
+            i += 1
+        return names
+
+    def _select_vdom_lines(self, lines: List[str], want_vdom: Optional[str]) -> Tuple[List[str], Optional[str]]:
         """Return lines belonging to the specified VDOM sub-block if present.
 
         If 'config vdom' is found, choose the 'edit <name>' block matching
-        want_vdom; if want_vdom is None, pick the first. Returns just the inner
-        lines of that VDOM context. If no 'config vdom' found, returns lines.
+        want_vdom; if want_vdom is None, pick the first. Returns the inner
+        lines of that VDOM context and the resolved VDOM name. If no 'config vdom'
+        is found, returns the original lines with vdom=None.
         """
         i = 0
         L = len(lines)
@@ -147,10 +188,12 @@ class FTGConfig:
             if s.startswith('config vdom'):
                 i += 1
                 vdom_blocks: Dict[str, List[str]] = {}
+                order: List[str] = []
                 while i < L:
                     s2 = lines[i].strip()
                     if s2.startswith('edit '):
                         name = s2.split('edit', 1)[1].strip().strip('"')
+                        order.append(name)
                         i += 1
                         sub: List[str] = []
                         nest = 0
@@ -175,16 +218,16 @@ class FTGConfig:
                 if want_vdom:
                     block = vdom_blocks.get(want_vdom)
                     if block:
-                        return block
+                        return block, want_vdom
                     # Requested VDOM exists but empty; continue searching later blocks
                 else:
-                    for block in vdom_blocks.values():
+                    for name in order:
+                        block = vdom_blocks.get(name)
                         if block:
-                            return block
+                            return block, name
                 continue
             i += 1
-        return lines
-
+        return lines, None
     def _parse_block(self, i: int, end_token: str = 'end') -> Tuple[int, List[str]]:
         acc: List[str] = []
         L = len(self.lines)
@@ -935,3 +978,24 @@ def _service_matches(entry: dict, svc_filter: Optional[dict]) -> bool:
             if start is not None and end is None and p >= start:
                 return True
     return False
+
+
+def load_fortigate_vdoms(text: str, target_vdom: Optional[str] = None) -> List[FTGConfig]:
+    """Return FTGConfig instances for either all VDOMs or a named VDOM.
+
+    If target_vdom is provided, only that VDOM is parsed (or an empty list if missing).
+    If not provided and the config contains VDOMs, each VDOM is parsed separately.
+    If no VDOM blocks are present, a single FTGConfig is returned.
+    """
+    raw_lines = [line.rstrip() for line in text.splitlines()]
+    names = FTGConfig.list_vdom_names(raw_lines)
+    configs: List[FTGConfig] = []
+    if target_vdom:
+        if target_vdom in names:
+            configs.append(FTGConfig(text, vdom=target_vdom))
+        return configs
+    if names:
+        for name in names:
+            configs.append(FTGConfig(text, vdom=name))
+        return configs
+    return [FTGConfig(text, vdom=None)]

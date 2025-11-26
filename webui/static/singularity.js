@@ -637,6 +637,7 @@ function buildUrl(base, params) {
 function toggleActionVisibility(action, visible) {
   document.querySelectorAll(`[data-action="${action}"]`).forEach((anchor) => {
     anchor.classList.toggle('is-hidden', !visible);
+    anchor.toggleAttribute('data-disabled', !visible);
     if (!visible) {
       anchor.removeAttribute('href');
     }
@@ -693,7 +694,8 @@ function wireActionLinks(selection) {
 
   toggleActionVisibility('inspect', hasScope);
   toggleActionVisibility('compare', hasScope && Boolean(compareParams));
-  toggleActionVisibility('packet', hasScope && Boolean(packetParams));
+  const packetCap = (selection.capabilities || {}).packet !== false;
+  toggleActionVisibility('packet', packetCap && hasScope && Boolean(packetParams));
   toggleActionVisibility('find', hasScope);
 
   if (compareParams) {
@@ -701,7 +703,7 @@ function wireActionLinks(selection) {
       anchor.href = buildUrl('/', compareParams);
     });
   }
-  if (packetParams) {
+  if (packetParams && packetCap) {
     document.querySelectorAll('[data-action="packet"]').forEach((anchor) => {
       anchor.href = buildUrl('/', packetParams);
     });

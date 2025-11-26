@@ -76,9 +76,11 @@ class ActionTabs(Horizontal):
         if event.key == "left":
             self._select_previous_tab()
             event.prevent_default()
+            event.stop()
         elif event.key == "right":
             self._select_next_tab()
             event.prevent_default()
+            event.stop()
 
     def _select_previous_tab(self) -> None:
         """Select the previous tab (wrap around)."""
