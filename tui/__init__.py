@@ -4,6 +4,8 @@ A search-first, progressive disclosure terminal interface mirroring the
 Singularity web UI concept but adapted for terminal environments.
 """
 
+import importlib
+
 __version__ = "0.1.0"
 __all__ = ["SingularityApp"]
 
@@ -13,6 +15,5 @@ def __getattr__(name):
         from .app import SingularityApp
         return SingularityApp
     if name == "app":
-        import importlib
         return importlib.import_module(".app", __name__)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
