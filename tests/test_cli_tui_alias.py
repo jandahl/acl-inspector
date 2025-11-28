@@ -8,6 +8,13 @@ import unittest
 from unittest import mock
 
 
+try:
+    import textual  # noqa: F401
+    TEXTUAL_AVAILABLE = True
+except ImportError:  # pragma: no cover - textual optional in CI
+    TEXTUAL_AVAILABLE = False
+
+
 def load_cli_module():
     """Load the CLI script as a fresh module for each test."""
     root = Path(__file__).resolve().parent.parent
@@ -19,20 +26,11 @@ def load_cli_module():
     return module
 
 
-def textual_available():
-    """Check if textual module is available."""
-    try:
-        import textual  # noqa: F401
-        return True
-    except ImportError:
-        return False
-
-
 class SingularityAliasTest(unittest.TestCase):
     """Ensure the CLI alias routes to the TUI runner."""
 
     def test_singularitty_invokes_tui_with_custom_args(self):
-        if not textual_available():
+        if not TEXTUAL_AVAILABLE:
             self.skipTest("textual not installed")
         module = load_cli_module()
         tui_args = ["--vendor", "fortigate", "--config", "configs/sample.conf", "--vdom", "root"]
@@ -43,7 +41,7 @@ class SingularityAliasTest(unittest.TestCase):
         tui_main.assert_called_once_with(argv=tui_args)
 
     def test_singularitty_defaults_to_tui_from_cli(self):
-        if not textual_available():
+        if not TEXTUAL_AVAILABLE:
             self.skipTest("textual not installed")
         module = load_cli_module()
         argv = ["cli/access-list-inspector.py", "--singularitty"]
