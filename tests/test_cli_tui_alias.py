@@ -26,12 +26,11 @@ def load_cli_module():
     return module
 
 
+@unittest.skipUnless(TEXTUAL_AVAILABLE, "textual not installed")
 class SingularityAliasTest(unittest.TestCase):
     """Ensure the CLI alias routes to the TUI runner."""
 
     def test_singularitty_invokes_tui_with_custom_args(self):
-        if not TEXTUAL_AVAILABLE:
-            self.skipTest("textual not installed")
         module = load_cli_module()
         tui_args = ["--vendor", "fortigate", "--config", "configs/sample.conf", "--vdom", "root"]
         argv = ["cli/access-list-inspector.py", "--singularitty"] + tui_args
@@ -41,8 +40,6 @@ class SingularityAliasTest(unittest.TestCase):
         tui_main.assert_called_once_with(argv=tui_args)
 
     def test_singularitty_defaults_to_tui_from_cli(self):
-        if not TEXTUAL_AVAILABLE:
-            self.skipTest("textual not installed")
         module = load_cli_module()
         argv = ["cli/access-list-inspector.py", "--singularitty"]
         with mock.patch("tui.app.main") as tui_main:
