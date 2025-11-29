@@ -8,6 +8,13 @@ import unittest
 from unittest import mock
 
 
+try:
+    import textual  # noqa: F401
+    TEXTUAL_AVAILABLE = True
+except ImportError:  # pragma: no cover - textual optional in CI
+    TEXTUAL_AVAILABLE = False
+
+
 def load_cli_module():
     """Load the CLI script as a fresh module for each test."""
     root = Path(__file__).resolve().parent.parent
@@ -19,6 +26,7 @@ def load_cli_module():
     return module
 
 
+@unittest.skipUnless(TEXTUAL_AVAILABLE, "textual not installed")
 class SingularityAliasTest(unittest.TestCase):
     """Ensure the CLI alias routes to the TUI runner."""
 
