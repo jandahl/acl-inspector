@@ -262,7 +262,7 @@ Each section represents a subtask that should be assigned to @codex for review.
 | 4 | CLI code review | cli/, aclinspector.py | Medium | @codex |
 | 5 | TUI code review | tui/ | Medium | @codex |
 | 6 | Legacy front end code review | legacy/ | Low | @codex |
-| 7 | Singularity code review | webui/beta/, webui/v2_singularity/ | Medium | @codex |
+| 7 | Singularity code review | webui/static/singularity.*, webui/beta/ | Medium | @codex |
 | 8 | Singularity web front end architecture redesign | webui/ | High | @codex |
 
 ---
