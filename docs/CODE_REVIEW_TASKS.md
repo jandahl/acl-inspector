@@ -1,7 +1,7 @@
 # Code Review Tasks
 
 This document breaks down the code review tasks requested in Issue #14.
-Each section represents a subtask that should be assigned to @codex for review.
+Each section represents a subtask that should be assigned to @copilot for review.
 
 ---
 
@@ -256,14 +256,14 @@ Each section represents a subtask that should be assigned to @codex for review.
 
 | # | Task | Area | Priority | Assignee |
 |---|------|------|----------|----------|
-| 1 | Documentation review | docs/ | High | @codex |
-| 2 | Backend code review | parsers/, analysis/, analysis_core/ | High | @codex |
-| 3 | API review | webui/handlers/, webui/router.py | High | @codex |
-| 4 | CLI code review | cli/, aclinspector.py | Medium | @codex |
-| 5 | TUI code review | tui/ | Medium | @codex |
-| 6 | Legacy front end code review | legacy/ | Low | @codex |
-| 7 | Singularity code review | webui/static/singularity.*, webui/beta/ | Medium | @codex |
-| 8 | Singularity web front end architecture redesign | webui/ | High | @codex |
+| 1 | Documentation review | docs/ | High | @copilot |
+| 2 | Backend code review | parsers/, analysis/, analysis_core/ | High | @copilot |
+| 3 | API review | webui/handlers/, webui/router.py | High | @copilot |
+| 4 | CLI code review | cli/, aclinspector.py | Medium | @copilot |
+| 5 | TUI code review | tui/ | Medium | @copilot |
+| 6 | Legacy front end code review | legacy/ | Low | @copilot |
+| 7 | Singularity code review | webui/static/singularity.*, webui/beta/ | Medium | @copilot |
+| 8 | Singularity web front end architecture redesign | webui/ | High | @copilot |
 
 ---
 
@@ -282,7 +282,7 @@ To create these as GitHub issues, use the following template for each task:
 **Review criteria:**
 [Checklist from above]
 
-**Assignee:** @codex
+**Assignee:** @copilot
 **Labels:** `code-review`, `[area]` (e.g., `documentation`, `backend`, `api`, etc.)
 **Parent issue:** #14
 ```
