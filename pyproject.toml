@@ -17,6 +17,17 @@ tui = [
     "rich>=13.0",
     "textual>=0.60",
 ]
+dev = [
+    # Both linters are run by `make lint`; ruff is primary, flake8 catches
+    # anything ruff doesn't yet cover.
+    "ruff",
+    "flake8",
+]
+test = [
+    # Browser binary must match the package version; re-run
+    # `playwright install chromium` after upgrading.
+    "playwright>=1.40",
+]
 
 [project.urls]
 Homepage = "https://github.com/jandahl/acl-inspector"
@@ -44,7 +55,7 @@ include = [
     "tui", "tui.*",
     "utils", "utils.*",
 ]
-exclude = ["tests", "tests.*"]
+exclude = ["tests", "tests.*", "legacy", "legacy.*", "scripts", "scripts.*"]
 
 [tool.setuptools.package-data]
 # Only webui ships non-Python assets; avoid catch-all globs that would pull
