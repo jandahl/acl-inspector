@@ -51,7 +51,7 @@ try:
     print(f"Total Network Objects: {len(ir_device.objects)}")
     print(f"Total ACLs: {len(ir_device.acls)}")
     
-    # Optional parameters (same as load_config):
+    # Optional parameters (forwarded via **kwargs to load_config):
     # - vdom, vendor, strict
     # - min_confidence: Minimum score (default 60) required to proceed
 

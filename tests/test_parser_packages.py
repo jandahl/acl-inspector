@@ -37,6 +37,9 @@ class ParserPackageExportTest(unittest.TestCase):
             
         device = load_config_to_ir(fixture_path)
         self.assertEqual(device.vendor, "asa")
+        self.assertEqual(device.name, "asa-compare-sample")   # default = filename stem
+        self.assertGreater(len(device.acls), 0, "expected at least one ACL in fixture")
+        self.assertGreater(len(device.objects), 0, "expected at least one object in fixture")
 
 
 if __name__ == "__main__":  # pragma: no cover
