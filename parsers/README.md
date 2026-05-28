@@ -26,7 +26,7 @@ try:
     # - vdom: Select a specific FortiGate VDOM
     # - vendor: Override auto-detection (e.g., vendor="asa")
     # - strict: If True, raises error if detection is ambiguous
-    # - min_confidence: Minimum score (default 40) required to proceed
+    # - min_confidence: Minimum score (default 60) required to proceed
     
 except ConfigLoadError as e:
     print(f"Failed to load config: {e}")
@@ -52,7 +52,8 @@ try:
     print(f"Total ACLs: {len(ir_device.acls)}")
     
     # Optional parameters (same as load_config):
-    # - vdom, vendor, strict, min_confidence
+    # - vdom, vendor, strict
+    # - min_confidence: Minimum score (default 60) required to proceed
 
     # The IR can be safely serialized to JSON:
     with open("firewall_ir.json", "w", encoding="utf-8") as f:
@@ -123,3 +124,4 @@ If you are extending the framework to support a new firewall platform (e.g., Pal
 > **Note on Coupling**: The dynamic import of `scripts/index_repo.py` by the parser loader is a known architectural coupling intended for internal development. A future refactor will move the core detection logic into the `parsers/` package for cleaner library use.
 
 > **Note on Architecture**: While existing production parsers (`ASAConfig`, `FTGConfig`) currently use custom methods for historical reasons, new modular components are encouraged to inherit from `FirewallParser` (defined in `parsers/base.py`) to move towards a more consistent interface.
+ more consistent interface.
