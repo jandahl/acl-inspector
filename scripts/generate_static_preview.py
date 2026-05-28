@@ -42,9 +42,12 @@ def esc(s):
 
 def highlight_rule(text):
     """Apply syntax highlighting spans to a rule string."""
-    # We build the output character by character avoiding overlapping spans.
-    # Strategy: run non-overlapping replacements in priority order.
-    # Use a simple token-level approach on the escaped string.
+    _ACT   = {"permit", "deny"}
+    _PROTO = {"tcp", "udp", "icmp", "ip"}
+    _ANY   = {"any", "any4", "any6"}
+    _PORT  = {"eq", "range", "gt", "lt", "neq"}
+    _KW    = {"access-list", "object-group", "object", "network", "host"}
+    _IP_RE = re.compile(r"\d{1,3}(?:\.\d{1,3}){3}(?:/\d{1,2})?$")
 
     def span(cls, s):
         return f'<span class="{cls}">{s}</span>'
@@ -54,22 +57,20 @@ def highlight_rule(text):
         if not token.strip():
             parts.append(token)
             continue
-        # action keywords first
-        if re.fullmatch(r"permit", token):
+        tl = token.lower()
+        if tl in _ACT:
             parts.append(span("act", token))
-        elif re.fullmatch(r"deny", token):
-            parts.append(span("act", token))
-        elif re.fullmatch(r"tcp|udp|icmp|ip", token):
+        elif tl in _PROTO:
             parts.append(span("proto", token))
-        elif re.fullmatch(r"any|any4|any6", token):
+        elif tl in _ANY:
             parts.append(span("addr", token))
-        elif re.fullmatch(r"\d{1,3}(?:\.\d{1,3}){3}(?:/\d{1,2})?", token):
+        elif _IP_RE.fullmatch(token):
             parts.append(span("addr", token))
-        elif re.fullmatch(r"eq|range|gt|lt|neq", token):
+        elif tl in _PORT:
             parts.append(span("kw", token))
         elif re.fullmatch(r"\d+", token):
             parts.append(span("num", token))
-        elif re.fullmatch(r"access-list|object-group|object|network|host", token):
+        elif tl in _KW:
             parts.append(span("kw", token))
         else:
             parts.append(token)
