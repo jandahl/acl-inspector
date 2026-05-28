@@ -32,14 +32,18 @@ Useful `make` shortcuts:
 Environment variables accepted by the container:
 
 ```
-ACLINSPECTOR_CONFIGS_CISCO=/data/asa      # replace with your host path to ASA configs
+# Replace with the host paths where your configs live
+ACLINSPECTOR_CONFIGS_CISCO=/data/asa
 ACLINSPECTOR_CONFIGS_FORTIGATE=/data/fortigate
-ACLINSPECTOR_CACHE_DIR=/cache             # enables disk cache for the search index
-ACLINSPECTOR_PREWARM_ALL=1               # build all indices at startup
-ACLINSPECTOR_SEARCH_LIMIT=100            # suggestion limit (default 50)
+# Enables disk cache for the predictive search index
+ACLINSPECTOR_CACHE_DIR=/cache
+# Build all indices at startup (slower start, faster first query)
+ACLINSPECTOR_PREWARM_ALL=1
+# Suggestion limit (default 50)
+ACLINSPECTOR_SEARCH_LIMIT=100
 ```
 
-Place these in `Dockersetup/.env` for automatic expansion by Compose.
+Place these in `Dockersetup/.env` for automatic expansion by Compose. Note: `.env` files do not support inline comments — comments must be on their own lines as shown above.
 
 ---
 
