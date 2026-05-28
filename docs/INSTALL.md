@@ -106,7 +106,7 @@ aclinspector inspect --help
 ```python
 from parsers.cisco.asa.parser import ASAConfig
 
-with open("my-firewall.conf") as fh:
+with open("my-firewall.conf", encoding="utf-8") as fh:
     raw = fh.read()
 
 config = ASAConfig(raw)                          # parses automatically on construction
