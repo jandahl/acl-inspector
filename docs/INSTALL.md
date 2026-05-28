@@ -51,9 +51,9 @@ cd acl-inspector
 
 # Optional but recommended: isolated dependencies
 python3 -m venv .venv
-source .venv/bin/activate          # macOS / Linux
-# .venv\Scripts\Activate.ps1      # Windows (PowerShell)
-# .venv\Scripts\activate.bat      # Windows (cmd.exe)
+source .venv/bin/activate           # macOS / Linux
+# .\.venv\Scripts\Activate.ps1   # Windows (PowerShell)
+# .\.venv\Scripts\activate.bat   # Windows (cmd.exe)
 
 # CLI
 ./aclinspector.py inspect --vendor asa --config configs/cisco/fw.conf --inspect 10.1.1.1
@@ -83,8 +83,8 @@ git clone https://github.com/jandahl/acl-inspector.git
 cd acl-inspector
 
 python3 -m venv .venv
-source .venv/bin/activate          # macOS / Linux
-# .venv\Scripts\Activate.ps1      # Windows (PowerShell)
+source .venv/bin/activate           # macOS / Linux
+# .\.venv\Scripts\Activate.ps1   # Windows (PowerShell)
 
 # Editable install — source tree is used directly, no copying to site-packages
 pip install -e .
