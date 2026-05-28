@@ -18,11 +18,16 @@ tui = [
     "textual>=0.60",
 ]
 
+[project.urls]
+Homepage = "https://github.com/jandahl/acl-inspector"
+
 [project.scripts]
 # The dispatcher uses subprocess to invoke CLI tools by file path, so an
 # editable install (pip install -e .) is required for the console script to
-# work correctly. A future refactor to an acl_inspector namespace package
-# will resolve both this and the generic top-level package names below.
+# work correctly. This is a consequence of the project using generic top-level
+# package names (parsers, common, utils, …) that would collide in site-packages
+# on a non-editable install. A future refactor to an acl_inspector namespace
+# package will resolve both constraints.
 aclinspector = "aclinspector:main"
 
 [tool.setuptools]
@@ -31,16 +36,23 @@ py-modules = ["aclinspector"]
 [tool.setuptools.packages.find]
 where = ["."]
 include = [
-    "common*",
-    "parsers*",
-    "analysis_core*",
-    "webui*",
-    "cli*",
-    "tui*",
-    "utils*",
+    "common", "common.*",
+    "parsers", "parsers.*",
+    "analysis_core", "analysis_core.*",
+    "webui", "webui.*",
+    "cli", "cli.*",
+    "tui", "tui.*",
+    "utils", "utils.*",
 ]
+exclude = ["tests", "tests.*"]
 
 [tool.setuptools.package-data]
-"webui" = ["templates/**", "static/**", "*.html", "*.css", "*.js",
-           "*.ttf", "*.woff", "*.woff2", "*.png", "*.svg", "*.ico"]
-"*" = ["*.html", "*.css", "*.js", "*.yaml", "*.yml"]
+# Only webui ships non-Python assets; avoid catch-all globs that would pull
+# in test fixtures or sample configs from other directories.
+"webui" = [
+    "templates/*", "templates/*/*",
+    "static/*", "static/*/*",
+    "*.html", "*.css", "*.js",
+    "*.ttf", "*.woff", "*.woff2",
+    "*.png", "*.svg", "*.ico",
+]

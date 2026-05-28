@@ -76,7 +76,7 @@ The `./aclinspector.py` dispatcher sets `PYTHONPATH` automatically, so no instal
 
 Install when you want to import the parsers or analysis modules from your own Python code. The core package has no third-party dependencies.
 
-> **Editable install required.** The project's modules use generic top-level names (`parsers`, `common`, `utils`, …) and the CLI dispatcher locates tools by file path. A regular `pip install .` can cause namespace collisions with other packages and will break the console script in non-source layouts. Always use `pip install -e .` inside a dedicated virtual environment.
+> **Editable install required** — not a packaging quirk, but a consequence of the project's current structure. The modules use generic top-level names (`parsers`, `common`, `utils`, …) that would collide with other installed packages in a shared environment, and the CLI dispatcher resolves sub-tools by file path on disk. Both constraints disappear once the codebase is reorganised under an `acl_inspector` namespace (tracked for a future refactor). Until then, always use `pip install -e .` inside a dedicated virtual environment.
 
 ```bash
 git clone https://github.com/jandahl/acl-inspector.git
