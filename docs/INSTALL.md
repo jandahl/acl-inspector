@@ -10,10 +10,12 @@ The container bundles everything and exposes the web UI on port 8083. You only n
 
 ```bash
 cd Dockersetup
-podman-compose -p aclinspector up --build -d
+podman-compose -f podman-compose.yaml -p aclinspector up --build -d
 # or
-docker-compose -p aclinspector up --build -d
+docker-compose -f podman-compose.yaml -p aclinspector up --build -d
 ```
+
+Alternatively, use the `make` shortcuts from the repo root (they pass the correct `-f` flag automatically).
 
 Mount your configs and open `http://localhost:8083` in a browser.
 

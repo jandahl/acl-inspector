@@ -31,10 +31,28 @@ Homepage = "https://github.com/jandahl/acl-inspector"
 aclinspector = "aclinspector:main"
 
 [tool.setuptools]
-# packages.find and package-data are intentionally omitted. Editable installs
-# (pip install -e .) work correctly because the project root is added to
-# sys.path directly. Non-editable installs are deliberately left incomplete
-# until the codebase is reorganised under an acl_inspector namespace package,
-# preventing generic top-level names (common, parsers, utils, …) from
-# polluting the user's site-packages in the meantime.
 py-modules = ["aclinspector"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = [
+    "common", "common.*",
+    "parsers", "parsers.*",
+    "analysis_core", "analysis_core.*",
+    "webui", "webui.*",
+    "cli", "cli.*",
+    "tui", "tui.*",
+    "utils", "utils.*",
+]
+exclude = ["tests", "tests.*"]
+
+[tool.setuptools.package-data]
+# Only webui ships non-Python assets; avoid catch-all globs that would pull
+# in test fixtures or sample configs from other directories.
+"webui" = [
+    "templates/*", "templates/*/*",
+    "static/*", "static/*/*",
+    "*.html", "*.css", "*.js",
+    "*.ttf", "*.woff", "*.woff2",
+    "*.png", "*.svg", "*.ico",
+]
