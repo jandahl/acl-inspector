@@ -92,7 +92,7 @@ with open("fortigate.conf") as f:
     # Specify the target vdom, or use 'root' (the default).
     config = FTGConfig(f.read(), vdom="root")
 
-flat_rules = config.flatten()
+flat_rules = config.flatten_policies()
 ```
 
 ## Adding a New Vendor
@@ -101,3 +101,4 @@ If you are extending the framework to support a new firewall platform (e.g., Pal
 1. **Implement `FirewallParser`**: Inherit from `FirewallParser` (defined in `parsers/base.py`) and implement the `flatten()` interface.
 2. **Implement IR Export**: Provide a `to_ir()` method on your configuration class that maps your parsed syntax down to the dataclasses in `parsers/model.py`.
 3. **Register the Detection**: Add detection heuristics to `scripts/index_repo.py` (`_detect_vendor`) and plug your new parser into the `load_config` dispatcher in `parsers/loader.py`.
+s/loader.py`.
