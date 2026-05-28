@@ -199,8 +199,16 @@ Web UI
 - Preferences now include a **Debug** section with buttons to flush server caches (index + history) and reset browser-side settings/local storage.
 - Looking ahead: we are exploring a simplified "V2" GUI — centred on one large search field with fuzzy, ranked suggestions (object/IP shown left, context/right-aligned). After selecting a target, the UI would preload the data in the background and reveal the relevant analysis views via bold, segmented toggles instead of the current tab matrix.
 
-Third-party Notice
-------------------
+License
+-------
+This project is licensed under the Mozilla Public License Version 2.0 (MPL-2.0). 
+See the `LICENSE` file for the full text.
+
+### Dual Licensing
+As the sole copyright holder, the author retains the right to grant alternative commercial licenses. If you require a different license for proprietary integration or other commercial purposes that are incompatible with the MPL-2.0, please contact the author to negotiate an alternative license.
+
+Third-party Notices
+-------------------
 - The optional color schemes under `themes/` are sourced from the [iTerm2-Color-Schemes](https://github.com/mbadolato/iTerm2-Color-Schemes) project (MIT). Use `make themes` or `make themes-refresh` to synchronize with their latest palettes.
 
 - Dark mode and CSS:
