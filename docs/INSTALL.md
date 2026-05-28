@@ -96,8 +96,15 @@ source .venv/bin/activate           # macOS / Linux
 # Editable install — source tree is used directly, no copying to site-packages
 pip install -e .
 
-# Also want the TUI?
+# TUI support
 pip install -e ".[tui]"
+
+# Linters (ruff, flake8) — matches what `make lint` expects
+pip install -e ".[dev]"
+
+# End-to-end tests (Playwright) — also requires a one-time browser install
+pip install -e ".[test]"
+playwright install chromium
 ```
 
 This also puts the `aclinspector` command on your `PATH`:

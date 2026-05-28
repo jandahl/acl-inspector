@@ -17,6 +17,13 @@ tui = [
     "rich>=13.0",
     "textual>=0.60",
 ]
+dev = [
+    "ruff",
+    "flake8",
+]
+test = [
+    "playwright",
+]
 
 [project.urls]
 Homepage = "https://github.com/jandahl/acl-inspector"
@@ -44,7 +51,7 @@ include = [
     "tui", "tui.*",
     "utils", "utils.*",
 ]
-exclude = ["tests", "tests.*"]
+exclude = ["tests", "tests.*", "legacy", "legacy.*", "scripts", "scripts.*"]
 
 [tool.setuptools.package-data]
 # Only webui ships non-Python assets; avoid catch-all globs that would pull
