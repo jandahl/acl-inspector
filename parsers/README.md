@@ -1,0 +1,103 @@
+# Firewall Parsers
+
+The `parsers` directory provides modular, vendor-agnostic ingestion for firewall configurations. The goal of these parsers is to process a raw text configuration file (Cisco ASA, FortiGate, etc.) and convert it into a consistent **Intermediate Representation (IR)**. 
+
+Other scripts, tools, and platforms can use these parsers independently of the main `aclinspector` UI or CLI to perform their own analysis, graph generation, or cross-vendor migrations.
+
+## Getting Started
+
+The recommended way to interact with the parsers is through the unified loader (`parsers.loader`). It automatically handles vendor detection, instantiates the correct underlying parser, and exposes both the native configuration object and the standardized IR.
+
+### 1. Unified Loader (Auto-Detection)
+
+Use `load_config` to parse a file while automatically detecting the vendor format:
+
+```python
+from parsers.loader import load_config, ConfigLoadError
+
+try:
+    # `cfg` is the vendor-specific config object (e.g. ASAConfig or FTGConfig)
+    # `vendor` is a string (e.g., 'asa', 'fortigate')
+    # `score` is the confidence level of the detection
+    cfg, vendor, score = load_config("path/to/firewall.conf")
+    print(f"Loaded {vendor} configuration (Confidence: {score}%)")
+    
+except ConfigLoadError as e:
+    print(f"Failed to load config: {e}")
+```
+
+### 2. Loading Directly to IR (Recommended)
+
+If you are building an independent tool, you likely want to work with the **Intermediate Representation (IR)** rather than the vendor-specific syntax tree. The IR provides standard python dataclasses for Interfaces, Objects, Groups, ACLs, NATs, and Routing Protocols.
+
+```python
+import json
+from parsers.loader import load_config_to_ir
+
+# Automatically detect vendor, parse the file, and convert to an IR Device
+ir_device = load_config_to_ir("path/to/firewall.conf")
+
+print(f"Device Name: {ir_device.name}")
+print(f"Vendor: {ir_device.vendor}")
+print(f"Total Network Objects: {len(ir_device.objects)}")
+print(f"Total ACLs: {len(ir_device.acls)}")
+
+# The IR can be safely serialized to JSON:
+with open("firewall_ir.json", "w") as f:
+    json.dump(ir_device.to_dict(), f, indent=2)
+```
+
+## The Intermediate Representation (IR)
+
+The IR is defined in `parsers/model.py`. All vendors map their internal models down to these standard dataclasses. By depending on the IR, your script won't need to be rewritten when support for a new vendor is added.
+
+Key models include:
+
+- **`Device`**: The root container for the firewall configuration.
+- **`Object`**: Network objects mapping to IP literals/networks.
+- **`Group`**: Groups containing nested objects, literals, or other groups.
+- **`ACL` & `ACLEntry`**: Access Control Lists with standardized source, destination, protocol, and action fields.
+- **`NAT`**: Normalized NAT tables and endpoints.
+- **`StaticRoute` / `DynamicRoutingProcess`**: BGP, OSPF, and static route definitions.
+
+## Direct Vendor Parsers
+
+If you know the exact vendor and want access to native parsing structures (e.g., for generating a vendor-specific optimization report), you can bypass the `loader` and initialize the parsers directly:
+
+### Cisco ASA
+
+```python
+from parsers.cisco.asa.parser import ASAConfig
+
+with open("asa.conf") as f:
+    config = ASAConfig(f.read())
+
+# Access raw vendor methods
+print(f"ASA Objects: {len(config.objects)}")
+print(f"ASA Object Groups: {len(config.object_groups)}")
+
+# Or extract the flattened rules directly:
+flat_rules = config.flatten()
+for rule in flat_rules[:5]:
+    print(rule.raw)
+```
+
+### FortiGate
+
+```python
+from parsers.fortigate.config import FTGConfig
+
+with open("fortigate.conf") as f:
+    # Note: Fortigate configurations often utilize Virtual Domains (VDOMs).
+    # Specify the target vdom, or use 'root' (the default).
+    config = FTGConfig(f.read(), vdom="root")
+
+flat_rules = config.flatten()
+```
+
+## Adding a New Vendor
+
+If you are extending the framework to support a new firewall platform (e.g., Palo Alto, CheckPoint):
+1. **Implement `FirewallParser`**: Inherit from `FirewallParser` (defined in `parsers/base.py`) and implement the `flatten()` interface.
+2. **Implement IR Export**: Provide a `to_ir()` method on your configuration class that maps your parsed syntax down to the dataclasses in `parsers/model.py`.
+3. **Register the Detection**: Add detection heuristics to `scripts/index_repo.py` (`_detect_vendor`) and plug your new parser into the `load_config` dispatcher in `parsers/loader.py`.
