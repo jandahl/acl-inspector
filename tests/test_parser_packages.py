@@ -27,12 +27,16 @@ class ParserPackageExportTest(unittest.TestCase):
     def test_load_config_to_ir_asa_fixture(self):
         """load_config_to_ir returns a Device with the right vendor."""
         from parsers.loader import load_config_to_ir
-        # Using a minimal fixture from the repo
         import os
-        fixture_path = "configs/fixtures/asa-compare-sample.conf"
-        if os.path.exists(fixture_path):
-            device = load_config_to_ir(fixture_path)
-            self.assertEqual(device.vendor, "asa")
+        # Anchor path relative to this file
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        fixture_path = os.path.join(base_dir, "configs", "fixtures", "asa-compare-sample.conf")
+        
+        if not os.path.exists(fixture_path):
+            self.skipTest(f"Fixture missing: {fixture_path}")
+            
+        device = load_config_to_ir(fixture_path)
+        self.assertEqual(device.vendor, "asa")
 
 
 if __name__ == "__main__":  # pragma: no cover
