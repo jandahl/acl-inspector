@@ -10,7 +10,7 @@ The recommended way to interact with the parsers is through the unified loader (
 
 ### 1. Unified Loader (Auto-Detection)
 
-Use `load_config` to parse a file while automatically detecting the vendor format:
+Use `load_config` to parse a file while automatically detecting the vendor format. It returns the vendor-specific config object, the detected vendor name, and a confidence score (0-100).
 
 ```python
 from parsers.loader import load_config, ConfigLoadError
@@ -22,23 +22,33 @@ try:
     cfg, vendor, score = load_config("path/to/firewall.conf")
     print(f"Loaded {vendor} configuration (Confidence: {score}%)")
     
+    # Optional parameters:
+    # - vdom: Select a specific FortiGate VDOM
+    # - vendor: Override auto-detection (e.g., vendor="asa")
+    # - strict: If True, raises error if detection is ambiguous
+    # - min_confidence: Minimum score (default 40) required to proceed
+    
 except ConfigLoadError as e:
     print(f"Failed to load config: {e}")
 ```
 
 ### 2. Loading Directly to IR (Recommended)
-
 If your goal is cross-vendor portability, you likely want to work with the **Intermediate Representation (IR)** rather than the vendor-specific syntax tree. The IR provides standard python dataclasses for Interfaces, Objects, Groups, ACLs, NATs, and Routing Protocols.
+
+Note: `load_config_to_ir` may raise `ConfigLoadError` if the vendor is detected but not yet supported by the IR pipeline (e.g., legacy IOS).
 
 ```python
 import json
 from parsers.loader import load_config_to_ir, ConfigLoadError
 
 try:
-    # Automatically detect vendor, parse the file, and convert to an IR Device
-    ir_device = load_config_to_ir("path/to/firewall.conf")
+    # Automatically detect vendor, parse the file, and convert to an IR Device.
+    # Specify 'device_name' to override the default (filename stem).
+    ir_device = load_config_to_ir("path/to/firewall.conf", device_name="FW-CORE-01")
 
     print(f"Device Name: {ir_device.name or 'unknown'}")
+...
+```
     print(f"Vendor: {ir_device.vendor}")
     print(f"Total Network Objects: {len(ir_device.objects)}")
     print(f"Total ACLs: {len(ir_device.acls)}")
@@ -83,7 +93,8 @@ print(f"ASA Object Groups: {len(config.network_object_groups)}")
 # Or extract the flattened rules directly:
 flat_rules = config.flatten_acl()
 for rule in flat_rules[:5]:
-    print(rule['raw'])
+    # rules are returned as dictionaries
+    print(f"{rule['action']} {rule['proto']}")
 ```
 
 ### FortiGate
@@ -93,8 +104,8 @@ from parsers.fortigate.config import FTGConfig
 
 with open("fortigate.conf", encoding="utf-8") as f:
     # Note: FortiGate configurations often utilize Virtual Domains (VDOMs).
-    # Specify the target vdom, or omit it (defaults to "", which auto-selects the first VDOM).
-    config = FTGConfig(f.read(), vdom="")
+    # Specify the target vdom, or omit it (auto-selects the first VDOM if present).
+    config = FTGConfig(f.read())
 
 flat_rules = config.flatten_policies()
 ```
@@ -105,7 +116,7 @@ If you are extending the framework to support a new firewall platform (e.g., Pal
 
 1. **Implement IR Export (Primary)**: The core integration point for ACL Inspector is the Intermediate Representation. Provide a `to_ir(cfg, ...)` function in an `ir_export.py` module that maps your parsed configuration class down to the dataclasses in `parsers/model.py`.
 2. **Implement Flat Rules (Optional)**: If you wish to support the legacy inspection views, implement a flattening method. For new parsers inheriting from `FirewallParser`, implement `flatten() -> List[FlatRule]`. For legacy-style parsers, implement `flatten_acl()` or `flatten_policies()` returning a `List[dict]`.
-3. **Register the Detection**: Add detection heuristics to `_detect_vendor` in `scripts/index_repo.py`. While `parsers/loader.py` imports this function dynamically at runtime (via a `sys.path` injection), you must also manually add dispatch branches to `load_config()` and `load_config_to_ir()` inside `parsers/loader.py` to support the new vendor string.
+3. **Register the Detection**: Add detection heuristics to `_detect_vendor` in `scripts/index_repo.py`. You must also update `_vendor_to_os`, `_build_index`, and `DEFAULT_SUPPORTED_VENDORS` in the same file to fully integrate the new vendor. While `parsers/loader.py` imports the detection function dynamically at runtime (via a `sys.path` injection), you must also manually add dispatch branches to `load_config()` and `load_config_to_ir()` inside `parsers/loader.py` to support the new vendor string.
 
 > **Note on Coupling**: The dynamic import of `scripts/index_repo.py` by the parser loader is a known architectural coupling intended for internal development. A future refactor will move the core detection logic into the `parsers/` package for cleaner library use.
 
