@@ -69,7 +69,7 @@ If you know the exact vendor and want access to native parsing structures (e.g.,
 ```python
 from parsers.cisco.asa.parser import ASAConfig
 
-with open("asa.conf") as f:
+with open("asa.conf", encoding="utf-8") as f:
     config = ASAConfig(f.read())
 
 # Access raw vendor methods
@@ -104,3 +104,5 @@ If you are extending the framework to support a new firewall platform (e.g., Pal
 3. **Register the Detection**: Add detection heuristics to `scripts/index_repo.py` (`_detect_vendor`) and plug your new parser into the `load_config` dispatcher in `parsers/loader.py`.
 
 > **Note on Architecture**: While existing production parsers (`ASAConfig`, `FTGConfig`) currently use custom methods for historical reasons, new modular components are encouraged to inherit from `FirewallParser` (defined in `parsers/base.py`) to move towards a more consistent interface.
+s, new modular components are encouraged to inherit from `FirewallParser` (defined in `parsers/base.py`) to move towards a more consistent interface.
+re consistent interface.
