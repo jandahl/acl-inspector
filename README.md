@@ -29,6 +29,8 @@ Requirements
 - Python 3.9+
 - No external packages are required
 
+For detailed setup options (OCI container, virtual environment, pip install), see [docs/INSTALL.md](docs/INSTALL.md).
+
 Setup
 -----
 - Run `make themes` to download/update the optional iTerm2 color scheme files used by the web UI Preferences tab. The palettes come from the [iTerm2-Color-Schemes](https://github.com/mbadolato/iTerm2-Color-Schemes) project (MIT); see `LICENSE` for attribution.
