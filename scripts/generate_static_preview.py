@@ -6,8 +6,8 @@ Runs the CLI against in-repo example configs, embeds the results in
 docs/index.html using the project's existing CSS variables and classes.
 """
 
+import html
 import json
-import os
 import re
 import shutil
 import subprocess
@@ -28,22 +28,17 @@ def run_cli(*args):
     cmd = [sys.executable, str(CLI), "inspect"] + list(args) + ["--format", "json"]
     result = subprocess.run(cmd, capture_output=True, text=True, cwd=REPO_ROOT)
     if result.returncode != 0:
-        print(f"  WARNING: {' '.join(args[-4:])} → exit {result.returncode}", file=sys.stderr)
-        print(f"    stderr: {result.stderr[:200]}", file=sys.stderr)
+        print(f"  ERROR: {' '.join(str(a) for a in args)} → exit {result.returncode}", file=sys.stderr)
+        print(f"    stderr: {result.stderr}", file=sys.stderr)
+        sys.exit(1)
     return result.stdout.strip()
 
 
 def esc(s):
-    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+    return html.escape(s)
 
 
 # ── highlight helpers ──────────────────────────────────────────────────────────
-
-_PORT_RE = re.compile(r"\b(eq|range|gt|lt|neq)\b")
-_PROTO_RE = re.compile(r"\b(tcp|udp|icmp|ip|any|any4|any6)\b")
-_IP_RE = re.compile(r"\b(\d{1,3}(?:\.\d{1,3}){3}(?:/\d{1,2})?)\b")
-_KW_RE = re.compile(r"\b(permit|deny|access-list|object|object-group|network|service|host|range|eq)\b")
-_ACT_RE = re.compile(r"\b(permit|deny)\b")
 
 
 def highlight_rule(text):
@@ -90,9 +85,9 @@ def fmt_inspect(raw_json, target):
     except Exception:
         return f'<pre class="result-pre">Error parsing output:\n{esc(raw_json)}</pre>'
 
-    nets = d.get("target_nets", [])
-    hits = d.get("hits", [])
-    aliases = d.get("aliases", {})
+    nets = d.get("target_nets") or []
+    hits = d.get("hits") or []
+    aliases = d.get("aliases") or {}
 
     lines = []
     if nets:
@@ -135,8 +130,8 @@ def fmt_compare(raw_json):
     except Exception:
         return f'<pre class="result-pre">Error parsing output:\n{esc(raw_json)}</pre>'
 
-    added = d.get("added_to_new", [])
-    removed = d.get("removed_from_old", [])
+    added = d.get("added_to_new") or []
+    removed = d.get("removed_from_old") or []
 
     lines = []
     lines.append(f'<div class="meta-line">'
@@ -172,8 +167,8 @@ def fmt_findhost(raw_json, host):
     lines = ['<div class="findhost-results">']
     for info in results:
         fname = info.get("file", "")
-        objects = info.get("objects", [])
-        literals = info.get("literals", [])
+        objects = info.get("objects") or []
+        literals = info.get("literals") or []
         lines.append(f'<div class="fh-config"><div class="fh-filename">&#128196; {esc(fname)}</div>')
         if objects:
             lines.append(f'<div class="fh-group">Named objects: '
@@ -190,14 +185,14 @@ def fmt_findhost(raw_json, host):
 
 def fmt_config_snippet(config_path, max_lines=60):
     try:
-        text = Path(config_path).read_text(errors="replace")
+        text = Path(config_path).read_text(encoding="utf-8", errors="replace")
     except OSError:
         return '<div class="no-results">Config file not found.</div>'
 
     kept = []
     for line in text.splitlines()[:max_lines]:
         stripped = line.strip()
-        if stripped.startswith("!") or stripped == "":
+        if stripped.startswith("!") or stripped.startswith("#") or stripped == "":
             kept.append(f'<span class="comment">{esc(line)}</span>')
         else:
             kept.append(highlight_rule(line))
