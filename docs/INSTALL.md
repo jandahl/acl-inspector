@@ -91,6 +91,7 @@ cd acl-inspector
 python3 -m venv .venv
 source .venv/bin/activate           # macOS / Linux
 # .\.venv\Scripts\Activate.ps1   # Windows (PowerShell)
+# .\.venv\Scripts\activate.bat   # Windows (cmd.exe)
 
 # Editable install — source tree is used directly, no copying to site-packages
 pip install -e .
@@ -135,5 +136,5 @@ pip uninstall acl-inspector
 | Using the web UI regularly | OCI container |
 | CLI queries, one-off analysis | Direct clone (Option 2) |
 | Contributing to the codebase | Direct clone + venv |
-| TUI (terminal interface) | Direct clone + `pip install textual rich` |
+| TUI (terminal interface) | Direct clone + `pip install "textual>=0.60" rich` |
 | Embedding parsers in your own scripts | pip install -e . (Option 3) |

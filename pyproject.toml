@@ -53,6 +53,7 @@ exclude = ["tests", "tests.*"]
     "templates/*", "templates/*/*",
     "static/*", "static/*/*",
     "*.html", "*.css", "*.js",
+    "*.yaml", "*.yml",
     "*.ttf", "*.woff", "*.woff2",
     "*.png", "*.svg", "*.ico",
 ]
