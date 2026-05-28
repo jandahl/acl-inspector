@@ -103,7 +103,12 @@ pip install -e ".[tui]"
 pip install -e ".[dev]"
 
 # End-to-end tests (Playwright) — also requires a one-time browser install
+# Re-run `playwright install chromium` after upgrading the playwright package
 pip install -e ".[test]"
+playwright install chromium
+
+# Full dev environment (lint + e2e tests)
+pip install -e ".[dev,test]"
 playwright install chromium
 ```
 

@@ -18,11 +18,15 @@ tui = [
     "textual>=0.60",
 ]
 dev = [
+    # Both linters are run by `make lint`; ruff is primary, flake8 catches
+    # anything ruff doesn't yet cover.
     "ruff",
     "flake8",
 ]
 test = [
-    "playwright",
+    # Browser binary must match the package version; re-run
+    # `playwright install chromium` after upgrading.
+    "playwright>=1.40",
 ]
 
 [project.urls]
