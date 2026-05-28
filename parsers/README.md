@@ -106,6 +106,7 @@ from parsers.fortigate.config import FTGConfig
 with open("fortigate.conf", encoding="utf-8") as f:
     # Note: FortiGate configurations often utilize Virtual Domains (VDOMs).
     # Specify the target vdom, or omit it (auto-selects the first VDOM if present).
+    # For multi-VDOM configs, pass vdom="root" (or other name) to target specifically.
     config = FTGConfig(f.read())
 
 flat_rules = config.flatten_policies()
