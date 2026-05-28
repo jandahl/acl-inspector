@@ -102,7 +102,10 @@ def fmt_inspect(raw_json, target):
                      + ", ".join(f'<span class="addr">{esc(n)}</span>' for n in nets)
                      + f"  <span class='hit-count'>({len(hits)} matching rule{'s' if len(hits)!=1 else ''})</span></div>")
     if aliases:
-        alt = [k for k in aliases if k != target]
+        # aliases = {ip: [obj_name, ...], ...} — collect sibling names from values
+        alt = []
+        for names in aliases.values():
+            alt.extend(n for n in names if n != target)
         if alt:
             lines.append(f'<div class="meta-line alias-line">Also known as: '
                          + ", ".join(f"<code>{esc(a)}</code>" for a in alt[:8])
@@ -122,8 +125,10 @@ def fmt_inspect(raw_json, target):
                 direction = binding.get("direction", "")
                 if scope == "interface":
                     bind_str = f'<span class="bind-tag">{esc(iface)}({esc(direction)})</span>'
+                elif scope == "global":
+                    bind_str = '<span class="bind-tag">global</span>'
                 else:
-                    bind_str = f'<span class="bind-tag">global</span>'
+                    bind_str = f'<span class="bind-tag">{esc(scope)}</span>'
             lines.append(f'<div class="rule-entry action-{esc(action)}">'
                          f'{bind_str}<code>{highlight_rule(raw)}</code></div>')
         lines.append("</div>")
@@ -418,9 +423,15 @@ def main():
     print("Generating static preview…")
     DOCS_DIR.mkdir(exist_ok=True)
 
-    if not CSS_SRC.exists():
-        print(f"  ERROR: CSS not found: {CSS_SRC}", file=sys.stderr)
-        sys.exit(1)
+    for path, label in [
+        (CSS_SRC,    "CSS file"),
+        (ASA_CONFIG, "ASA example config"),
+        (ASA_DIR,    "ASA config directory"),
+        (FTG_CONFIG, "FortiGate example config"),
+    ]:
+        if not path.exists():
+            print(f"  ERROR: {label} not found: {path}", file=sys.stderr)
+            sys.exit(1)
     css = CSS_SRC.read_text(encoding="utf-8")
 
     tabs_btns = []
