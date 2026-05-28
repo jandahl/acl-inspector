@@ -9,8 +9,13 @@ description = "Firewall ACL analysis tool for Cisco ASA and FortiGate configurat
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.9"
-dependencies = [
+# Core install is stdlib-only (matches README). TUI requires textual + rich.
+dependencies = []
+
+[project.optional-dependencies]
+tui = [
     "rich>=13.0",
+    "textual>=0.60",
 ]
 
 [project.scripts]
@@ -36,4 +41,6 @@ include = [
 ]
 
 [tool.setuptools.package-data]
-"*" = ["*.html", "*.css", "*.js", "*.json", "*.yaml", "*.yml"]
+"webui" = ["templates/**", "static/**", "*.html", "*.css", "*.js",
+           "*.ttf", "*.woff", "*.woff2", "*.png", "*.svg", "*.ico"]
+"*" = ["*.html", "*.css", "*.js", "*.yaml", "*.yml"]

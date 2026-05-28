@@ -30,17 +30,18 @@ Useful `make` shortcuts:
 Environment variables accepted by the container:
 
 ```
-ACLINSPECTOR_CONFIGS_CISCO=/data/asa
+ACLINSPECTOR_CONFIGS_CISCO=/data/asa      # replace with your host path to ASA configs
 ACLINSPECTOR_CONFIGS_FORTIGATE=/data/fortigate
-ACLINSPECTOR_PREWARM_ALL=1        # build all indices at startup
-ACLINSPECTOR_SEARCH_LIMIT=100     # suggestion limit (default 50)
+ACLINSPECTOR_CACHE_DIR=/cache             # enables disk cache for the search index
+ACLINSPECTOR_PREWARM_ALL=1               # build all indices at startup
+ACLINSPECTOR_SEARCH_LIMIT=100            # suggestion limit (default 50)
 ```
 
 Place these in `Dockersetup/.env` for automatic expansion by Compose.
 
 ---
 
-## Option 2: Run directly from a clone (CLI or web UI)
+## Option 2: Run directly from a clone (CLI, web UI, or TUI)
 
 No install step required — just clone and run.
 
@@ -61,6 +62,10 @@ source .venv/bin/activate          # macOS / Linux
 ./aclinspector.py web
 # or
 make web
+
+# TUI (requires textual — install first)
+pip install "textual>=0.60" rich
+./aclinspector.py tui
 ```
 
 The `./aclinspector.py` dispatcher sets `PYTHONPATH` automatically, so no install is needed.
@@ -69,7 +74,7 @@ The `./aclinspector.py` dispatcher sets `PYTHONPATH` automatically, so no instal
 
 ## Option 3: Install as a Python package (scripting / integration)
 
-Install when you want to import the parsers or analysis modules from your own Python code.
+Install when you want to import the parsers or analysis modules from your own Python code. The core package has no third-party dependencies.
 
 > **Editable install required.** The project's modules use generic top-level names (`parsers`, `common`, `utils`, …) and the CLI dispatcher locates tools by file path. A regular `pip install .` can cause namespace collisions with other packages and will break the console script in non-source layouts. Always use `pip install -e .` inside a dedicated virtual environment.
 
@@ -83,6 +88,9 @@ source .venv/bin/activate          # macOS / Linux
 
 # Editable install — source tree is used directly, no copying to site-packages
 pip install -e .
+
+# Also want the TUI?
+pip install -e ".[tui]"
 ```
 
 This also puts the `aclinspector` command on your `PATH`:
@@ -94,15 +102,16 @@ aclinspector inspect --help
 ### Importing the library
 
 ```python
-from parsers.cisco.asa.parser import ASAParser
-from parsers.model import Device
+from parsers.cisco.asa.parser import ASAConfig
 
 with open("my-firewall.conf") as fh:
     raw = fh.read()
 
-parser = ASAParser()
-device = parser.parse(raw)
-print(device.hostname)
+config = ASAConfig(raw)                          # parses automatically on construction
+
+# Optional: export to the vendor-agnostic IR
+device = config.to_ir(device_name="my-firewall")
+print(device.name)
 ```
 
 ### Uninstalling
@@ -120,4 +129,5 @@ pip uninstall acl-inspector
 | Using the web UI regularly | OCI container |
 | CLI queries, one-off analysis | Direct clone (Option 2) |
 | Contributing to the codebase | Direct clone + venv |
-| Embedding parsers in your own scripts | pip install (Option 3) |
+| TUI (terminal interface) | Direct clone + `pip install textual rich` |
+| Embedding parsers in your own scripts | pip install -e . (Option 3) |
