@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ACL-inspector — Live Preview</title>
+  <style>
+:root{--bg:#0e1116;--muted:#1a1f29;--text:#e6edf3;--sub:#9da7b3;--accent:#7aa2f7;--border:#2b3240;--content-width:900px;--font-body:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,'Helvetica Neue',sans-serif;--font-mono:'SFMono-Regular',Menlo,Consolas,'Liberation Mono',monospace;--font-scale:1;--match-bg:color-mix(in srgb,var(--accent) 72%, #000000 10%);--match-fg:#ffffff;}
+:root[data-theme='light']{--bg:#ffffff;--muted:#f6f8fa;--text:#24292f;--sub:#57606a;--accent:#0969da;--border:#d0d7de;--match-bg:color-mix(in srgb,var(--accent) 70%, #ffffff 25%);--match-fg:#ffffff;}
+body{background:var(--bg);color:var(--text);font-family:var(--font-body);font-size:calc(15px * var(--font-scale));line-height:1.6;margin:0;transition:background 0.4s ease,color 0.4s ease;}
+body.modal-open{overflow:hidden;}
+a{color:var(--link, var(--accent));text-decoration:none;}
+a:visited{color:var(--link-visited, var(--link, var(--accent)));text-decoration:none;}
+a:hover{color:var(--link-hover, var(--accent));text-decoration:underline;}
+a:active{color:var(--link-active, var(--link-hover, var(--accent)));text-decoration:underline;}
+.app{max-width:calc(var(--content-width) + 80px);margin:0 auto;padding:16px;}
+.boot-status{display:none;margin:12px auto 0;max-width:var(--content-width);padding:10px 16px;border-radius:8px;border:1px solid #f08888;background:#3f1d1d;color:#ffecec;font-size:0.92rem;box-sizing:border-box;}
+.boot-status.active{display:block;}
+.toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+h2{margin:0;}
+.tab-shell{margin-top:12px;max-width:var(--content-width);margin-left:auto;margin-right:auto;}
+.mode-tabs{display:flex;gap:4px;margin:0 auto -1px;padding:0 8px;max-width:var(--content-width);width:100%;box-sizing:border-box;}
+.mode-tabs .tab{background:var(--muted);color:var(--text);border:1px solid var(--border);border-bottom:none;border-radius:6px 6px 0 0;padding:6px 14px;cursor:pointer;font-size:0.95em;display:inline-flex;align-items:center;gap:6px;}
+.mode-tabs .tab .badge{margin-left:6px;}
+.mode-tabs .tab.active{background:var(--bg);font-weight:600;}
+.form{border:1px solid var(--border);border-radius:0 8px 8px 8px;padding:16px;background:var(--bg);max-width:var(--content-width);margin-left:auto;margin-right:auto;width:100%;box-sizing:border-box;}
+.section{margin-bottom:16px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--muted);width:100%;max-width:var(--content-width);margin-left:auto;margin-right:auto;box-sizing:border-box;}
+.section legend{padding:0 6px;font-weight:600;color:var(--text);}
+label{display:inline-block;margin-right:12px;color:var(--text);}
+select,input[type='text'],textarea,input[type='number'],input[type='search']{padding:6px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:inherit;}
+button,input[type='submit'],input[type='button']{font-size:inherit;font-family:inherit;}
+textarea{width:100%;min-height:200px;resize:vertical;font-family:var(--font-mono);}
+.actions{text-align:right;margin-top:12px;width:100%;}
+.actions button{padding:8px 16px;border:none;border-radius:6px;background:var(--accent);color:#fff;font-weight:600;cursor:pointer;font-size:inherit;font-family:inherit;}
+.actions button:hover{opacity:0.9;}
+.section-debug .debug-actions{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:8px;}
+.section-debug button{padding:6px 14px;border:none;border-radius:6px;background:var(--accent);color:#fff;font-weight:600;cursor:pointer;font-size:inherit;font-family:inherit;}
+.section-debug button:hover{opacity:0.9;}
+.actions-run{display:none;}
+.results{margin-top:16px;width:100%;}
+.result-box{border:1px solid var(--border);border-radius:8px;padding:0;margin:0 auto 12px;background:rgba(122,162,247,0.08);overflow:auto;max-width:var(--content-width);width:100%;box-sizing:border-box;}
+.result-box h3{margin:0 0 8px;padding:12px 12px 0;font-size:1em;}
+.result-box pre{margin:0;padding:12px;background:#00000022;overflow:auto;white-space:pre;min-width:100%;box-sizing:border-box;font-family:var(--font-mono);font-size:calc(0.95rem * var(--font-scale));}
+pre.wrap{white-space:pre-wrap;word-break:break-word;}
+.result-box ul{margin:0;padding:12px 18px;}
+.result-box li{margin-bottom:6px;}
+.toolbar-controls{display:flex;gap:12px;align-items:center;}
+.theme-toggle{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--border);border-radius:999px;background:var(--muted);color:var(--text);cursor:pointer;transition:background 0.2s ease,border-color 0.2s ease,transform 0.2s ease;}
+.theme-toggle:hover{border-color:var(--accent);transform:translateY(-1px);}
+.theme-toggle:focus-visible{outline:2px solid var(--accent);outline-offset:3px;}
+.theme-toggle .theme-icon{width:18px;height:18px;display:flex;align-items:center;justify-content:center;opacity:0.4;transition:opacity 0.2s ease,transform 0.2s ease;}
+.theme-toggle .theme-icon svg{width:100%;height:100%;}
+.theme-toggle.is-light .theme-icon-sun{opacity:1;transform:scale(1.05);}
+.theme-toggle.is-light .theme-icon-moon{opacity:0.25;}
+.theme-toggle:not(.is-light) .theme-icon-moon{opacity:1;transform:scale(1.05);}
+.theme-toggle:not(.is-light) .theme-icon-sun{opacity:0.25;}
+.kw{color:var(--hl-kw);} .proto{color:var(--hl-proto);} .act{color:var(--hl-act);} .addr{color:var(--hl-addr);} .num{color:var(--hl-num);}
+.tip{display:inline-block;width:16px;height:16px;line-height:16px;text-align:center;border-radius:50%;border:1px solid var(--sub);color:var(--sub);font-size:12px;cursor:help;}
+.history{position:fixed;right:8px;top:64px;width:260px;max-height:70vh;overflow:auto;background:var(--muted);border:1px solid var(--border);border-radius:8px;padding:8px;z-index:30;}
+.hist-entry{display:block;width:100%;text-align:left;background:transparent;color:var(--text);border:1px solid transparent;border-radius:6px;padding:6px;margin-bottom:4px;cursor:pointer;}
+.hist-entry:hover{border-color:var(--accent);background:rgba(122,162,247,0.12);}
+.hist-time{font-size:0.85em;color:var(--sub);}
+.hist-desc{font-size:0.95em;}
+.tab-panels{margin-top:12px;}
+.tab-panel{display:none;}
+.tab-panel.active{display:flex;flex-direction:column;gap:16px;}
+.tab-controls{display:flex;justify-content:flex-end;gap:8px;margin-bottom:0;order:-100;align-self:flex-end;}
+.global-search{margin:6px auto 0;padding:0 8px;max-width:var(--content-width);width:100%;box-sizing:border-box;}
+.global-search label{display:inline-flex;align-items:center;gap:6px;}
+#include_any_label{display:inline-flex;align-items:center;gap:4px;}
+.radio-group{display:flex;gap:16px;align-items:center;} .radio-group label{margin-right:0;}
+.theme-control{display:flex;flex-direction:column;align-items:flex-start;gap:6px;margin-bottom:8px;} .theme-control select{min-width:200px;}
+.section-find .find-inline{display:inline-flex;align-items:center;gap:6px;margin-left:12px;}
+.pref-note{font-size:0.85em;color:var(--sub);margin-top:8px;}
+.rr{display:none;}
+.results[data-tab]{display:none;}
+.results[data-tab].active{display:block;}
+.hl-switch input{margin-right:4px;}
+.mono-input{font-family:var(--font-mono);letter-spacing:0.01em;}
+.layout-summary{margin:0 0 12px;font-size:0.95em;color:var(--sub);}
+.open-theme-modal{padding:8px 18px;border:1px solid var(--accent);border-radius:999px;background:transparent;color:var(--accent);font-weight:600;cursor:pointer;transition:background 0.2s ease,color 0.2s ease,transform 0.2s ease;}
+.open-theme-modal:hover{background:rgba(122,162,247,0.14);}
+.open-theme-modal:focus-visible{outline:2px solid var(--accent);outline-offset:3px;}
+.theme-modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;padding:24px;z-index:120;}
+.theme-modal[aria-hidden='true']{display:none;}
+.theme-modal.is-open{display:flex;}
+.theme-modal__backdrop{position:absolute;inset:0;background:rgba(0,0,0,0.45);}
+.theme-modal__dialog{position:relative;background:var(--bg);border:1px solid var(--border);border-radius:16px;width:min(1200px,92vw);max-width:92vw;display:flex;flex-direction:column;box-shadow:0 24px 60px rgba(0,0,0,0.45);}
+.theme-modal__header{display:flex;align-items:center;justify-content:space-between;padding:16px 22px;border-bottom:1px solid var(--border);}
+.theme-modal__header h3{margin:0;font-size:1.15em;}
+.theme-modal__close{border:none;background:transparent;color:var(--text);cursor:pointer;padding:6px;border-radius:6px;}
+.theme-modal__close:hover{background:rgba(122,162,247,0.14);}
+.theme-modal__close:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+.theme-modal__close svg{width:16px;height:16px;}
+.theme-modal__body{display:flex;flex-wrap:wrap;gap:24px;padding:22px;}
+.theme-modal__form{flex:1 1 280px;display:flex;flex-direction:column;gap:14px;}
+.theme-modal__form .pref-inline{margin:0;}
+.theme-modal__form select{width:100%;max-width:280px;}
+.theme-control--preview .preview-mode-controls{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;}
+.preview-mode-controls select{min-width:180px;}
+.preview-speed-control{display:flex;align-items:center;gap:8px;padding:4px 12px;border:1px solid var(--border);border-radius:10px;transition:opacity 0.2s ease;}
+.preview-speed-control label{font-size:0.85em;color:var(--sub);}
+.preview-speed-control input[type='range']{width:140px;}
+.preview-speed-control.is-disabled{opacity:0.45;}
+.preview-speed-control.is-disabled label{color:var(--sub);}
+.preview-speed-control input[disabled]{opacity:0.7;cursor:not-allowed;}
+.theme-modal__preview{flex:1 1 320px;display:flex;flex-direction:column;gap:16px;}
+.theme-preview-radar{position:relative;flex:1 1 auto;min-height:260px;border:1px solid var(--border);border-radius:14px;padding:22px;background:var(--preview-dark,#0e1116);box-shadow:0 18px 40px rgba(0,0,0,0.28);overflow:hidden;}
+.theme-preview-radar::before{content:"";position:absolute;inset:-35%;background:
+  radial-gradient(circle at 22% 24%,var(--preview-light,#f6f8fa) 0%,transparent 58%),
+  radial-gradient(circle at 74% 18%,color-mix(in srgb,var(--preview-accent,#7aa2f7) 75%, transparent) 0%,transparent 60%),
+  radial-gradient(circle at 45% 78%,var(--preview-dark,#0e1116) 0%,transparent 68%),
+  radial-gradient(circle at 30% 68%,color-mix(in srgb,var(--preview-accent,#7aa2f7) 45%, transparent) 0%,transparent 72%);
+mix-blend-mode:screen;opacity:0.9;animation:preview-warp var(--preview-speed,12s) linear infinite;}
+@supports not (color-mix(in srgb, red 75%, transparent)){
+  .theme-preview-radar::before{background:
+    radial-gradient(circle at 22% 24%,var(--preview-light,#f6f8fa) 0%,transparent 58%),
+    radial-gradient(circle at 74% 18%,rgba(122,162,247,0.6) 0%,transparent 60%),
+    radial-gradient(circle at 45% 78%,var(--preview-dark,#0e1116) 0%,transparent 68%),
+    radial-gradient(circle at 30% 68%,rgba(122,162,247,0.35) 0%,transparent 72%);}
+}
+.theme-preview-radar::after{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 1px rgba(0,0,0,0.18);mix-blend-mode:overlay;opacity:0.55;animation:preview-pulse calc(var(--preview-speed,12s)*0.5) ease-in-out infinite alternate;}
+.theme-preview-radar .preview-content{position:relative;z-index:1;display:flex;flex-direction:column;justify-content:space-between;gap:16px;color:#fff;font-family:var(--preview-body-font,var(--font-body));white-space:nowrap;overflow:hidden;height:100%;}
+.theme-preview-radar .preview-intro{margin:0;font-size:0.9em;opacity:0.85;max-width:420px;}
+.preview-grid{display:flex;flex-direction:column;gap:16px;flex:1;}
+.preview-banners{display:flex;flex-wrap:wrap;gap:8px;}
+.preview-banner{flex:1 1 240px;display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-radius:10px;border:1px solid rgba(255,255,255,0.12);background:var(--preview-bg,rgba(0,0,0,0.45));color:var(--preview-text,#fff);backdrop-filter:blur(6px);font-size:0.82em;letter-spacing:0.04em;text-transform:uppercase;white-space:nowrap;overflow:hidden;transition:opacity 0.3s ease,transform 0.3s ease;}
+.preview-banner .preview-card__label{opacity:0.85;}
+.preview-banner .preview-card__name{max-width:70%;overflow:hidden;text-overflow:ellipsis;}
+.preview-canvas{position:relative;flex:1;min-height:220px;border-radius:12px;overflow:hidden;}
+.preview-card{position:absolute;inset:0;border-radius:12px;padding:18px;background:var(--preview-bg,rgba(0,0,0,0.48));backdrop-filter:blur(8px);border:1px solid var(--preview-border,rgba(255,255,255,0.12));color:var(--preview-text,var(--text));box-shadow:0 12px 28px rgba(0,0,0,0.25);font-size:calc(1rem * var(--preview-font-scale,1));transition:opacity 0.4s ease,transform 0.4s ease;overflow:hidden;mix-blend-mode:normal;}
+.preview-card[data-theme-preview='dark']{z-index:1;}
+.preview-card[data-theme-preview='light']{z-index:2;}
+.preview-canvas[data-preview-mode='radar'] .preview-card[data-theme-preview='light']{--sweep-angle:0deg;-webkit-mask-image:linear-gradient(var(--sweep-angle), transparent 0, transparent 49.99%, rgba(0,0,0,1) 50%, rgba(0,0,0,1) 100%);mask-image:linear-gradient(var(--sweep-angle), transparent 0, transparent 49.99%, rgba(0,0,0,1) 50%, rgba(0,0,0,1) 100%);-webkit-mask-mode:luminance;mask-mode:alpha;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;animation:preview-sweep var(--preview-speed,12s) linear infinite;}
+.preview-canvas[data-preview-mode='radar'] .preview-card[data-theme-preview='dark']{opacity:1;}
+.preview-canvas[data-preview-mode='light'] .preview-card[data-theme-preview='dark'],
+.preview-canvas[data-preview-mode='dark'] .preview-card[data-theme-preview='light']{opacity:0;pointer-events:none;}
+.preview-canvas[data-preview-mode='light'] .preview-card[data-theme-preview='light'],
+.preview-canvas[data-preview-mode='dark'] .preview-card[data-theme-preview='dark']{opacity:1;}
+.preview-canvas[data-preview-mode='rorschach'] .preview-card{opacity:0;pointer-events:none;}
+.preview-rorschach{position:absolute;inset:0;width:100%;height:100%;border-radius:inherit;display:none;pointer-events:none;}
+.preview-rorschach-fallback{position:absolute;inset:0;display:none;align-items:center;justify-content:center;padding:0 18px;text-align:center;font-size:0.9em;font-weight:500;color:var(--preview-text,var(--text));background:linear-gradient(135deg,rgba(0,0,0,0.2),rgba(0,0,0,0.35));backdrop-filter:blur(6px);border-radius:inherit;opacity:0.9;}
+.preview-canvas[data-preview-mode='rorschach'] .preview-rorschach{display:block;}
+.preview-canvas[data-preview-mode='rorschach'] .preview-rorschach-fallback.is-visible{display:flex;}
+.preview-grid[data-preview-mode='light'] .preview-banner[data-theme-preview='dark'],
+.preview-grid[data-preview-mode='dark'] .preview-banner[data-theme-preview='light']{opacity:0.35;}
+.preview-canvas[data-preview-mode='split']::after{content:"";position:absolute;top:0;bottom:0;left:50%;width:1px;background:var(--preview-border,rgba(255,255,255,0.2));opacity:0.65;}
+.preview-canvas[data-preview-mode='split'] .preview-card{opacity:1;pointer-events:none;transition:none;}
+.preview-canvas[data-preview-mode='split'] .preview-card[data-theme-preview='light']{clip-path:inset(0 50% 0 0);z-index:2;}
+.preview-canvas[data-preview-mode='split'] .preview-card[data-theme-preview='dark']{clip-path:inset(0 0 0 50%);z-index:1;}
+.preview-canvas[data-preview-mode='split'] .preview-rorschach{display:none;}
+.preview-grid[data-preview-mode='radar'] .preview-banner,
+.preview-grid[data-preview-mode='rorschach'] .preview-banner,
+.preview-grid[data-preview-mode='split'] .preview-banner{opacity:1;}
+.preview-card__header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;font-size:0.8em;text-transform:uppercase;letter-spacing:0.06em;}
+.preview-card__label{opacity:0.75;}
+.preview-card__name{font-family:var(--preview-mono-font,var(--font-mono));padding:2px 10px;border-radius:999px;background:rgba(0,0,0,0.25);}
+.preview-card__body{display:flex;flex-direction:column;gap:8px;font-family:var(--preview-body-font,var(--font-body));color:var(--preview-text,var(--text));white-space:nowrap;overflow:hidden;}
+.preview-card__body p{margin:0 0 4px;overflow:hidden;text-overflow:clip;}
+.preview-card__body code{display:block;font-family:var(--preview-mono-font,var(--font-mono));background:var(--preview-code-bg,color-mix(in srgb,var(--preview-text,var(--text)) 12%, transparent));padding:6px 10px;border-radius:6px;border:1px solid var(--preview-code-border,color-mix(in srgb,var(--preview-accent,var(--accent)) 28%, transparent));white-space:pre;overflow:hidden;text-overflow:clip;}
+.preview-card .nl{display:none;}
+.preview-card .wrap{white-space:pre;}
+.preview-card__body code + code{margin-top:4px;}
+.preview-card .kw{color:var(--preview-kw,var(--preview-accent,var(--accent)));}
+.preview-card .proto{color:var(--preview-proto,var(--preview-accent,var(--accent)));}
+.preview-card .act{color:var(--preview-act,var(--preview-accent,var(--accent)));}
+.preview-card .addr{color:var(--preview-addr,var(--preview-accent,var(--accent)));}
+.preview-card .num{color:var(--preview-num,var(--preview-accent,var(--accent)));}
+.preview-card .match{background:color-mix(in srgb,var(--preview-match,var(--preview-accent,var(--accent))) 35%, transparent);border-radius:4px;padding:0 4px;color:var(--preview-text,var(--text));}
+@supports not (color-mix(in srgb, red 35%, transparent)){
+  .preview-card__body code{background:rgba(0,0,0,0.16);border:1px solid rgba(255,255,255,0.18);}
+  .preview-card .match{background:rgba(122,162,247,0.28);}
+}
+@keyframes preview-warp{
+  0%{transform:scale(1) rotate(0deg);filter:hue-rotate(0deg);}
+  35%{transform:scale(1.12) rotate(120deg);filter:hue-rotate(25deg);}
+  70%{transform:scale(1.05) rotate(240deg);filter:hue-rotate(15deg);}
+  100%{transform:scale(1) rotate(360deg);filter:hue-rotate(0deg);}
+}
+@keyframes preview-pulse{
+  0%{opacity:0.35;}
+  100%{opacity:0.65;}
+}
+@property --sweep-angle{
+  syntax:"<angle>";
+  inherits:false;
+  initial-value:0deg;
+}
+@keyframes preview-sweep{
+  0%{--sweep-angle:0deg;}
+  100%{--sweep-angle:360deg;}
+}
+.theme-modal__footer{display:flex;justify-content:flex-end;gap:12px;padding:16px 22px;border-top:1px solid var(--border);}
+.theme-modal__cancel,.theme-modal__save{padding:8px 16px;border-radius:8px;font-weight:600;cursor:pointer;font-family:inherit;font-size:inherit;}
+.theme-modal__cancel{border:1px solid var(--border);background:transparent;color:var(--text);}
+.theme-modal__cancel:hover{background:var(--muted);}
+.theme-modal__cancel:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+.theme-modal__save{border:none;background:var(--accent);color:#fff;}
+.theme-modal__save:hover{opacity:0.9;}
+.theme-modal__save:focus-visible{outline:2px solid #fff;outline-offset:2px;}
+@media (max-width:780px){
+  .theme-modal__dialog{max-height:94vh;overflow:auto;}
+  .theme-modal__body{flex-direction:column;}
+  .theme-modal__preview{flex:1 1 auto;}
+}
+.section-layout .pref-note{margin-top:6px;}
+.pref-slider input[type='range']{width:160px;}
+.pref-metric{display:inline-flex;align-items:center;min-width:52px;justify-content:flex-end;font-variant-numeric:tabular-nums;color:var(--sub);}
+.section-layout .pref-inline{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+.section-layout select{min-width:200px;}
+.history-toggle{display:flex;align-items:center;gap:4px;}
+.badge{display:inline-flex;align-items:center;justify-content:center;border-radius:999px;font-size:0.7em;font-weight:600;padding:2px 6px;border:1px solid var(--border);background:rgba(122,162,247,0.15);color:var(--link, var(--accent));text-transform:uppercase;letter-spacing:0.05em;}
+.badge.beta{background:color-mix(in srgb, var(--accent) 20%, transparent);color:var(--accent);border-color:var(--accent);}
+@supports not (color-mix(in srgb, red 20%, transparent)){
+  .badge.beta{background:rgba(122,162,247,0.15);color:var(--accent);border-color:var(--accent);}
+}
+.badge.owner{background:rgba(46,204,113,0.15);border-color:rgba(46,204,113,0.35);color:#2ecc71;}
+.section-config{display:block;}
+.section-config-view .config-select{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;}
+.section-config-view #config_filter{width:100%;box-sizing:border-box;margin:6px 0;}
+.section-config-view .config-filter-options{display:flex;flex-wrap:wrap;gap:12px;margin:6px 0;}
+.section-config-view .config-filter-options label{margin-right:0;display:inline-flex;align-items:center;gap:6px;}
+.section-config-view .config-filter-options input[type='number']{width:72px;}
+.section-config-view .config-filter-notice{font-size:0.85em;color:var(--sub);margin-top:4px;}
+.section-config-view .config-loading{display:none;font-size:0.9em;color:var(--sub);margin:4px 0;}
+.section-config-view .config-loading.active{display:block;}
+.section-config-view .results{margin-top:12px;}
+
+pre.line-numbers{position:relative;padding-left:3.75em;}
+pre.line-numbers .line{display:flex;}
+pre.line-numbers .line.match-line{position:relative;border-radius:4px;margin:0 -8px;padding:0 8px;}
+pre.line-numbers .line.match-line::before{content:"";position:absolute;left:-4px;top:4px;bottom:4px;width:3px;border-radius:3px;background:var(--match-bg);box-shadow:0 0 6px rgba(0,0,0,0.2);}
+pre.line-numbers .line.match-line .ln{color:var(--accent);}
+pre.line-numbers .line.match-line .txt{background:transparent;color:inherit;font-weight:600;}
+.match-token{background:var(--match-bg);color:var(--match-fg);padding:0 3px;border-radius:4px;font-weight:600;box-shadow:0 0 0 1px rgba(0,0,0,0.08);}
+pre.line-numbers .line .ln{width:3em;margin-right:0.75em;text-align:right;color:var(--sub);user-select:none;pointer-events:none;font-variant-numeric:tabular-nums;}
+pre.line-numbers .line .txt{flex:1;white-space:inherit;}
+pre.line-numbers .line .txt:empty::after{content:'\00a0';}
+pre.wrap.line-numbers .line .txt{text-indent:0;}
+.config-match{display:inline;background:transparent;color:inherit;font-weight:600;}
+.config-card-area{margin:12px 0 18px;}
+.config-card-stack{margin-bottom:16px;}
+.config-card-stack:last-child{margin-bottom:0;}
+.config-card-stack-title{font-size:0.75em;letter-spacing:0.12em;color:var(--sub);text-transform:uppercase;margin-bottom:6px;}
+.config-card-grid{display:flex;flex-direction:column;gap:12px;}
+.config-card{border:1px solid color-mix(in srgb,var(--border) 90%, transparent);border-radius:12px;overflow:hidden;background:color-mix(in srgb,var(--muted) 35%, var(--bg) 65%);box-shadow:0 6px 16px rgba(0,0,0,0.18);}
+.config-summary{margin:12px 0 18px;}
+.config-summary.is-hidden{display:none;}
+.config-summary-toggle{display:inline-flex;flex-wrap:wrap;gap:6px;margin:4px 0 12px;background:color-mix(in srgb,var(--muted) 50%, var(--bg) 50%);padding:4px;border:1px solid color-mix(in srgb,var(--border) 80%, transparent);border-radius:999px;}
+.config-summary-btn{border:none;background:transparent;color:var(--sub);font-size:0.85em;font-weight:600;padding:6px 14px;border-radius:999px;cursor:pointer;transition:background 0.18s ease,color 0.18s ease;}
+.config-summary-btn:hover{color:var(--text);}
+.config-summary-btn.is-active{background:color-mix(in srgb,var(--accent) 25%, transparent);color:var(--text);}
+.config-summary-view{display:none;}
+.config-summary-view.is-active{display:block;}
+.acl-view-toggle{margin:4px 0 12px;}
+.acl-view-container{display:flex;flex-direction:column;gap:16px;}
+.acl-view-container.is-hidden{display:none;}
+.acl-view{display:none;}
+.acl-view.is-active{display:block;}
+.acl-view h4{margin:0 0 6px;font-size:0.82em;letter-spacing:0.06em;text-transform:uppercase;color:var(--sub);}
+
+.pref-toggle{margin-bottom:8px;}
+.pref-toggle label{margin-right:0;}
+.pref-inline{display:flex;align-items:center;gap:12px;margin-bottom:8px;flex-wrap:wrap;}
+.pref-inline input[type='number']{width:80px;}
+.section{position:relative;}
+.clear-btn{padding:4px 12px;border:1px solid #c62828;border-radius:6px;background:#d32f2f;color:#fff;font-weight:700;font-family:inherit;font-size:0.9em;cursor:pointer;transition:opacity 0.15s ease,transform 0.15s ease;}
+.clear-btn:hover{opacity:0.9;transform:translateY(-1px);}
+:root[data-theme='light']{--bg:#ffffff;--muted:#f6f8fa;--text:#24292f;--sub:#57606a;--accent:#0969da;--border:#d0d7de;--match-bg:color-mix(in srgb,var(--accent) 70%, #ffffff 25%);--match-fg:#ffffff;}
+@supports not (color-mix(in srgb, red 70%, #000000 10%)){
+  :root{--match-bg:var(--accent);--match-fg:#ffffff;}
+  .config-card{background:var(--muted);}
+  .config-card-row.is-name{background:var(--accent);color:#ffffff;}
+  .config-card-row.is-value{background:var(--muted);}
+  .config-card-row.is-value.is-highlight{background:var(--accent);color:#ffffff;}
+  .config-card--group .config-card-row.is-name{background:var(--sub);color:var(--text);}
+  .config-card--group .config-card-row.is-value{background:var(--muted);}
+  .config-card-extra{background:var(--muted);}
+}
+:root[data-theme='light'] .config-card{box-shadow:0 6px 16px rgba(15,23,42,0.12);}
+.config-card-row{font-family:var(--font-mono);font-size:calc(0.95rem * var(--font-scale));padding:9px 14px;white-space:pre-wrap;display:flex;align-items:center;line-height:1.4;}
+.config-card-row.is-name{background:color-mix(in srgb,var(--accent) 32%, var(--bg) 68%);color:var(--text);font-weight:600;border-bottom:1px solid color-mix(in srgb,var(--border) 75%, transparent);}
+.config-card-row.is-value{background:color-mix(in srgb,var(--muted) 80%, var(--bg) 20%);color:var(--text);}
+.config-card-row.is-value.is-highlight{background:color-mix(in srgb,var(--accent) 20%, var(--muted) 80%);border-left:3px solid var(--accent);}
+.config-card-row.is-value[data-extra-label]::after{content:" " attr(data-extra-label);color:var(--sub);font-size:0.78em;margin-left:8px;white-space:nowrap;letter-spacing:0.02em;}
+.config-card--group .config-card-row.is-name{background:color-mix(in srgb,var(--sub) 45%, var(--bg) 55%);}
+.config-card--group .config-card-row.is-value{background:color-mix(in srgb,var(--muted) 72%, var(--bg) 28%);}
+.config-card-text{display:inline;white-space:inherit;}
+.config-card-collapsible{margin:0;padding:0;border:none;background:none;}
+.config-card-collapsible-summary{cursor:pointer;list-style:none;font-size:0.75em;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--accent);padding:8px 14px 0;display:flex;align-items:center;gap:8px;transition:color 0.18s ease;}
+.config-card-collapsible-summary::-webkit-details-marker{display:none;}
+.config-card-collapsible-summary::before{content:"\25B8";font-size:0.7em;transition:transform 0.18s ease;}
+.config-card-collapsible-summary::after{content:attr(data-label-collapsed);font-size:0.75em;}
+.config-card-collapsible-summary:hover{color:var(--text);}
+.config-card-collapsible[open]>.config-card-collapsible-summary::before{transform:rotate(90deg);}
+.config-card-collapsible[open]>.config-card-collapsible-summary{color:var(--text);}
+.config-card-collapsible[open]>.config-card-collapsible-summary::after{content:attr(data-label-expanded);}
+.config-card-extra{padding:4px 14px 12px;display:flex;flex-direction:column;gap:4px;background:color-mix(in srgb,var(--muted) 60%, var(--bg) 40%);border-top:1px solid color-mix(in srgb,var(--border) 70%, transparent);}
+.config-card-extra-line{font-family:var(--font-mono);font-size:calc(0.9rem * var(--font-scale));color:var(--text);}
+
+
+/* ── preview-page extras ─────────────────────────────────────── */
+body { margin: 0; }
+.page-header {
+  background: var(--muted);
+  border-bottom: 1px solid var(--border);
+  padding: 18px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.page-header h1 { margin: 0; font-size: 1.3rem; color: var(--text); }
+.page-header .tagline { color: var(--sub); font-size: 0.9rem; margin-top: 4px; }
+.header-links a { color: var(--accent); font-size: 0.9rem; margin-left: 16px; }
+.page-body { max-width: 960px; margin: 0 auto; padding: 24px 16px 48px; }
+.tab-nav {
+  display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 0;
+  border-bottom: 1px solid var(--border); padding-bottom: 0;
+}
+.tab-btn {
+  background: transparent; color: var(--sub);
+  border: 1px solid transparent; border-bottom: none;
+  border-radius: 6px 6px 0 0; padding: 7px 16px;
+  cursor: pointer; font-size: 0.92rem; font-family: inherit;
+  margin-bottom: -1px; position: relative;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.tab-btn:hover { color: var(--text); background: var(--muted); }
+.tab-btn.active {
+  background: var(--bg); color: var(--text); font-weight: 600;
+  border-color: var(--border); border-bottom-color: var(--bg);
+}
+.tab-panel { display: none; padding: 20px 0; }
+.tab-panel.active { display: block; }
+.preview-section { margin-bottom: 28px; }
+.preview-section h3 { margin: 0 0 8px; font-size: 1rem; color: var(--sub); font-weight: 600; }
+.cmd-line {
+  font-family: var(--font-mono); font-size: 0.85rem;
+  background: var(--muted); border: 1px solid var(--border);
+  border-radius: 6px; padding: 8px 12px; margin-bottom: 10px;
+  display: flex; gap: 8px; align-items: center; overflow-x: auto;
+}
+.prompt { color: var(--accent); user-select: none; }
+.preview-result {
+  padding: 14px 16px;
+  font-family: var(--font-mono); font-size: 0.85rem;
+  line-height: 1.65;
+}
+.result-pre {
+  margin: 0; white-space: pre-wrap; word-break: break-all;
+  font-family: var(--font-mono); font-size: 0.85rem;
+  line-height: 1.65;
+}
+.meta-line { margin-bottom: 8px; font-size: 0.88rem; }
+.hit-count { color: var(--sub); }
+.alias-line { color: var(--sub); }
+.no-results { color: var(--sub); font-style: italic; padding: 6px 0; }
+.rule-list { display: flex; flex-direction: column; gap: 3px; }
+.rule-entry { display: flex; align-items: baseline; gap: 8px; }
+.rule-entry code { word-break: break-all; }
+:root { --permit-color: #c3e88d; --deny-color: #f07178; }
+:root[data-theme='light'] { --permit-color: #2d7a2d; --deny-color: #c0392b; }
+.action-permit { border-left: 3px solid var(--permit-color); padding-left: 8px; }
+.action-deny   { border-left: 3px solid var(--deny-color); padding-left: 8px; }
+.bind-tag {
+  font-size: 0.78rem; color: var(--sub);
+  background: var(--muted); border: 1px solid var(--border);
+  border-radius: 4px; padding: 1px 5px; white-space: nowrap; flex-shrink: 0;
+}
+.diff-added { margin-bottom: 16px; }
+.diff-removed { margin-bottom: 16px; }
+.diff-added .group-title { color: var(--permit-color); font-weight: 600; margin-bottom: 4px; }
+.diff-removed .group-title { color: var(--deny-color); font-weight: 600; margin-bottom: 4px; }
+.diff-prefix { color: var(--sub); user-select: none; width: 1em; flex-shrink: 0; }
+.diff-added .diff-prefix { color: var(--permit-color); }
+.diff-removed .diff-prefix { color: var(--deny-color); }
+.empty-group { color: var(--sub); font-style: italic; margin-bottom: 8px; }
+.added-count { color: var(--permit-color); }
+.removed-count { color: var(--deny-color); }
+.findhost-results { display: flex; flex-direction: column; gap: 12px; }
+.fh-config { border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; }
+.fh-filename { font-weight: 600; margin-bottom: 6px; }
+.fh-group { font-size: 0.88rem; color: var(--sub); margin-top: 4px; }
+.fh-group code { color: var(--accent); }
+.comment { color: var(--sub); }
+.page-footer {
+  text-align: center; color: var(--sub); font-size: 0.82rem;
+  padding: 20px 0 10px; border-top: 1px solid var(--border);
+  margin-top: 40px;
+}
+  </style>
+</head>
+<body>
+  <header class="page-header">
+    <div>
+      <h1>ACL-inspector</h1>
+      <div class="tagline">Firewall ACL analysis · Cisco ASA &amp; FortiGate · Live preview with in-repo example data</div>
+    </div>
+    <div class="header-links">
+      <a href="https://github.com/jandahl/acl-inspector" target="_blank" rel="noopener">GitHub →</a>
+      <button class="theme-toggle" id="theme-toggle" title="Toggle light/dark" aria-label="Toggle light/dark theme">☀</button>
+    </div>
+  </header>
+
+  <main class="page-body">
+    <nav class="tab-nav" role="tablist">
+      
+  <button class="tab-btn" data-tab="asa-inspect" role="tab" aria-selected="false" aria-controls="panel-asa-inspect">Inspect (ASA)</button>
+
+
+  <button class="tab-btn" data-tab="asa-compare" role="tab" aria-selected="false" aria-controls="panel-asa-compare">Compare (ASA)</button>
+
+
+  <button class="tab-btn" data-tab="find-host" role="tab" aria-selected="false" aria-controls="panel-find-host">Find host</button>
+
+
+  <button class="tab-btn" data-tab="fortigate" role="tab" aria-selected="false" aria-controls="panel-fortigate">FortiGate</button>
+
+
+  <button class="tab-btn" data-tab="config" role="tab" aria-selected="false" aria-controls="panel-config">Config viewer</button>
+
+    </nav>
+    
+  <div id="panel-asa-inspect" class="tab-panel" role="tabpanel">
+    
+<div class="preview-section">
+  <h3>Inspect a named host object</h3>
+  <div class="cmd-line"><span class="prompt">$</span> <code>aclinspector.py inspect --vendor asa --config cisco-asa-example --inspect alpha_lobby_host1</code></div>
+  <div class="result-box preview-result"><div class="meta-line">Resolves to: <span class="addr">10.0.1.101</span>  <span class='hit-count'>(6 matching rules)</span></div>
+<div class="rule-list">
+<div class="rule-entry action-permit"><span class="bind-tag">alpha_lobby(in)</span><code><span class="kw">access-list</span> alpha_lobby_access extended <span class="act">permit</span> <span class="proto">tcp</span> <span class="kw">object</span> alpha_lobby_net <span class="kw">object</span> alpha_dest1_host1 <span class="kw">eq</span> <span class="num">80</span></code></div>
+<div class="rule-entry action-permit"><span class="bind-tag">alpha_lobby(in)</span><code><span class="kw">access-list</span> alpha_lobby_access extended <span class="act">permit</span> <span class="proto">tcp</span> <span class="kw">object</span> alpha_lobby_net <span class="kw">object-group</span> alpha_dest1_grp <span class="kw">object-group</span> Web-Services</code></div>
+<div class="rule-entry action-permit"><span class="bind-tag">alpha_lobby(in)</span><code><span class="kw">access-list</span> alpha_lobby_access extended <span class="act">permit</span> <span class="proto">tcp</span> <span class="kw">object</span> alpha_lobby_net <span class="kw">object-group</span> alpha_dest2_grp <span class="kw">object-group</span> Infra-Services</code></div>
+<div class="rule-entry action-permit"><span class="bind-tag">alpha_lobby(in)</span><code><span class="kw">access-list</span> alpha_lobby_access extended <span class="act">permit</span> <span class="proto">tcp</span> <span class="kw">object</span> alpha_lobby_net <span class="kw">object</span> alpha_dest3_host1 <span class="kw">eq</span> <span class="num">10001</span></code></div>
+<div class="rule-entry action-permit"><span class="bind-tag">alpha_lobby(in)</span><code><span class="kw">access-list</span> alpha_lobby_access extended <span class="act">permit</span> <span class="proto">udp</span> <span class="kw">object</span> alpha_lobby_net <span class="kw">object</span> alpha_dest3_host1 <span class="kw">eq</span> <span class="num">20001</span></code></div>
+<div class="rule-entry action-permit"><span class="bind-tag">alpha_lobby(in)</span><code><span class="kw">access-list</span> alpha_lobby_access extended <span class="act">permit</span> <span class="proto">ip</span> <span class="kw">object</span> alpha_lobby_net <span class="kw">object-group</span> alpha_destgrp_all</code></div>
+</div></div>
+</div>
+<div class="preview-section">
+  <h3>Inspect an object-group (expands to multiple addresses)</h3>
+  <div class="cmd-line"><span class="prompt">$</span> <code>aclinspector.py inspect --vendor asa --config cisco-asa-example --inspect alpha_destgrp_all</code></div>
+  <div class="result-box preview-result"><div class="meta-line">Resolves to: <span class="addr">10.1.1.101</span>, <span class="addr">10.1.1.102</span>, <span class="addr">10.1.2.101</span>, <span class="addr">10.1.2.102</span>, <span class="addr">10.1.3.101</span>, <span class="addr">10.1.3.102</span>, <span class="addr">10.1.4.101</span>, <span class="addr">10.1.4.102</span>  <span class='hit-count'>(6 matching rules)</span></div>
+<div class="meta-line alias-line">Also known as: <code>alpha_dest2_host1</code>, <code>alpha_dest3_host2</code>, <code>alpha_dest3_host1</code>, <code>alpha_dest1_host2</code>, <code>alpha_dest2_host2</code>, <code>alpha_dest4_host1</code>, <code>alpha_dest1_host1</code>, <code>alpha_dest4_host2</code></div>
+<div class="rule-list">
+<div class="rule-entry action-permit"><span class="bind-tag">alpha_lobby(in)</span><code><span class="kw">access-list</span> alpha_lobby_access extended <span class="act">permit</span> <span class="proto">tcp</span> <span class="kw">object</span> alpha_lobby_net <span class="kw">object</span> alpha_dest1_host1 <span class="kw">eq</span> <span class="num">80</span></code></div>
+<div class="rule-entry action-permit"><span class="bind-tag">alpha_lobby(in)</span><code><span class="kw">access-list</span> alpha_lobby_access extended <span class="act">permit</span> <span class="proto">tcp</span> <span class="kw">object</span> alpha_lobby_net <span class="kw">object-group</span> alpha_dest1_grp <span class="kw">object-group</span> Web-Services</code></div>
+<div class="rule-entry action-permit"><span class="bind-tag">alpha_lobby(in)</span><code><span class="kw">access-list</span> alpha_lobby_access extended <span class="act">permit</span> <span class="proto">tcp</span> <span class="kw">object</span> alpha_lobby_net <span class="kw">object-group</span> alpha_dest2_grp <span class="kw">object-group</span> Infra-Services</code></div>
+<div class="rule-entry action-permit"><span class="bind-tag">alpha_lobby(in)</span><code><span class="kw">access-list</span> alpha_lobby_access extended <span class="act">permit</span> <span class="proto">tcp</span> <span class="kw">object</span> alpha_lobby_net <span class="kw">object</span> alpha_dest3_host1 <span class="kw">eq</span> <span class="num">10001</span></code></div>
+<div class="rule-entry action-permit"><span class="bind-tag">alpha_lobby(in)</span><code><span class="kw">access-list</span> alpha_lobby_access extended <span class="act">permit</span> <span class="proto">udp</span> <span class="kw">object</span> alpha_lobby_net <span class="kw">object</span> alpha_dest3_host1 <span class="kw">eq</span> <span class="num">20001</span></code></div>
+<div class="rule-entry action-permit"><span class="bind-tag">alpha_lobby(in)</span><code><span class="kw">access-list</span> alpha_lobby_access extended <span class="act">permit</span> <span class="proto">ip</span> <span class="kw">object</span> alpha_lobby_net <span class="kw">object-group</span> alpha_destgrp_all</code></div>
+</div></div>
+</div>
+<div class="preview-section">
+  <h3>Inspect a raw IP address</h3>
+  <div class="cmd-line"><span class="prompt">$</span> <code>aclinspector.py inspect --vendor asa --config cisco-asa-example --inspect 10.1.1.101</code></div>
+  <div class="result-box preview-result"><div class="meta-line">Resolves to: <span class="addr">10.1.1.101</span>  <span class='hit-count'>(3 matching rules)</span></div>
+<div class="meta-line alias-line">Also known as: <code>alpha_dest1_host1</code></div>
+<div class="rule-list">
+<div class="rule-entry action-permit"><span class="bind-tag">alpha_lobby(in)</span><code><span class="kw">access-list</span> alpha_lobby_access extended <span class="act">permit</span> <span class="proto">tcp</span> <span class="kw">object</span> alpha_lobby_net <span class="kw">object</span> alpha_dest1_host1 <span class="kw">eq</span> <span class="num">80</span></code></div>
+<div class="rule-entry action-permit"><span class="bind-tag">alpha_lobby(in)</span><code><span class="kw">access-list</span> alpha_lobby_access extended <span class="act">permit</span> <span class="proto">tcp</span> <span class="kw">object</span> alpha_lobby_net <span class="kw">object-group</span> alpha_dest1_grp <span class="kw">object-group</span> Web-Services</code></div>
+<div class="rule-entry action-permit"><span class="bind-tag">alpha_lobby(in)</span><code><span class="kw">access-list</span> alpha_lobby_access extended <span class="act">permit</span> <span class="proto">ip</span> <span class="kw">object</span> alpha_lobby_net <span class="kw">object-group</span> alpha_destgrp_all</code></div>
+</div></div>
+</div>
+  </div>
+
+
+  <div id="panel-asa-compare" class="tab-panel" role="tabpanel">
+    
+<div class="preview-section">
+  <h3>Compare ACL coverage: alpha_dest1_grp → alpha_dest2_grp</h3>
+  <div class="cmd-line"><span class="prompt">$</span> <code>aclinspector.py inspect --vendor asa --config cisco-asa-example --old alpha_dest1_grp --new alpha_dest2_grp</code></div>
+  <div class="result-box preview-result"><div class="meta-line"><span class="added-count">+1 added</span> &nbsp; <span class="removed-count">-2 removed</span></div>
+<div class="diff-added"><div class="group-title">Added (new only)</div><div class="rule-list">
+<div class="rule-entry"><span class="diff-prefix">+</span><code><span class="kw">access-list</span> alpha_lobby_access extended <span class="act">permit</span> <span class="proto">tcp</span> <span class="kw">object</span> alpha_lobby_net <span class="kw">object-group</span> alpha_dest2_grp <span class="kw">object-group</span> Infra-Services</code></div>
+</div></div>
+<div class="diff-removed"><div class="group-title">Removed (old only)</div><div class="rule-list">
+<div class="rule-entry"><span class="diff-prefix">−</span><code><span class="kw">access-list</span> alpha_lobby_access extended <span class="act">permit</span> <span class="proto">tcp</span> <span class="kw">object</span> alpha_lobby_net <span class="kw">object</span> alpha_dest1_host1 <span class="kw">eq</span> <span class="num">80</span></code></div>
+<div class="rule-entry"><span class="diff-prefix">−</span><code><span class="kw">access-list</span> alpha_lobby_access extended <span class="act">permit</span> <span class="proto">tcp</span> <span class="kw">object</span> alpha_lobby_net <span class="kw">object-group</span> alpha_dest1_grp <span class="kw">object-group</span> Web-Services</code></div>
+</div></div></div>
+</div>
+<div class="preview-section">
+  <h3>Compare two host objects in the same subnet</h3>
+  <div class="cmd-line"><span class="prompt">$</span> <code>aclinspector.py inspect --vendor asa --config cisco-asa-example --old alpha_lobby_host1 --new alpha_lobby_host2</code></div>
+  <div class="result-box preview-result"><div class="meta-line"><span class="added-count">+0 added</span> &nbsp; <span class="removed-count">-0 removed</span></div>
+<div class="diff-added empty-group">Added (new only): <em>none</em></div>
+<div class="diff-removed empty-group">Removed (old only): <em>none</em></div></div>
+</div>
+  </div>
+
+
+  <div id="panel-find-host" class="tab-panel" role="tabpanel">
+    
+<div class="preview-section">
+  <h3>Find host 10.1.1.101 across all configs in the directory</h3>
+  <div class="cmd-line"><span class="prompt">$</span> <code>aclinspector.py inspect --vendor asa --config configs/cisco/ --find-host 10.1.1.101</code></div>
+  <div class="result-box preview-result"><div class="findhost-results">
+<div class="fh-config"><div class="fh-filename">&#128196; cisco-asa-example</div>
+<div class="fh-group">Named objects: <code>alpha_dest1_host1</code></div>
+<div class="fh-group">Literal matches: <span class="addr">10.1.1.101</span></div>
+</div>
+</div></div>
+</div>
+  </div>
+
+
+  <div id="panel-fortigate" class="tab-panel" role="tabpanel">
+    
+<div class="preview-section">
+  <h3>Inspect FortiGate address object &#x27;lobby-net&#x27; (VDOM: Alpha)</h3>
+  <div class="cmd-line"><span class="prompt">$</span> <code>aclinspector.py inspect --vendor fortigate --config fortigate7-4-example --vdom Alpha --inspect lobby-net</code></div>
+  <div class="result-box preview-result"><div class="meta-line">Resolves to: <span class="addr">10.0.1.0/24</span>  <span class='hit-count'>(5 matching rules)</span></div>
+<div class="rule-list">
+<div class="rule-entry action-permit"><span class="bind-tag"></span><code>policy <span class="num">1</span> action <span class="act">permit</span> srcaddr [&#x27;lobby-net&#x27;] dstaddr [&#x27;dest1-host1&#x27;] service [&#x27;HTTP&#x27;]</code></div>
+<div class="rule-entry action-permit"><span class="bind-tag"></span><code>policy <span class="num">2</span> action <span class="act">permit</span> srcaddr [&#x27;lobby-net&#x27;] dstaddr [&#x27;dest1-group&#x27;] service [&#x27;Web-Services&#x27;]</code></div>
+<div class="rule-entry action-permit"><span class="bind-tag"></span><code>policy <span class="num">3</span> action <span class="act">permit</span> srcaddr [&#x27;lobby-net&#x27;] dstaddr [&#x27;dest2-group&#x27;] service [&#x27;Infra-Services&#x27;]</code></div>
+<div class="rule-entry action-permit"><span class="bind-tag"></span><code>policy <span class="num">4</span> action <span class="act">permit</span> srcaddr [&#x27;lobby-net&#x27;] dstaddr [&#x27;dest3-host1&#x27;] service [&#x27;Custom-Multi&#x27;]</code></div>
+<div class="rule-entry action-permit"><span class="bind-tag"></span><code>policy <span class="num">5</span> action <span class="act">permit</span> srcaddr [&#x27;lobby-net&#x27;] dstaddr [&#x27;dest-all-hosts&#x27;] service [&#x27;ALL&#x27;]</code></div>
+</div></div>
+</div>
+<div class="preview-section">
+  <h3>Inspect by IP (resolved through FortiGate address objects)</h3>
+  <div class="cmd-line"><span class="prompt">$</span> <code>aclinspector.py inspect --vendor fortigate --config fortigate7-4-example --vdom Alpha --inspect 10.0.1.101</code></div>
+  <div class="result-box preview-result"><div class="meta-line">Resolves to: <span class="addr">10.0.1.101</span>  <span class='hit-count'>(0 matching rules)</span></div>
+<div class="no-results">No matching ACL entries found.</div></div>
+</div>
+  </div>
+
+
+  <div id="panel-config" class="tab-panel" role="tabpanel">
+    
+<div class="preview-section">
+  <h3>Cisco ASA example config (first 80 lines)</h3>
+  <div class="cmd-line"><span class="prompt">$</span> <code>configs/cisco/cisco-asa-example</code></div>
+  <div class="result-box preview-result"><pre class='result-pre'><span class="comment">!</span>
+<span class="comment">!--- Interfaces for ALPHA</span>
+interface GigabitEthernet0/1
+ nameif alpha_lobby
+ security-level <span class="num">100</span>
+ <span class="proto">ip</span> address <span class="addr">10.0.1.1</span> <span class="addr">255.255.255.0</span>
+<span class="comment">!</span>
+ &amp;lt;--- More ---&amp;gt;              
+interface GigabitEthernet0/2
+ nameif alpha_dest1
+ security-level <span class="num">50</span>
+ <span class="proto">ip</span> address <span class="addr">10.1.1.1</span> <span class="addr">255.255.255.0</span>
+<span class="comment">!</span>
+interface GigabitEthernet0/3
+ nameif alpha_dest2
+ security-level <span class="num">50</span>
+ <span class="proto">ip</span> address <span class="addr">10.1.2.1</span> <span class="addr">255.255.255.0</span>
+<span class="comment">!</span>
+interface GigabitEthernet0/4
+ nameif alpha_dest3
+ security-level <span class="num">50</span>
+ <span class="proto">ip</span> address <span class="addr">10.1.3.1</span> <span class="addr">255.255.255.0</span>
+<span class="comment">!</span>
+interface GigabitEthernet0/5
+ nameif alpha_dest4
+ security-level <span class="num">50</span>
+ <span class="proto">ip</span> address <span class="addr">10.1.4.1</span> <span class="addr">255.255.255.0</span>
+<span class="comment">!</span>
+<span class="comment">!--- Interfaces for BRAVO</span>
+interface GigabitEthernet0/6
+ nameif bravo_lobby
+ security-level <span class="num">100</span>
+ <span class="proto">ip</span> address <span class="addr">10.0.2.1</span> <span class="addr">255.255.255.0</span>
+<span class="comment">!</span>
+ &lt;--- More ---&gt;              
+interface GigabitEthernet0/7
+ nameif bravo_dest1
+ security-level <span class="num">50</span>
+ <span class="proto">ip</span> address <span class="addr">10.2.1.1</span> <span class="addr">255.255.255.0</span>
+<span class="comment">!</span>
+interface GigabitEthernet0/8
+ nameif bravo_dest2
+ security-level <span class="num">50</span>
+ <span class="proto">ip</span> address <span class="addr">10.2.2.1</span> <span class="addr">255.255.255.0</span>
+<span class="comment">!</span>
+interface GigabitEthernet0/9
+ nameif bravo_dest3
+ security-level <span class="num">50</span>
+ <span class="proto">ip</span> address <span class="addr">10.2.3.1</span> <span class="addr">255.255.255.0</span>
+<span class="comment">!</span>
+interface GigabitEthernet0/10
+ nameif bravo_dest4
+ security-level <span class="num">50</span>
+ <span class="proto">ip</span> address <span class="addr">10.2.4.1</span> <span class="addr">255.255.255.0</span>
+<span class="comment">!</span>
+<span class="comment">!--- Interfaces for CHARLIE</span>
+interface GigabitEthernet0/11
+ nameif charlie_lobby
+ security-level <span class="num">100</span>
+ <span class="proto">ip</span> address <span class="addr">10.0.3.1</span> <span class="addr">255.255.255.0</span>
+<span class="comment">!</span>
+interface GigabitEthernet0/12
+ nameif charlie_dest1
+ security-level <span class="num">50</span>
+ <span class="proto">ip</span> address <span class="addr">10.3.1.1</span> <span class="addr">255.255.255.0</span>
+<span class="comment">!</span>
+interface GigabitEthernet0/13
+ nameif charlie_dest2
+ security-level <span class="num">50</span>
+ <span class="proto">ip</span> address <span class="addr">10.3.2.1</span> <span class="addr">255.255.255.0</span>
+<span class="comment">!</span>
+interface GigabitEthernet0/14
+ nameif charlie_dest3
+ security-level <span class="num">50</span>
+ <span class="proto">ip</span> address <span class="addr">10.3.3.1</span> <span class="addr">255.255.255.0</span>
+<span class="comment">!</span>
+interface GigabitEthernet0/15
+ nameif charlie_dest4
+ security-level <span class="num">50</span>
+ <span class="proto">ip</span> address <span class="addr">10.3.4.1</span> <span class="addr">255.255.255.0</span>
+<span class="comment">… (161 more lines)</span></pre></div>
+</div>
+<div class="preview-section">
+  <h3>FortiGate 7.4 example config (first 80 lines)</h3>
+  <div class="cmd-line"><span class="prompt">$</span> <code>configs/fortigate/fortigate7-4-example</code></div>
+  <div class="result-box preview-result"><pre class='result-pre'><span class="comment"># ========== VDOM Creation ==========</span>
+config vdom
+    edit &quot;Alpha&quot;
+    next
+    edit &quot;Bravo&quot;
+    next
+    edit &quot;Charlie&quot;
+    next
+end
+<span class="comment"></span>
+<span class="comment"># ========== Interface Assignments ==========</span>
+config global
+    config system interface
+<span class="comment">        # Alpha</span>
+        edit &quot;lobby&quot;
+            set vdom &quot;Alpha&quot;
+            set <span class="proto">ip</span> <span class="addr">10.0.1.1/24</span>
+        next
+        edit &quot;dest1&quot;
+            set vdom &quot;Alpha&quot;
+            set <span class="proto">ip</span> <span class="addr">10.1.1.1/24</span>
+        next
+        edit &quot;dest2&quot;
+            set vdom &quot;Alpha&quot;
+            set <span class="proto">ip</span> <span class="addr">10.1.2.1/24</span>
+        next
+        edit &quot;dest3&quot;
+            set vdom &quot;Alpha&quot;
+            set <span class="proto">ip</span> <span class="addr">10.1.3.1/24</span>
+        next
+        edit &quot;dest4&quot;
+            set vdom &quot;Alpha&quot;
+            set <span class="proto">ip</span> <span class="addr">10.1.4.1/24</span>
+        next
+<span class="comment">        # Bravo</span>
+        edit &quot;lobby&quot;
+            set vdom &quot;Bravo&quot;
+            set <span class="proto">ip</span> <span class="addr">10.0.2.1/24</span>
+        next
+        edit &quot;dest1&quot;
+            set vdom &quot;Bravo&quot;
+            set <span class="proto">ip</span> <span class="addr">10.2.1.1/24</span>
+        next
+        edit &quot;dest2&quot;
+            set vdom &quot;Bravo&quot;
+            set <span class="proto">ip</span> <span class="addr">10.2.2.1/24</span>
+        next
+        edit &quot;dest3&quot;
+            set vdom &quot;Bravo&quot;
+            set <span class="proto">ip</span> <span class="addr">10.2.3.1/24</span>
+        next
+        edit &quot;dest4&quot;
+            set vdom &quot;Bravo&quot;
+            set <span class="proto">ip</span> <span class="addr">10.2.4.1/24</span>
+        next
+<span class="comment">        # Charlie</span>
+        edit &quot;lobby&quot;
+            set vdom &quot;Charlie&quot;
+            set <span class="proto">ip</span> <span class="addr">10.0.3.1/24</span>
+        next
+        edit &quot;dest1&quot;
+            set vdom &quot;Charlie&quot;
+            set <span class="proto">ip</span> <span class="addr">10.3.1.1/24</span>
+        next
+        edit &quot;dest2&quot;
+            set vdom &quot;Charlie&quot;
+            set <span class="proto">ip</span> <span class="addr">10.3.2.1/24</span>
+        next
+        edit &quot;dest3&quot;
+            set vdom &quot;Charlie&quot;
+            set <span class="proto">ip</span> <span class="addr">10.3.3.1/24</span>
+        next
+        edit &quot;dest4&quot;
+            set vdom &quot;Charlie&quot;
+            set <span class="proto">ip</span> <span class="addr">10.3.4.1/24</span>
+        next
+    end
+end
+<span class="comment"></span>
+<span class="comment"># ========== VDOM: ALPHA ==========</span>
+<span class="comment">… (419 more lines)</span></pre></div>
+</div>
+  </div>
+
+  </main>
+
+  <footer class="page-footer">
+    Generated from <a href="https://github.com/jandahl/acl-inspector/tree/main/configs">in-repo example configs</a>.
+    Results are pre-computed; this is a static preview, not a live server.
+  </footer>
+
+  <script>
+    // Tab switching
+    const btns = Array.from(document.querySelectorAll('.tab-btn'));
+    const panels = document.querySelectorAll('.tab-panel');
+    function activateTab(tabId) {
+      btns.forEach(b => { b.classList.remove('active'); b.setAttribute('aria-selected', 'false'); b.tabIndex = -1; });
+      panels.forEach(p => p.classList.remove('active'));
+      const btn = document.querySelector('.tab-btn[data-tab="' + tabId + '"]');
+      if (btn) { btn.classList.add('active'); btn.setAttribute('aria-selected', 'true'); btn.tabIndex = 0; }
+      const panel = document.getElementById('panel-' + tabId);
+      if (panel) panel.classList.add('active');
+    }
+    // Activate first tab by its data-tab value
+    if (btns.length) activateTab(btns[0].dataset.tab);
+    btns.forEach(btn => btn.addEventListener('click', () => { activateTab(btn.dataset.tab); btn.focus(); }));
+    // Arrow-key navigation (ARIA tablist pattern)
+    btns.forEach(btn => btn.addEventListener('keydown', e => {
+      const idx = btns.indexOf(e.currentTarget);
+      let next = -1;
+      if (e.key === 'ArrowRight') next = (idx + 1) % btns.length;
+      if (e.key === 'ArrowLeft')  next = (idx - 1 + btns.length) % btns.length;
+      if (e.key === 'Home')       next = 0;
+      if (e.key === 'End')        next = btns.length - 1;
+      if (next >= 0) { e.preventDefault(); activateTab(btns[next].dataset.tab); btns[next].focus(); }
+    }));
+
+    // Theme toggle
+    const root = document.documentElement;
+    const toggle = document.getElementById('theme-toggle');
+    const saved = localStorage.getItem('acl_preview_theme') || 'dark';
+    root.dataset.theme = saved;
+    toggle.textContent = saved === 'dark' ? '☀' : '☾';
+    toggle.addEventListener('click', () => {
+      const next = root.dataset.theme === 'dark' ? 'light' : 'dark';
+      root.dataset.theme = next;
+      toggle.textContent = next === 'dark' ? '☀' : '☾';
+      localStorage.setItem('acl_preview_theme', next);
+    });
+  </script>
+</body>
+</html>
