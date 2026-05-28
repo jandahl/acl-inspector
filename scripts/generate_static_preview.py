@@ -9,7 +9,6 @@ docs/index.html using the project's existing CSS variables and classes.
 import html
 import json
 import re
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -26,7 +25,7 @@ FTG_CONFIG = REPO_ROOT / "configs" / "fortigate" / "fortigate7-4-example"
 
 def run_cli(*args):
     cmd = [sys.executable, str(CLI), "inspect"] + list(args) + ["--format", "json"]
-    result = subprocess.run(cmd, capture_output=True, text=True, cwd=REPO_ROOT)
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=REPO_ROOT, timeout=60)
     if result.returncode != 0:
         print(f"  ERROR: {' '.join(str(a) for a in args)} → exit {result.returncode}", file=sys.stderr)
         print(f"    stderr: {result.stderr}", file=sys.stderr)
@@ -183,35 +182,31 @@ def fmt_findhost(raw_json, host):
     return "\n".join(lines)
 
 
-def fmt_config_snippet(config_path, max_lines=60):
+def fmt_config_snippet(config_path, max_lines=80):
     try:
         text = Path(config_path).read_text(encoding="utf-8", errors="replace")
     except OSError:
         return '<div class="no-results">Config file not found.</div>'
 
+    all_lines = text.splitlines()
     kept = []
-    for line in text.splitlines()[:max_lines]:
+    for line in all_lines[:max_lines]:
         stripped = line.strip()
         if stripped.startswith("!") or stripped.startswith("#") or stripped == "":
             kept.append(f'<span class="comment">{esc(line)}</span>')
         else:
             kept.append(highlight_rule(line))
-    if len(text.splitlines()) > max_lines:
-        kept.append(f'<span class="comment">… ({len(text.splitlines()) - max_lines} more lines)</span>')
+    if len(all_lines) > max_lines:
+        kept.append(f'<span class="comment">… ({len(all_lines) - max_lines} more lines)</span>')
     return "<pre class='result-pre'>" + "\n".join(kept) + "</pre>"
 
 
 # ── page builder ───────────────────────────────────────────────────────────────
 
-def cli_label(*args):
-    """Format a CLI invocation as a human-readable label."""
-    parts = ["aclinspector.py", "inspect"] + list(args[:-2])  # drop --format json
-    return " ".join(str(p) for p in parts)
-
 
 def build_tab(tab_id, label, content):
     return f"""
-  <button class="tab-btn" data-tab="{tab_id}" role="tab" aria-controls="panel-{tab_id}">{label}</button>
+  <button class="tab-btn" data-tab="{tab_id}" role="tab" aria-selected="false" aria-controls="panel-{tab_id}">{label}</button>
 """, f"""
   <div id="panel-{tab_id}" class="tab-panel" role="tabpanel">
     {content}
@@ -305,8 +300,10 @@ body {{ margin: 0; }}
 .rule-list {{ display: flex; flex-direction: column; gap: 3px; }}
 .rule-entry {{ display: flex; align-items: baseline; gap: 8px; }}
 .rule-entry code {{ word-break: break-all; }}
-.action-permit {{ border-left: 3px solid #c3e88d; padding-left: 8px; }}
-.action-deny   {{ border-left: 3px solid #f07178; padding-left: 8px; }}
+:root {{ --permit-color: #c3e88d; --deny-color: #f07178; }}
+:root[data-theme='light'] {{ --permit-color: #2d7a2d; --deny-color: #c0392b; }}
+.action-permit {{ border-left: 3px solid var(--permit-color); padding-left: 8px; }}
+.action-deny   {{ border-left: 3px solid var(--deny-color); padding-left: 8px; }}
 .bind-tag {{
   font-size: 0.78rem; color: var(--sub);
   background: var(--muted); border: 1px solid var(--border);
@@ -314,14 +311,14 @@ body {{ margin: 0; }}
 }}
 .diff-added {{ margin-bottom: 16px; }}
 .diff-removed {{ margin-bottom: 16px; }}
-.diff-added .group-title {{ color: #c3e88d; font-weight: 600; margin-bottom: 4px; }}
-.diff-removed .group-title {{ color: #f07178; font-weight: 600; margin-bottom: 4px; }}
+.diff-added .group-title {{ color: var(--permit-color); font-weight: 600; margin-bottom: 4px; }}
+.diff-removed .group-title {{ color: var(--deny-color); font-weight: 600; margin-bottom: 4px; }}
 .diff-prefix {{ color: var(--sub); user-select: none; width: 1em; flex-shrink: 0; }}
-.diff-added .diff-prefix {{ color: #c3e88d; }}
-.diff-removed .diff-prefix {{ color: #f07178; }}
+.diff-added .diff-prefix {{ color: var(--permit-color); }}
+.diff-removed .diff-prefix {{ color: var(--deny-color); }}
 .empty-group {{ color: var(--sub); font-style: italic; margin-bottom: 8px; }}
-.added-count {{ color: #c3e88d; }}
-.removed-count {{ color: #f07178; }}
+.added-count {{ color: var(--permit-color); }}
+.removed-count {{ color: var(--deny-color); }}
 .findhost-results {{ display: flex; flex-direction: column; gap: 12px; }}
 .fh-config {{ border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; }}
 .fh-filename {{ font-weight: 600; margin-bottom: 6px; }}
@@ -363,16 +360,17 @@ body {{ margin: 0; }}
     // Tab switching
     const btns = document.querySelectorAll('.tab-btn');
     const panels = document.querySelectorAll('.tab-panel');
-    btns[0].classList.add('active');
-    panels[0].classList.add('active');
-    btns.forEach(btn => {{
-      btn.addEventListener('click', () => {{
-        btns.forEach(b => b.classList.remove('active'));
-        panels.forEach(p => p.classList.remove('active'));
-        btn.classList.add('active');
-        document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
-      }});
-    }});
+    function activateTab(tabId) {{
+      btns.forEach(b => {{ b.classList.remove('active'); b.setAttribute('aria-selected', 'false'); }});
+      panels.forEach(p => p.classList.remove('active'));
+      const btn = document.querySelector('.tab-btn[data-tab="' + tabId + '"]');
+      if (btn) {{ btn.classList.add('active'); btn.setAttribute('aria-selected', 'true'); }}
+      const panel = document.getElementById('panel-' + tabId);
+      if (panel) panel.classList.add('active');
+    }}
+    // Activate first tab by its data-tab value
+    if (btns.length) activateTab(btns[0].dataset.tab);
+    btns.forEach(btn => btn.addEventListener('click', () => activateTab(btn.dataset.tab)));
 
     // Theme toggle
     const root = document.documentElement;
@@ -470,18 +468,20 @@ def main():
 
     # ── Tab 4: FortiGate ─────────────────────────────────────────────────────
     print("  Running: FortiGate inspect lobby-net")
-    jftg = run_cli("--vendor", "fortigate", "--config", str(FTG_CONFIG), "--inspect", "lobby-net")
+    jftg = run_cli("--vendor", "fortigate", "--config", str(FTG_CONFIG),
+                   "--vdom", "Alpha", "--inspect", "lobby-net")
     sftg = section(
-        "Inspect FortiGate address object 'lobby-net'",
-        "aclinspector.py inspect --vendor fortigate --config fortigate7-4-example --inspect lobby-net",
+        "Inspect FortiGate address object 'lobby-net' (VDOM: Alpha)",
+        "aclinspector.py inspect --vendor fortigate --config fortigate7-4-example --vdom Alpha --inspect lobby-net",
         fmt_inspect(jftg, "lobby-net"),
     )
 
     print("  Running: FortiGate inspect 10.0.1.101")
-    jftg2 = run_cli("--vendor", "fortigate", "--config", str(FTG_CONFIG), "--inspect", "10.0.1.101")
+    jftg2 = run_cli("--vendor", "fortigate", "--config", str(FTG_CONFIG),
+                    "--vdom", "Alpha", "--inspect", "10.0.1.101")
     sftg2 = section(
         "Inspect by IP (resolved through FortiGate address objects)",
-        "aclinspector.py inspect --vendor fortigate --config fortigate7-4-example --inspect 10.0.1.101",
+        "aclinspector.py inspect --vendor fortigate --config fortigate7-4-example --vdom Alpha --inspect 10.0.1.101",
         fmt_inspect(jftg2, "10.0.1.101"),
     )
 
@@ -508,10 +508,6 @@ def main():
     out_path = DOCS_DIR / "index.html"
     out_path.write_text(html, encoding="utf-8")
     print(f"  Written: {out_path}  ({out_path.stat().st_size // 1024} KB)")
-
-    # Also copy the CSS for users who link to it separately
-    shutil.copy(CSS_SRC, DOCS_DIR / "app.css")
-    print(f"  Copied:  {DOCS_DIR}/app.css")
 
     print("Done.")
 
