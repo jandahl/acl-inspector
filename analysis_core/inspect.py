@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2024-2026 Jan Gronemann
 """Inspect analysis: find ACL rules affecting a target object.
 
 This module provides vendor-agnostic object inspection across ACLs.

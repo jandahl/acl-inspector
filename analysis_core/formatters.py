@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2024-2026 Jan Gronemann
 """Output formatters for analysis results.
 
 Provides formatting functions for different output targets:

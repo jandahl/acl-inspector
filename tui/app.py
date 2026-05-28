@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2024-2026 Jan Gronemann
 """Main Textual application for Singularity TUI."""
 
 from __future__ import annotations

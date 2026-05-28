@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2024-2026 Jan Gronemann
 """ACL matching and evaluation helpers for ASA parser.
 
 Functions for evaluating ACL entries against packet flows and formatting

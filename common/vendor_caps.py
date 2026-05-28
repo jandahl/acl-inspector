@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2024-2026 Jan Gronemann
 """Shared vendor capability registry used by CLI, TUI, and Web surfaces."""
 
 from __future__ import annotations

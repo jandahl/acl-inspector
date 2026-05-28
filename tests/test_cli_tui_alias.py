@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2024-2026 Jan Gronemann
 """Tests covering the CLI alias that launches the Singularity TUI."""
 
 import importlib.util
