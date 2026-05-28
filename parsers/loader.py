@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from parsers.cisco.asa.parser import ASAConfig
     from parsers.fortigate.config import FTGConfig
 
-__all__ = ["load_config", "ConfigLoadError"]
+__all__ = ["load_config", "load_config_to_ir", "ConfigLoadError"]
 
 
 class ConfigLoadError(Exception):
