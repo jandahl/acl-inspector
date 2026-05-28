@@ -17,6 +17,13 @@ class ParserPackageExportTest(unittest.TestCase):
         for attr in ("inspect_host", "compare_old_new", "evaluate"):
             self.assertTrue(callable(getattr(ftg_pkg, attr, None)), f"{attr} missing on parsers.fortigate")
 
+    def test_loader_exports(self):
+        loader_pkg = importlib.import_module("parsers.loader")
+        expected = ["load_config", "load_config_to_ir", "ConfigLoadError"]
+        for name in expected:
+            self.assertTrue(hasattr(loader_pkg, name), f"{name} not exported by parsers.loader")
+            self.assertIn(name, loader_pkg.__all__)
+
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
