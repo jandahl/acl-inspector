@@ -47,11 +47,12 @@ try:
     ir_device = load_config_to_ir("path/to/firewall.conf", device_name="FW-CORE-01")
 
     print(f"Device Name: {ir_device.name or 'unknown'}")
-...
-```
     print(f"Vendor: {ir_device.vendor}")
     print(f"Total Network Objects: {len(ir_device.objects)}")
     print(f"Total ACLs: {len(ir_device.acls)}")
+    
+    # Optional parameters (same as load_config):
+    # - vdom, vendor, strict, min_confidence
 
     # The IR can be safely serialized to JSON:
     with open("firewall_ir.json", "w", encoding="utf-8") as f:
