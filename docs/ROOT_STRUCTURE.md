@@ -27,7 +27,7 @@ modules even when run outside a virtualenv.
 | `docs/`     | All documentation, including summaries, feature plans, and this structure guide. |
 | `parsers/`  | Vendor-specific config ingestion (ASA, FortiGate), unified loader, and Intermediate Representation (IR). See `parsers/README.md`. |
 | `tests/`    | Automated test suites (the dispatcher tests live in `tests/test_cli_dispatcher.py`). |
-| `webui/`, `tui/`, `analysis_core/` | Core packages unchanged by the reorganization. |
+| `webui/`, `tui/`, `analysis_core/`, etc. | Core packages unchanged by the reorganization. |
 
 ## Common workflows
 
