@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DOCS_DIR = REPO_ROOT / "docs"
+DOCS_DIR = REPO_ROOT / "preview"
 CLI = REPO_ROOT / "aclinspector.py"
 CSS_SRC = REPO_ROOT / "webui" / "static" / "app.css"
 
@@ -507,6 +507,8 @@ def main():
     tabs_panels.append(panel_html)
 
     # ── Write output ──────────────────────────────────────────────────────────
+    (DOCS_DIR / ".nojekyll").touch()
+
     html = build_page(tabs_btns, tabs_panels, css)
     out_path = DOCS_DIR / "index.html"
     out_path.write_text(html, encoding="utf-8")

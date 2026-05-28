@@ -6,3 +6,4 @@ configs/cisco/idz-inf-ctx
 *.DS_Store
 fonts/downloaded/
 !fonts/downloaded/.gitkeep
+preview/
