@@ -204,8 +204,9 @@ License
 This project is licensed under the Mozilla Public License Version 2.0 (MPL-2.0). 
 See the `LICENSE` file for the full text.
 
-### Dual Licensing
-As the sole copyright holder, the author retains the right to grant alternative commercial licenses. If you require a different license for proprietary integration or other commercial purposes that are incompatible with the MPL-2.0, please contact the author to negotiate an alternative license.
+Dual Licensing
+~~~~~~~~~~~~~~
+As the sole copyright holder, the author retains the right to grant alternative commercial licenses. By contributing to this project, you agree that your contributions are licensed under the MPL-2.0 and that the author retains the right to dual-license the collective work. If you require a different license for proprietary integration or other commercial purposes that are incompatible with the MPL-2.0, please contact the author to negotiate an alternative license.
 
 Third-party Notices
 -------------------

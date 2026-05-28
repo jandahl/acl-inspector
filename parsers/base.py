@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2024-2026 Jan Gronemann
 from dataclasses import dataclass, field
 from typing import List, Set, Tuple, Optional, Union
 import ipaddress

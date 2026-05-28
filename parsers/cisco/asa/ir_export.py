@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2024-2026 Jan Gronemann
 """IR export functionality for ASA parser.
 
 Converts parsed ASA configuration to vendor-agnostic Intermediate Representation

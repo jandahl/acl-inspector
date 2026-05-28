@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2024-2026 Jan Gronemann
 """JSON settings loader with env and CLI overrides."""
 
 from __future__ import annotations

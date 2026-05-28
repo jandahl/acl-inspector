@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2024-2026 Jan Gronemann
 """Cisco ASA parser package.
 
 This package exposes the same public API that previously lived in the monolithic

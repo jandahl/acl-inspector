@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2024-2026 Jan Gronemann
 """Capture representative Web UI screenshots using Playwright.
 
 This utility launches the local access-list web server against a temporary

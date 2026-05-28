@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2024-2026 Jan Gronemann
 """Regression tests for ACL usage bugs.
 
 These tests ensure specific bugs don't reoccur.

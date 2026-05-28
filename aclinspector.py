@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2024-2026 Jan Gronemann
 """Unified CLI dispatcher for ACL Inspector tools."""
 
 from __future__ import annotations

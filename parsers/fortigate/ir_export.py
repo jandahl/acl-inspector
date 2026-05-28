@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2024-2026 Jan Gronemann
 """IR export functionality for FortiGate parser.
 
 Converts parsed FortiGate configuration to vendor-agnostic Intermediate

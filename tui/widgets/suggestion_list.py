@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2024-2026 Jan Gronemann
 """Suggestion list widget showing ranked search results."""
 
 from __future__ import annotations
