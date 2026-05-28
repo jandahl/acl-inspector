@@ -39,6 +39,7 @@ Tool layout
 -----------
 - `aclinspector.py` – single entry point that dispatches to the production tools below (`./aclinspector.py web …`, `./aclinspector.py translate …`, etc.).
 - `cli/` – production scripts (`access-list-inspector.py`, `access-list-web.py`, `acl-inspector-tui.py`, `acl-ir-translate.py`, `acl-optimize.py`). You can run them directly via `python3 cli/<script>.py` if you prefer.
+- `parsers/` – vendor-specific config ingestion logic. Designed to be reused independently by other tools via the unified loader or Intermediate Representation (IR). See `parsers/README.md` for integration details.
 - `dev/` – developer harnesses (`test_tabs_manual.py`, `test_tui_simple.py`).
 - `common/` – shared helpers (`vendor_caps.py` today, future cross-surface modules).
 - See `docs/ROOT_STRUCTURE.md` for a full directory map and workflow guide.
