@@ -73,13 +73,13 @@ with open("asa.conf") as f:
     config = ASAConfig(f.read())
 
 # Access raw vendor methods
-print(f"ASA Objects: {len(config.objects)}")
-print(f"ASA Object Groups: {len(config.object_groups)}")
+print(f"ASA Objects: {len(config.network_objects)}")
+print(f"ASA Object Groups: {len(config.network_object_groups)}")
 
 # Or extract the flattened rules directly:
-flat_rules = config.flatten()
+flat_rules = config.flatten_acl()
 for rule in flat_rules[:5]:
-    print(rule.raw)
+    print(rule['raw'])
 ```
 
 ### FortiGate
