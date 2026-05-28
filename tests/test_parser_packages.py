@@ -24,6 +24,16 @@ class ParserPackageExportTest(unittest.TestCase):
             self.assertTrue(hasattr(loader_pkg, name), f"{name} not exported by parsers.loader")
             self.assertIn(name, loader_pkg.__all__)
 
+    def test_load_config_to_ir_asa_fixture(self):
+        """load_config_to_ir returns a Device with the right vendor."""
+        from parsers.loader import load_config_to_ir
+        # Using a minimal fixture from the repo
+        import os
+        fixture_path = "configs/fixtures/asa-compare-sample.conf"
+        if os.path.exists(fixture_path):
+            device = load_config_to_ir(fixture_path)
+            self.assertEqual(device.vendor, "asa")
+
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
