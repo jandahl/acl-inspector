@@ -107,9 +107,11 @@ def fmt_inspect(raw_json, target):
         for names in aliases.values():
             alt.extend(n for n in names if n != target)
         if alt:
+            shown = alt[:8]
+            more = f" <span class='hit-count'>+{len(alt) - 8} more</span>" if len(alt) > 8 else ""
             lines.append(f'<div class="meta-line alias-line">Also known as: '
-                         + ", ".join(f"<code>{esc(a)}</code>" for a in alt[:8])
-                         + "</div>")
+                         + ", ".join(f"<code>{esc(a)}</code>" for a in shown)
+                         + more + "</div>")
     if not hits:
         lines.append('<div class="no-results">No matching ACL entries found.</div>')
     else:
@@ -144,6 +146,8 @@ def fmt_compare(raw_json):
     except Exception as e:
         return f'<pre class="result-pre">Error parsing output ({esc(str(e))}):\n{esc(raw_json)}</pre>'
 
+    if "added_to_new" not in d or "removed_from_old" not in d:
+        return f'<pre class="result-pre">Unexpected compare output format:\n{esc(raw_json[:400])}</pre>'
     added = d.get("added_to_new") or []
     removed = d.get("removed_from_old") or []
 
@@ -432,7 +436,7 @@ def main():
         if not path.exists():
             print(f"  ERROR: {label} not found: {path}", file=sys.stderr)
             sys.exit(1)
-    css = CSS_SRC.read_text(encoding="utf-8")
+    css = CSS_SRC.read_text(encoding="utf-8").replace("</style>", "<\\/style>")
 
     tabs_btns = []
     tabs_panels = []
