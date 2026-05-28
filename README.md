@@ -32,7 +32,7 @@ Requirements
 
 Setup
 -----
-- Run `make themes` to download/update the optional iTerm2 color scheme files used by the web UI Preferences tab. The palettes come from the [iTerm2-Color-Schemes](https://github.com/mbadolato/iTerm2-Color-Schemes) project (MIT); see `LICENSE` for attribution.
+- Run `make themes` to download/update the optional iTerm2 color scheme files used by the web UI Preferences tab. The palettes come from the [iTerm2-Color-Schemes](https://github.com/mbadolato/iTerm2-Color-Schemes) project (MIT); see `THIRD_PARTY_NOTICES.txt` for attribution.
 - Run `make fonts` to fetch libre font families — Inter, Atkinson Hyperlegible, Ubuntu, Ubuntu Mono, Source Sans 3, JetBrains Mono, Fira Code, Source Code Pro — into `fonts/downloaded/`. Set `FORCE=1` to refresh. Add your own fonts by dropping a `manifest.json` + font files under `fonts/custom/` (see inline comments in `fonts/fonts.json`).
 - For live development, use `make web-watch` (optionally `POLL=60 make web-watch` to poll once a minute). The helper watches `.py/.html/.css/.js` files and restarts the server when they change.
 
@@ -206,7 +206,11 @@ See the `LICENSE` file for the full text.
 
 Dual Licensing
 ~~~~~~~~~~~~~~
-As the sole copyright holder, the author retains the right to grant alternative commercial licenses. By contributing to this project, you agree that your contributions are licensed under the MPL-2.0 and that the author retains the right to dual-license the collective work. If you require a different license for proprietary integration or other commercial purposes that are incompatible with the MPL-2.0, please contact the author to negotiate an alternative license.
+As the sole copyright holder, the author retains the right to grant alternative commercial licenses. By contributing to this project, you agree that your contributions are licensed under the MPL-2.0 and that the author retains the right to dual-license the collective work. 
+
+If you require a different license for proprietary integration or other commercial purposes that are incompatible with the MPL-2.0, please see `COMMERCIAL_LICENSE.md` or contact the author to negotiate an alternative license.
+
+For contribution guidelines and CLA terms, see `CONTRIBUTING.md`.
 
 Third-party Notices
 -------------------
