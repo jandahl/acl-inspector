@@ -25,8 +25,9 @@ modules even when run outside a virtualenv.
 | `common/`   | Shared helper modules (currently `vendor_caps.py`) used by both CLI and UI layers. |
 | `dev/`      | Developer utilities/manual harnesses (`test_tabs_manual.py`, `test_tui_simple.py`). These are not part of automated tests but are useful for exploratory work. |
 | `docs/`     | All documentation, including summaries, feature plans, and this structure guide. |
+| `parsers/`  | Vendor-specific config ingestion (ASA, FortiGate), unified loader, and Intermediate Representation (IR). See `parsers/README.md`. |
 | `tests/`    | Automated test suites (the dispatcher tests live in `tests/test_cli_dispatcher.py`). |
-| `webui/`, `tui/`, `analysis_core/`, `parsers/`, etc. | Core packages unchanged by the reorganization. |
+| `webui/`, `tui/`, `analysis_core/` | Core packages unchanged by the reorganization. |
 
 ## Common workflows
 
