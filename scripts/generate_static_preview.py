@@ -25,7 +25,11 @@ FTG_CONFIG = REPO_ROOT / "configs" / "fortigate" / "fortigate7-4-example"
 
 def run_cli(*args):
     cmd = [sys.executable, str(CLI), "inspect"] + list(args) + ["--format", "json"]
-    result = subprocess.run(cmd, capture_output=True, text=True, cwd=REPO_ROOT, timeout=60)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=REPO_ROOT, timeout=60)
+    except subprocess.TimeoutExpired:
+        print(f"  ERROR: {' '.join(str(a) for a in args)} timed out after 60s", file=sys.stderr)
+        sys.exit(1)
     if result.returncode != 0:
         print(f"  ERROR: {' '.join(str(a) for a in args)} → exit {result.returncode}", file=sys.stderr)
         print(f"    stderr: {result.stderr}", file=sys.stderr)
@@ -39,15 +43,16 @@ def esc(s):
 
 # ── highlight helpers ──────────────────────────────────────────────────────────
 
+_HL_ACT   = {"permit", "deny"}
+_HL_PROTO = {"tcp", "udp", "icmp", "ip"}
+_HL_ANY   = {"any", "any4", "any6"}
+_HL_PORT  = {"eq", "range", "gt", "lt", "neq"}
+_HL_KW    = {"access-list", "object-group", "object", "network", "host"}
+_HL_IP_RE = re.compile(r"\d{1,3}(?:\.\d{1,3}){3}(?:/\d{1,2})?$")
+
 
 def highlight_rule(text):
     """Apply syntax highlighting spans to a rule string."""
-    _ACT   = {"permit", "deny"}
-    _PROTO = {"tcp", "udp", "icmp", "ip"}
-    _ANY   = {"any", "any4", "any6"}
-    _PORT  = {"eq", "range", "gt", "lt", "neq"}
-    _KW    = {"access-list", "object-group", "object", "network", "host"}
-    _IP_RE = re.compile(r"\d{1,3}(?:\.\d{1,3}){3}(?:/\d{1,2})?$")
 
     def span(cls, s):
         return f'<span class="{cls}">{s}</span>'
@@ -58,19 +63,19 @@ def highlight_rule(text):
             parts.append(token)
             continue
         tl = token.lower()
-        if tl in _ACT:
+        if tl in _HL_ACT:
             parts.append(span("act", token))
-        elif tl in _PROTO:
+        elif tl in _HL_PROTO:
             parts.append(span("proto", token))
-        elif tl in _ANY:
+        elif tl in _HL_ANY:
             parts.append(span("addr", token))
-        elif _IP_RE.fullmatch(token):
+        elif _HL_IP_RE.fullmatch(token):
             parts.append(span("addr", token))
-        elif tl in _PORT:
+        elif tl in _HL_PORT:
             parts.append(span("kw", token))
         elif re.fullmatch(r"\d+", token):
             parts.append(span("num", token))
-        elif tl in _KW:
+        elif tl in _HL_KW:
             parts.append(span("kw", token))
         else:
             parts.append(token)
@@ -82,8 +87,10 @@ def highlight_rule(text):
 def fmt_inspect(raw_json, target):
     try:
         d = json.loads(raw_json)
-    except Exception:
-        return f'<pre class="result-pre">Error parsing output:\n{esc(raw_json)}</pre>'
+        if not isinstance(d, dict):
+            raise ValueError("expected JSON object")
+    except Exception as e:
+        return f'<pre class="result-pre">Error parsing output ({esc(str(e))}):\n{esc(raw_json)}</pre>'
 
     nets = d.get("target_nets") or []
     hits = d.get("hits") or []
@@ -127,8 +134,10 @@ def fmt_inspect(raw_json, target):
 def fmt_compare(raw_json):
     try:
         d = json.loads(raw_json)
-    except Exception:
-        return f'<pre class="result-pre">Error parsing output:\n{esc(raw_json)}</pre>'
+        if not isinstance(d, dict):
+            raise ValueError("expected JSON object")
+    except Exception as e:
+        return f'<pre class="result-pre">Error parsing output ({esc(str(e))}):\n{esc(raw_json)}</pre>'
 
     added = d.get("added_to_new") or []
     removed = d.get("removed_from_old") or []
@@ -157,10 +166,12 @@ def fmt_compare(raw_json):
 def fmt_findhost(raw_json, host):
     try:
         d = json.loads(raw_json)
-    except Exception:
-        return f'<pre class="result-pre">Error:\n{esc(raw_json)}</pre>'
+        if not isinstance(d, dict):
+            raise ValueError("expected JSON object")
+    except Exception as e:
+        return f'<pre class="result-pre">Error ({esc(str(e))}):\n{esc(raw_json)}</pre>'
 
-    results = d.get("results", [])
+    results = d.get("results") or []
     if not results:
         return '<div class="no-results">Host not found in any config.</div>'
 
@@ -341,7 +352,7 @@ body {{ margin: 0; }}
     </div>
     <div class="header-links">
       <a href="https://github.com/jandahl/acl-inspector" target="_blank" rel="noopener">GitHub →</a>
-      <button class="theme-toggle" id="theme-toggle" title="Toggle light/dark">☀</button>
+      <button class="theme-toggle" id="theme-toggle" title="Toggle light/dark" aria-label="Toggle light/dark theme">☀</button>
     </div>
   </header>
 
@@ -359,19 +370,29 @@ body {{ margin: 0; }}
 
   <script>
     // Tab switching
-    const btns = document.querySelectorAll('.tab-btn');
+    const btns = Array.from(document.querySelectorAll('.tab-btn'));
     const panels = document.querySelectorAll('.tab-panel');
     function activateTab(tabId) {{
-      btns.forEach(b => {{ b.classList.remove('active'); b.setAttribute('aria-selected', 'false'); }});
+      btns.forEach(b => {{ b.classList.remove('active'); b.setAttribute('aria-selected', 'false'); b.tabIndex = -1; }});
       panels.forEach(p => p.classList.remove('active'));
       const btn = document.querySelector('.tab-btn[data-tab="' + tabId + '"]');
-      if (btn) {{ btn.classList.add('active'); btn.setAttribute('aria-selected', 'true'); }}
+      if (btn) {{ btn.classList.add('active'); btn.setAttribute('aria-selected', 'true'); btn.tabIndex = 0; }}
       const panel = document.getElementById('panel-' + tabId);
       if (panel) panel.classList.add('active');
     }}
     // Activate first tab by its data-tab value
     if (btns.length) activateTab(btns[0].dataset.tab);
-    btns.forEach(btn => btn.addEventListener('click', () => activateTab(btn.dataset.tab)));
+    btns.forEach(btn => btn.addEventListener('click', () => {{ activateTab(btn.dataset.tab); btn.focus(); }}));
+    // Arrow-key navigation (ARIA tablist pattern)
+    btns.forEach(btn => btn.addEventListener('keydown', e => {{
+      const idx = btns.indexOf(e.currentTarget);
+      let next = -1;
+      if (e.key === 'ArrowRight') next = (idx + 1) % btns.length;
+      if (e.key === 'ArrowLeft')  next = (idx - 1 + btns.length) % btns.length;
+      if (e.key === 'Home')       next = 0;
+      if (e.key === 'End')        next = btns.length - 1;
+      if (next >= 0) {{ e.preventDefault(); activateTab(btns[next].dataset.tab); btns[next].focus(); }}
+    }}));
 
     // Theme toggle
     const root = document.documentElement;
@@ -397,7 +418,10 @@ def main():
     print("Generating static preview…")
     DOCS_DIR.mkdir(exist_ok=True)
 
-    css = CSS_SRC.read_text()
+    if not CSS_SRC.exists():
+        print(f"  ERROR: CSS not found: {CSS_SRC}", file=sys.stderr)
+        sys.exit(1)
+    css = CSS_SRC.read_text(encoding="utf-8")
 
     tabs_btns = []
     tabs_panels = []
@@ -407,7 +431,7 @@ def main():
     j1 = run_cli("--vendor", "asa", "--config", str(ASA_CONFIG), "--inspect", "alpha_lobby_host1")
     s1a = section(
         "Inspect a named host object",
-        f"aclinspector.py inspect --vendor asa --config cisco-asa-example --inspect alpha_lobby_host1",
+        "aclinspector.py inspect --vendor asa --config cisco-asa-example --inspect alpha_lobby_host1",
         fmt_inspect(j1, "alpha_lobby_host1"),
     )
 
@@ -415,7 +439,7 @@ def main():
     j2 = run_cli("--vendor", "asa", "--config", str(ASA_CONFIG), "--inspect", "alpha_destgrp_all")
     s1b = section(
         "Inspect an object-group (expands to multiple addresses)",
-        f"aclinspector.py inspect --vendor asa --config cisco-asa-example --inspect alpha_destgrp_all",
+        "aclinspector.py inspect --vendor asa --config cisco-asa-example --inspect alpha_destgrp_all",
         fmt_inspect(j2, "alpha_destgrp_all"),
     )
 
@@ -423,7 +447,7 @@ def main():
     j3 = run_cli("--vendor", "asa", "--config", str(ASA_CONFIG), "--inspect", "10.1.1.101")
     s1c = section(
         "Inspect a raw IP address",
-        f"aclinspector.py inspect --vendor asa --config cisco-asa-example --inspect 10.1.1.101",
+        "aclinspector.py inspect --vendor asa --config cisco-asa-example --inspect 10.1.1.101",
         fmt_inspect(j3, "10.1.1.101"),
     )
 
@@ -505,9 +529,9 @@ def main():
     # ── Write output ──────────────────────────────────────────────────────────
     (DOCS_DIR / ".nojekyll").touch()
 
-    html = build_page(tabs_btns, tabs_panels, css)
+    page_html = build_page(tabs_btns, tabs_panels, css)
     out_path = DOCS_DIR / "index.html"
-    out_path.write_text(html, encoding="utf-8")
+    out_path.write_text(page_html, encoding="utf-8")
     print(f"  Written: {out_path}  ({out_path.stat().st_size // 1024} KB)")
 
     print("Done.")
