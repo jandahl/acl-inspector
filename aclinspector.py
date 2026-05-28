@@ -91,9 +91,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: List[str] | None = None) -> int:
-    if not (ROOT / "cli").is_dir():
+    if not (ROOT / "cli" / "access-list-inspector.py").is_file():
         sys.exit(
-            "Error: acl-inspector must be installed with 'pip install -e .' (editable mode).\n"
+            "Error: acl-inspector must be installed in editable mode (e.g. 'pip install -e .').\n"
             "A non-editable install succeeds but produces a broken entry point because the\n"
             "dispatcher resolves sub-tools by file path relative to the source tree.\n"
             "See docs/INSTALL.md for setup instructions."
