@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "acl-inspector"
+version = "0.1.0"
+description = "Firewall ACL analysis tool for Cisco ASA and FortiGate configurations"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+dependencies = []
+
+[project.scripts]
+aclinspector = "aclinspector:main"
+
+[tool.setuptools]
+py-modules = ["aclinspector"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = [
+    "common*",
+    "parsers*",
+    "analysis_core*",
+    "webui*",
+    "cli*",
+    "tui*",
+    "utils*",
+]
+
+[tool.setuptools.package-data]
+"*" = ["*.html", "*.css", "*.js", "*.json", "*.yaml", "*.yml"]
