@@ -50,8 +50,9 @@ cd acl-inspector
 
 # Optional but recommended: isolated dependencies
 python3 -m venv .venv
-source .venv/bin/activate    # macOS / Linux
-# .venv\Scripts\activate     # Windows (PowerShell)
+source .venv/bin/activate          # macOS / Linux
+# .venv\Scripts\Activate.ps1      # Windows (PowerShell)
+# .venv\Scripts\activate.bat      # Windows (cmd.exe)
 
 # CLI
 ./aclinspector.py inspect --vendor asa --config configs/cisco/fw.conf --inspect 10.1.1.1
@@ -70,14 +71,17 @@ The `./aclinspector.py` dispatcher sets `PYTHONPATH` automatically, so no instal
 
 Install when you want to import the parsers or analysis modules from your own Python code.
 
+> **Editable install required.** The project's modules use generic top-level names (`parsers`, `common`, `utils`, …) and the CLI dispatcher locates tools by file path. A regular `pip install .` can cause namespace collisions with other packages and will break the console script in non-source layouts. Always use `pip install -e .` inside a dedicated virtual environment.
+
 ```bash
 git clone https://github.com/jandahl/acl-inspector.git
 cd acl-inspector
 
 python3 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate          # macOS / Linux
+# .venv\Scripts\Activate.ps1      # Windows (PowerShell)
 
-# Editable install — changes to the source are reflected immediately
+# Editable install — source tree is used directly, no copying to site-packages
 pip install -e .
 ```
 

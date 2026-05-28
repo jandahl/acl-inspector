@@ -9,9 +9,15 @@ description = "Firewall ACL analysis tool for Cisco ASA and FortiGate configurat
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.9"
-dependencies = []
+dependencies = [
+    "rich>=13.0",
+]
 
 [project.scripts]
+# The dispatcher uses subprocess to invoke CLI tools by file path, so an
+# editable install (pip install -e .) is required for the console script to
+# work correctly. A future refactor to an acl_inspector namespace package
+# will resolve both this and the generic top-level package names below.
 aclinspector = "aclinspector:main"
 
 [tool.setuptools]
