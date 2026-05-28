@@ -27,7 +27,8 @@ Firewall changes often involve swapping an object or moving workloads. This tool
 Requirements
 ------------
 - Python 3.9+
-- No external packages are required
+- No external packages are required for CLI and web UI use
+- TUI requires `textual` and `rich` (install with `pip install -e '.[tui]'` or `pip install 'textual>=0.60' rich`)
 
 Setup
 -----
