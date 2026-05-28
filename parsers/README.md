@@ -103,8 +103,8 @@ flat_rules = config.flatten_policies()
 
 If you are extending the framework to support a new firewall platform (e.g., Palo Alto, CheckPoint):
 
-1. **Implement IR Export (Primary)**: The core integration point for ACL Inspector is the Intermediate Representation. Provide a `to_ir()` method on your configuration class that maps your parsed syntax down to the dataclasses in `parsers/model.py`.
-2. **Implement Flat Rules (Optional)**: If you wish to support the legacy inspection views, implement a flattening method (typically `flatten_acl()` or `flatten_policies()`) that returns a `List[dict]`.
+1. **Implement IR Export (Primary)**: The core integration point for ACL Inspector is the Intermediate Representation. Provide a `to_ir(cfg, ...)` function in an `ir_export.py` module that maps your parsed configuration class down to the dataclasses in `parsers/model.py`.
+2. **Implement Flat Rules (Optional)**: If you wish to support the legacy inspection views, implement a flattening method. For new parsers inheriting from `FirewallParser`, implement `flatten() -> List[FlatRule]`. For legacy-style parsers, implement `flatten_acl()` or `flatten_policies()` returning a `List[dict]`.
 3. **Register the Detection**: Add detection heuristics to `_detect_vendor` in `scripts/index_repo.py`. While `parsers/loader.py` imports this function dynamically at runtime (via a `sys.path` injection), you must also manually add dispatch branches to `load_config()` and `load_config_to_ir()` inside `parsers/loader.py` to support the new vendor string.
 
 > **Note on Coupling**: The dynamic import of `scripts/index_repo.py` by the parser loader is a known architectural coupling intended for internal development. A future refactor will move the core detection logic into the `parsers/` package for cleaner library use.
