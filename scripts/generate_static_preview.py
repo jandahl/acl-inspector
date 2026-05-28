@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DOCS_DIR = REPO_ROOT / "preview"
+PREVIEW_DIR = REPO_ROOT / "preview"
 CLI = REPO_ROOT / "aclinspector.py"
 CSS_SRC = REPO_ROOT / "webui" / "static" / "app.css"
 
@@ -48,7 +48,7 @@ _HL_PROTO = {"tcp", "udp", "icmp", "ip"}
 _HL_ANY   = {"any", "any4", "any6"}
 _HL_PORT  = {"eq", "range", "gt", "lt", "neq"}
 _HL_KW    = {"access-list", "object-group", "object", "network", "host"}
-_HL_IP_RE = re.compile(r"\d{1,3}(?:\.\d{1,3}){3}(?:/\d{1,2})?$")
+_HL_IP_RE = re.compile(r"\d{1,3}(?:\.\d{1,3}){3}(?:/\d{1,2})?")
 
 
 def highlight_rule(text):
@@ -421,7 +421,7 @@ body {{ margin: 0; }}
 
 def main():
     print("Generating static preview…")
-    DOCS_DIR.mkdir(exist_ok=True)
+    PREVIEW_DIR.mkdir(exist_ok=True)
 
     for path, label in [
         (CSS_SRC,    "CSS file"),
@@ -538,10 +538,10 @@ def main():
     tabs_panels.append(panel_html)
 
     # ── Write output ──────────────────────────────────────────────────────────
-    (DOCS_DIR / ".nojekyll").touch()
+    (PREVIEW_DIR / ".nojekyll").touch()
 
     page_html = build_page(tabs_btns, tabs_panels, css)
-    out_path = DOCS_DIR / "index.html"
+    out_path = PREVIEW_DIR / "index.html"
     out_path.write_text(page_html, encoding="utf-8")
     print(f"  Written: {out_path}  ({out_path.stat().st_size // 1024} KB)")
 

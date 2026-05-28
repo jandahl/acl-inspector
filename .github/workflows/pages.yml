@@ -3,6 +3,13 @@ name: GitHub Pages Preview
 on:
   push:
     branches: [main]
+    paths:
+      - 'scripts/generate_static_preview.py'
+      - 'webui/static/app.css'
+      - 'configs/**'
+      - 'aclinspector.py'
+      - 'parsers/**'
+      - '.github/workflows/pages.yml'
   workflow_dispatch:
 
 concurrency:
