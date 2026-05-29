@@ -315,6 +315,36 @@ Understanding the planned evolution helps maintain architecture alignment:
 - **Volumes**: Mount `configs/` from host for dynamic config updates
 - **Prewarming**: Set `ACLINSPECTOR_PREWARM_ALL=1` to build all indices at startup (slower start, faster first query)
 
+## Theme Preview Widget
+
+The dual-panel light/dark theme preview in the preferences tab is a self-contained subsystem within `webui/static/app.js`. It is **not yet extracted into its own module** — everything lives inside the page's module IIFE.
+
+### Entry point
+`updateThemePreviewBox(prefState, previewPrefs)` (~line 1849 in `app.js`) — orchestrates all rendering. Called whenever theme selection, font prefs, or preview mode changes.
+
+### Key helper functions (all in `app.js`)
+| Function | ~Line | Role |
+|---|---|---|
+| `applyPreviewCard(card, theme, defaults)` | 1759 | Sets `--preview-*` CSS vars on a card node |
+| `buildPreviewPalette(theme, defaults)` | 567 | Builds palette object from theme vars |
+| `themeForKind(kind, state)` | 1741 | Resolves theme object from registry by `"light"`/`"dark"` |
+| `resolveFont(option, library, fallback)` | 1458 | Maps font key → CSS font-stack string |
+| `syncRorschachPreview(newSettings)` | 660 | Drives the WebGL ink-blot animation |
+| `isAnimatedPreviewMode(mode)` | 294 | True for `"radar"` and `"rorschach"` modes |
+| `clamp(value, min, max)` | 430 | Utility |
+
+### Closed-over state (coupling)
+`updateThemePreviewBox` defaults to module-level `themePref`, `prefs`, and `previewMode`. Extracting to a standalone module requires threading these as explicit parameters plus passing the theme registry (`THEMES`), font option maps (`BODY_FONT_OPTIONS`, `MONO_FONT_OPTIONS`), and speed config (`RORSCHACH_SPEED_SECONDS`, `THEME_PREVIEW_SPEED`) at init time.
+
+### DOM contract
+Requires `#theme_preview_box` containing `.preview-grid > .preview-canvas > .preview-card[data-theme-preview="light|dark"]` and `.preview-banners > .preview-banner[data-theme-preview="light|dark"]`. The `data-preview-mode` attribute on the box/grid/canvas drives CSS mode switching (`"radar"`, `"rorschach"`, `"split"`, `"light"`, `"dark"`).
+
+### CSS variable contract
+Reads `--muted`, `--text`, `--accent`, `--border`, `--hl-kw/proto/act/addr/num` from `getComputedStyle(document.documentElement)`. Sets `--preview-speed/body-font/mono-font/font-scale/light/dark/accent` on the box, and `--preview-bg/text/accent/border/kw/proto/act/addr/num/match/code-bg/code-border` on each card.
+
+### Rorschach engine
+`syncRorschachPreview` creates a WebGL2 context on `#preview_rorschach_canvas` via `createRorschachPreview`. If WebGL is unavailable it falls back to `#preview_rorschach_fallback`. The engine is lazily instantiated and cached in module-level vars (`rorschachPreviewEngine`, `rorschachPreviewDisabled`).
+
 ## Additional Resources
 
 - **AGENTS.md**: Full development guidelines (migration plan, parsing rules, conventions)
