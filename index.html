@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ACL-inspector — Live Preview</title>
   <style>
-:root{--bg:#0e1116;--muted:#1a1f29;--text:#e6edf3;--sub:#9da7b3;--accent:#7aa2f7;--border:#2b3240;--content-width:900px;--font-body:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,'Helvetica Neue',sans-serif;--font-mono:'SFMono-Regular',Menlo,Consolas,'Liberation Mono',monospace;--font-scale:1;--match-bg:color-mix(in srgb,var(--accent) 72%, #000000 10%);--match-fg:#ffffff;}
-:root[data-theme='light']{--bg:#ffffff;--muted:#f6f8fa;--text:#24292f;--sub:#57606a;--accent:#0969da;--border:#d0d7de;--match-bg:color-mix(in srgb,var(--accent) 70%, #ffffff 25%);--match-fg:#ffffff;}
+:root{color-scheme:dark;--bg:#0e1116;--muted:#1a1f29;--text:#e6edf3;--sub:#9da7b3;--accent:#7aa2f7;--border:#2b3240;--content-width:900px;--font-body:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,'Helvetica Neue',sans-serif;--font-mono:'SFMono-Regular',Menlo,Consolas,'Liberation Mono',monospace;--font-scale:1;--match-bg:color-mix(in srgb,var(--accent) 72%, #000000 10%);--match-fg:#ffffff;}
+:root[data-theme='light']{color-scheme:light;--bg:#ffffff;--muted:#f6f8fa;--text:#24292f;--sub:#57606a;--accent:#0969da;--border:#d0d7de;--match-bg:color-mix(in srgb,var(--accent) 70%, #ffffff 25%);--match-fg:#ffffff;}
 body{background:var(--bg);color:var(--text);font-family:var(--font-body);font-size:calc(15px * var(--font-scale));line-height:1.6;margin:0;transition:background 0.4s ease,color 0.4s ease;}
 body.modal-open{overflow:hidden;}
 a{color:var(--link, var(--accent));text-decoration:none;}
@@ -266,7 +266,6 @@ pre.wrap.line-numbers .line .txt{text-indent:0;}
 .section{position:relative;}
 .clear-btn{padding:4px 12px;border:1px solid #c62828;border-radius:6px;background:#d32f2f;color:#fff;font-weight:700;font-family:inherit;font-size:0.9em;cursor:pointer;transition:opacity 0.15s ease,transform 0.15s ease;}
 .clear-btn:hover{opacity:0.9;transform:translateY(-1px);}
-:root[data-theme='light']{--bg:#ffffff;--muted:#f6f8fa;--text:#24292f;--sub:#57606a;--accent:#0969da;--border:#d0d7de;--match-bg:color-mix(in srgb,var(--accent) 70%, #ffffff 25%);--match-fg:#ffffff;}
 @supports not (color-mix(in srgb, red 70%, #000000 10%)){
   :root{--match-bg:var(--accent);--match-fg:#ffffff;}
   .config-card{background:var(--muted);}
@@ -442,7 +441,7 @@ body { margin: 0; }
   <h3>Inspect an object-group (expands to multiple addresses)</h3>
   <div class="cmd-line"><span class="prompt">$</span> <code>aclinspector.py inspect --vendor asa --config cisco-asa-example --inspect alpha_destgrp_all</code></div>
   <div class="result-box preview-result"><div class="meta-line">Resolves to: <span class="addr">10.1.1.101</span>, <span class="addr">10.1.1.102</span>, <span class="addr">10.1.2.101</span>, <span class="addr">10.1.2.102</span>, <span class="addr">10.1.3.101</span>, <span class="addr">10.1.3.102</span>, <span class="addr">10.1.4.101</span>, <span class="addr">10.1.4.102</span>  <span class='hit-count'>(6 matching rules)</span></div>
-<div class="meta-line alias-line">Also known as: <code>alpha_dest2_host1</code>, <code>alpha_dest4_host1</code>, <code>alpha_dest3_host2</code>, <code>alpha_dest1_host2</code>, <code>alpha_dest1_host1</code>, <code>alpha_dest3_host1</code>, <code>alpha_dest2_host2</code>, <code>alpha_dest4_host2</code></div>
+<div class="meta-line alias-line">Also known as: <code>alpha_dest3_host1</code>, <code>alpha_dest3_host2</code>, <code>alpha_dest1_host2</code>, <code>alpha_dest2_host1</code>, <code>alpha_dest4_host2</code>, <code>alpha_dest2_host2</code>, <code>alpha_dest4_host1</code>, <code>alpha_dest1_host1</code></div>
 <div class="rule-list">
 <div class="rule-entry action-permit"><span class="bind-tag">alpha_lobby(in)</span><code><span class="kw">access-list</span> alpha_lobby_access extended <span class="act">permit</span> <span class="proto">tcp</span> <span class="kw">object</span> alpha_lobby_net <span class="kw">object</span> alpha_dest1_host1 <span class="kw">eq</span> <span class="num">80</span></code></div>
 <div class="rule-entry action-permit"><span class="bind-tag">alpha_lobby(in)</span><code><span class="kw">access-list</span> alpha_lobby_access extended <span class="act">permit</span> <span class="proto">tcp</span> <span class="kw">object</span> alpha_lobby_net <span class="kw">object-group</span> alpha_dest1_grp <span class="kw">object-group</span> Web-Services</code></div>
