@@ -354,8 +354,8 @@ def _verify_fortigate(result: dict, *, ingress_interface: Optional[str] = None,
     proto = (inp.get("proto") or "").lower()
     dports = inp.get("dports") or []
 
-    src = resolved.get("src") or inp.get("src")
-    dst = resolved.get("dst") or inp.get("dst")
+    src = resolved.get("src") or inp.get("src") or "<src_ip>"
+    dst = resolved.get("dst") or inp.get("dst") or "<dst_ip>"
     proto_num = _proto_number(proto)
     sport = 0  # ephemeral; iprope only needs the destination socket
     dport = dports[0] if dports else 0

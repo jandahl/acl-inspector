@@ -310,6 +310,19 @@ class TestSuggestionEdgeCases(unittest.TestCase):
         for s in result['suggestion']['suggestions']:
             self.assertNotIn('multiple destination ports', (s.get('note') or '').lower())
 
+    def test_ftg_verification_no_none_leak_on_missing_endpoints(self):
+        synthetic = {
+            "allowed": False,
+            "acl": {"decision": "implicit-deny", "matches": []},
+            "input": {"proto": "tcp", "dports": [443], "src": None, "dst": None},
+            "resolved": {},
+            "context": {},
+        }
+        verif = suggest_corrections(synthetic, "fortigate")['verification'][0]
+        self.assertNotIn('None', verif['command'])
+        self.assertIn('<src_ip>', verif['command'])
+        self.assertIn('<dst_ip>', verif['command'])
+
     def test_ftg_numeric_protocol_in_verification(self):
         # A numeric protocol token (e.g. GRE=47) is passed through, not zeroed.
         synthetic = {
