@@ -433,10 +433,52 @@ class TestSuggestionEdgeCases(unittest.TestCase):
         self.assertEqual(_first({None, 'port1'}), 'port1')
         self.assertIsNone(_first({None}))
 
-    def test_asa_suggestion_carries_acl_name_note(self):
+    def test_asa_uses_real_bound_acl_name_no_convention_note(self):
+        # ASA_SAMPLE binds 'outside_access_in' on outside; the ingress rule must
+        # reference that real ACL and omit the 'convention' caveat.
         result = self._asa_blocked('203.0.113.5', 'WEB', proto='tcp', dports={443})
-        for s in result['suggestion']['suggestions']:
-            self.assertIn('convention', (s.get('note') or ''))
+        ingress = next(s for s in result['suggestion']['suggestions']
+                       if s['scenario'] == 'ingress')
+        self.assertEqual(ingress['location']['acl'], 'outside_access_in')
+        self.assertNotIn('convention', (ingress.get('note') or ''))
+        # The egress interface (inside) has no bound ACL -> convention caveat.
+        egress = next((s for s in result['suggestion']['suggestions']
+                       if s['scenario'] == 'egress'), None)
+        if egress:
+            self.assertIn('convention', (egress.get('note') or ''))
+
+    def test_asa_resolves_custom_acl_name(self):
+        cfg = """
+interface GigabitEthernet0/0
+ nameif outside
+ security-level 0
+ ip address 203.0.113.2 255.255.255.0
+!
+object network WEB
+ host 10.0.0.10
+!
+access-list OUTSIDE-IN extended permit tcp any host 10.0.0.99 eq 443
+access-group OUTSIDE-IN in interface outside
+"""
+        result = asa_path_check(cfg, '203.0.113.5', 'WEB', proto='tcp', dports={443})
+        ingress = next(s for s in result['suggestion']['suggestions']
+                       if s['scenario'] == 'ingress')
+        self.assertEqual(ingress['location']['acl'], 'OUTSIDE-IN')
+        self.assertTrue(any('access-list OUTSIDE-IN extended permit' in c
+                            for c in ingress['commands']))
+
+    def test_proto_number_resolves_named_protocols(self):
+        from parsers.suggest import _proto_number
+        self.assertEqual(_proto_number('gre'), 47)
+        self.assertEqual(_proto_number('tcp'), 6)
+        self.assertEqual(_proto_number('47'), 47)
+        self.assertEqual(_proto_number('definitely-not-a-proto'), 0)
+
+    def test_ftg_service_all_tcp_udp_without_ports(self):
+        from parsers.suggest import _ftg_service_name
+        self.assertEqual(_ftg_service_name('tcp', []), 'ALL_TCP')
+        self.assertEqual(_ftg_service_name('udp', []), 'ALL_UDP')
+        self.assertEqual(_ftg_service_name('tcp', [443]), 'TCP_443')
 
     def test_multiport_note_present(self):
         result = self._asa_blocked('203.0.113.5', 'WEB', proto='tcp',

@@ -40,6 +40,7 @@ the ingress/egress pairing (VDOM-wrapped when a VDOM is in play).
 from __future__ import annotations
 
 import ipaddress
+import socket
 from typing import Any, Dict, List, Optional, Tuple
 
 __all__ = ["suggest_corrections", "SCHEMA_VERSION"]
@@ -96,7 +97,11 @@ def _proto_number(proto: Optional[str]) -> int:
         return _PROTO_NUMBERS[p]
     if p.isdigit():
         return int(p)
-    return 0
+    # Resolve any other IANA protocol name (gre=47, esp=50, ospf=89, ...).
+    try:
+        return socket.getprotobyname(p)
+    except OSError:
+        return 0
 
 
 def _first(value: Any) -> Optional[str]:
@@ -151,10 +156,10 @@ def _asa_addr_token(addr: Optional[str]) -> str:
 
 
 def _asa_acl_line(nameif: str, suffix: str, proto: str, src: str, dst: str,
-                  port: Optional[int]) -> str:
-    acl_name = f"{nameif}_access_{suffix}"
+                  port: Optional[int], acl_name: Optional[str] = None) -> str:
+    name = acl_name or f"{nameif}_access_{suffix}"
     line = (
-        f"access-list {acl_name} extended permit {proto} "
+        f"access-list {name} extended permit {proto} "
         f"{_asa_addr_token(src)} {_asa_addr_token(dst)}"
     )
     if port is not None:
@@ -199,8 +204,32 @@ def _suggest_asa(result: dict, *, ingress_interface: Optional[str],
     ingress = ingress_interface or ctx.get("src_interface")
     egress = egress_interface or ctx.get("dst_interface")
 
-    notes = [n for n in (_ASA_ACL_NAME_NOTE, _multiport_note(proto, dports, port)) if n]
-    note = " ".join(notes) if notes else None
+    # Prefer the ACL actually bound to the interface (from the path context)
+    # over the '<nameif>_access_<dir>' convention, so the line is accurate for
+    # devices using custom ACL names. has_custom_* tracks whether we resolved a
+    # real name (which suppresses the "name is a convention" caveat).
+    ingress_acl = f"{ingress}_access_in" if ingress else "<nameif>_access_in"
+    egress_acl = f"{egress}_access_out" if egress else "<nameif>_access_out"
+    has_custom_ingress = has_custom_egress = False
+    for cand in ctx.get("acl_candidates") or []:
+        cand_if = (cand.get("interface") or "")
+        cand_dir = (cand.get("direction") or "")
+        cand_acls = cand.get("acls") or []
+        if not cand_acls:
+            continue
+        if ingress and cand_if.lower() == ingress.lower() and cand_dir == "in":
+            ingress_acl, has_custom_ingress = cand_acls[0], True
+        elif egress and cand_if.lower() == egress.lower() and cand_dir == "out":
+            egress_acl, has_custom_egress = cand_acls[0], True
+
+    def _note(name_is_known: bool) -> Optional[str]:
+        parts = []
+        if not name_is_known:
+            parts.append(_ASA_ACL_NAME_NOTE)
+        mp = _multiport_note(proto, dports, port)
+        if mp:
+            parts.append(mp)
+        return " ".join(parts) if parts else None
 
     # ASA security policy is applied inbound on the ingress interface, so an
     # ingress rule is ALWAYS emitted (a '<nameif>' placeholder when the ingress
@@ -211,11 +240,10 @@ def _suggest_asa(result: dict, *, ingress_interface: Optional[str],
         suggestions.append({
             "scenario": "ingress",
             "vendor": "asa",
-            "location": {"nameif": ingress, "direction": "in",
-                         "acl": f"{ingress}_access_in"},
-            "commands": [_asa_acl_line(ingress, "in", proto, src, dst, port)],
+            "location": {"nameif": ingress, "direction": "in", "acl": ingress_acl},
+            "commands": [_asa_acl_line(ingress, "in", proto, src, dst, port, ingress_acl)],
             "rationale": f"Permit the flow as it enters the firewall on '{ingress}'.",
-            "note": note,
+            "note": _note(has_custom_ingress),
         })
     else:
         suggestions.append({
@@ -228,20 +256,19 @@ def _suggest_asa(result: dict, *, ingress_interface: Optional[str],
                 "Ingress interface could not be inferred; substitute the correct "
                 "nameif."
             ),
-            "note": note,
+            "note": _note(False),
         })
     if egress and egress != ingress:
         suggestions.append({
             "scenario": "egress",
             "vendor": "asa",
-            "location": {"nameif": egress, "direction": "out",
-                         "acl": f"{egress}_access_out"},
-            "commands": [_asa_acl_line(egress, "out", proto, src, dst, port)],
+            "location": {"nameif": egress, "direction": "out", "acl": egress_acl},
+            "commands": [_asa_acl_line(egress, "out", proto, src, dst, port, egress_acl)],
             "rationale": (
                 f"Permit the flow as it exits toward the destination subnet on "
                 f"'{egress}'."
             ),
-            "note": note,
+            "note": _note(has_custom_egress),
         })
     return suggestions
 
@@ -293,8 +320,11 @@ def _ftg_service_name(proto: Optional[str], dports: List[int]) -> str:
         return f"{p.upper()}_{dports[0]}"
     if p == "icmp":
         return "ALL_ICMP"
-    if p in {"tcp", "udp"}:
-        return p.upper()
+    # FortiOS ships ALL_TCP / ALL_UDP predefined services; bare TCP/UDP don't exist.
+    if p == "tcp":
+        return "ALL_TCP"
+    if p == "udp":
+        return "ALL_UDP"
     return "ALL"
 
 
