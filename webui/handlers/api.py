@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from parsers.cisco import asa as asa_parser
 from parsers.fortigate import path_check as fortigate_path
+from parsers.detector import detect_vendor as _detect_vendor, DEFAULT_SUPPORTED_VENDORS
 from analysis_core import path_check_supported
 from ..vendor_caps import get_caps
 from ..state import AppState
@@ -460,17 +461,9 @@ def detect_vendor(
     Returns vendor identification with confidence score and detection reason.
     If vendor is provided, validates the guess against detected vendor.
     """
-    # Import vendor detection from scripts
-    import sys
-    script_path = Path(__file__).parent.parent.parent / "scripts"
-    if str(script_path) not in sys.path:
-        sys.path.insert(0, str(script_path))
-
-    from index_repo import _detect_vendor
-
     # Try all vendor config roots to find the file
     config_path = None
-    for v in ['asa', 'fortigate', 'ios', 'ios-xe', 'ios-xr']:
+    for v in DEFAULT_SUPPORTED_VENDORS:
         path = _resolve_config(state, v, filename)
         if path and path.is_file():
             config_path = path
