@@ -159,6 +159,17 @@ def to_ir(cfg: ASAConfig, device_name: str = None) -> "ir.Device":
             else:
                 direction = binding.get('direction') or 'any'
 
+        # For ASA an interface-bound ACL applies to traffic entering ('in') or
+        # leaving ('out') the bound interface; record that so rule generation
+        # knows the ingress/egress interface (nameif) involved.
+        src_interfaces: List[str] = []
+        dst_interfaces: List[str] = []
+        if bound_to:
+            if direction == 'in':
+                src_interfaces = [bound_to]
+            elif direction == 'out':
+                dst_interfaces = [bound_to]
+
         entry = ir.ACLEntry(
             action=e.get('action'),
             proto=e.get('proto'),
@@ -170,6 +181,8 @@ def to_ir(cfg: ASAConfig, device_name: str = None) -> "ir.Device":
             bound_to=bound_to,
             binding=binding,
             direction=direction,
+            src_interfaces=src_interfaces,
+            dst_interfaces=dst_interfaces,
         )
         acl_map.setdefault(acl_name or 'UNNAMED', []).append(entry)
 

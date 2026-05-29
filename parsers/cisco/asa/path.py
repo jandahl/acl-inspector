@@ -8,6 +8,7 @@ import ipaddress
 from collections import defaultdict
 from typing import Dict, List, Optional, Set, Tuple, Union
 
+from ...suggest import suggest_corrections
 from .parser import (
     ASAConfig,
     _pick_preferred_address,
@@ -211,7 +212,6 @@ def path_check(
             acl_info["matches"] = matches
         if inferred_warnings:
             warnings.extend(inferred_warnings)
-            acl_info["warnings"] = warnings
 
     context_walks: List[dict] = []
     for candidate in candidates:
@@ -245,6 +245,8 @@ def path_check(
         )
     allowed = acl_info.get("decision") == "permit"
     packet_tracer_cmds = _build_packet_tracer_commands(src_ip, dst_ip, proto, dports, candidates)
+    if warnings:
+        acl_info.setdefault("warnings", []).extend(warnings)
 
     context = {
         "src_interface": src_iface,
@@ -263,7 +265,7 @@ def path_check(
         "walks": context_walks,
         "packet_tracer": packet_tracer_cmds,
     }
-    return {
+    result = {
         "input": {
             "src": src,
             "dst": dst,
@@ -282,6 +284,8 @@ def path_check(
         "context": context,
         "packet_tracer": packet_tracer_cmds,
     }
+    result["suggestion"] = suggest_corrections(result, "asa")
+    return result
 
 
 def _augment_acl_matches(

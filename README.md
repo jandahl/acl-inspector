@@ -59,6 +59,10 @@ Quick start (CLI)
 - Packet path check (NAT + ACL prototype for ASA and FortiGate):
   - ASA: `./aclinspector.py inspect --vendor asa --config <asa.conf> --packet --packet-src <ip|object> --packet-dst <ip|object> --proto tcp --dport 443`
   - FortiGate: `./aclinspector.py inspect --vendor fortigate --config <ftg.conf> --vdom root --packet --packet-src <ip|object> --packet-dst <ip|object> --proto tcp --dport 443`
+  - Correction suggestions: when a path is blocked, the result includes ready-to-paste
+    CLI to permit it (ASA `access-list`, FortiGate `config firewall policy`). Add
+    `--verify` to also print live-verification commands (`packet-tracer` / `diagnose
+    firewall iprope lookup`). The `suggestion` node is always present in `--format json`.
 
 - Find host across configs:
   - Directory: `./aclinspector.py inspect --vendor asa --config /path/to/configs/cisco --find-host <ip|cidr|object>`

@@ -149,6 +149,20 @@ The web UI is being refactored from a monolithic `cli/access-list-web.py` into m
 1. Parse NAT rules and ACLs with interface bindings
 2. Simulate packet flow: apply NAT translation → evaluate ACL permit/deny
 3. Return hop-by-hop trace with verdict (ASA + FortiGate)
+4. Generate a **correction suggestion** when the verdict is Deny (see below)
+
+**Correction suggestions** (`parsers/suggest.py`):
+- Every `path_check` result carries a `suggestion` node (`schema_version`-stamped,
+  JSON-serialisable) so CLI/JSON/XML and future API/MCP callers share one contract.
+- `suggest_corrections(result, vendor, *, ingress_interface, egress_interface, vdom)`
+  is a pure function driven off the path-check result; vendor dispatch goes through
+  the `_GENERATORS` registry (adding a vendor is a one-line change).
+- ASA emits ingress (`<nameif>_access_in`) + egress (`<nameif>_access_out`)
+  `access-list permit` lines using real (pre-NAT) addresses; FortiGate emits a
+  directional `config firewall policy` block, VDOM-wrapped when a VDOM is in play.
+- Each suggestion also includes flag-gated live-verification commands
+  (ASA `packet-tracer input ...`, FortiGate `diagnose firewall iprope lookup ...`),
+  always present in JSON/XML and shown in text output behind `--verify`.
 
 ## Important Parsing Details
 
@@ -209,6 +223,9 @@ cat fw.conf | ./aclinspector.py inspect --vendor asa --config - --inspect WebSer
 ./aclinspector.py inspect --vendor asa --config fw.conf --packet --packet-src 10.1.1.1 --packet-dst 10.2.2.2 --proto tcp --dport 443
 ./aclinspector.py inspect --vendor fortigate --config ftg.conf --vdom root --packet --packet-src 10.10.10.10 --packet-dst WEB-VIP --proto tcp --dport 443
 
+# Packet path check with correction suggestions + live-verification commands
+./aclinspector.py inspect --vendor asa --config fw.conf --packet --packet-src 10.1.1.1 --packet-dst 10.2.2.2 --proto tcp --dport 443 --verify
+
 # Output formats
 ./aclinspector.py inspect ... --format json
 ./aclinspector.py inspect ... --format xml
@@ -222,6 +239,7 @@ cat fw.conf | ./aclinspector.py inspect --vendor asa --config - --inspect WebSer
 - Test files in `tests/` directory cover:
   - NAT parsing (`test_nat_parsing.py`, `test_nat_parse.py`)
   - Path check logic (`test_path_check.py`)
+  - Path correction suggestions + IR metadata (`test_path_suggestion.py`)
   - Search index management (`test_index_status.py`)
   - IR schema stability (`test_ir_schema.py`)
   - Cross-vendor examples (`test_examples_cross_vendor.py`)

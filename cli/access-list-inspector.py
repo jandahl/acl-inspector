@@ -209,6 +209,7 @@ def main() -> None:
     parser.add_argument('--include-any', action='store_true', help="Include rules with 'any' endpoints (default: ignore such rules)")
     parser.add_argument('--packet-src', dest='packet_src', help='Source IP/object for --packet evaluation')
     parser.add_argument('--packet-dst', dest='packet_dst', help='Destination IP/object for --packet evaluation')
+    parser.add_argument('--verify', action='store_true', help='Show live-verification commands (packet-tracer/iprope) for path suggestions')
     parser.add_argument('--singularitty', action='store_true', help='Launch the Singularity TUI interface (alias for the TUI)')
 
     args = parser.parse_args()
@@ -460,6 +461,29 @@ def main() -> None:
             print("  No ACL entry matched this flow.")
         if acl.get('inspected') is not None:
             print(f"  Entries inspected: {acl['inspected']}")
+        suggestion = result.get('suggestion') or {}
+        if suggestion.get('needed'):
+            reason = suggestion.get('reason', 'deny').replace('-', ' ')
+            print(bold(f"\nCorrection Suggestion ({reason}):"))
+            for sug in suggestion.get('suggestions', []):
+                scenario = (sug.get('scenario') or '').upper()
+                print(blue(f"  [{scenario}] {sug.get('rationale', '')}"))
+                for cmd in sug.get('commands', []):
+                    print(green(f"    {cmd}"))
+                if sug.get('note'):
+                    print(f"    note: {sug['note']}")
+            if args.verify:
+                verifications = suggestion.get('verification', [])
+                if verifications:
+                    print(bold("\nLive Verification (run on the device):"))
+                    for ver in verifications:
+                        desc = ver.get('description')
+                        if desc:
+                            print(blue(f"  {desc}"))
+                        for line in (ver.get('command') or '').splitlines():
+                            print(green(f"    {line}"))
+                else:
+                    print(blue("\nNo live-verification command available for this vendor."))
         return
 
     if args.vendor == 'asa':
