@@ -74,6 +74,8 @@ def to_ir(cfg: FTGConfig, device_name: str = None) -> "ir.Device":
             physical=alias or name,
             ipv4=ipv4,
             security_level=None,
+            zone=cfg.interface_zones.get(name),
+            vdom=cfg.vdom,
         ))
 
     # Convert network objects (firewall address)
@@ -161,6 +163,7 @@ def to_ir(cfg: FTGConfig, device_name: str = None) -> "ir.Device":
                 'dst_service_objects': [],  # FortiGate resolver returns groups, not individual objects
             }
 
+            binding = e.get('binding') or {}
             entry = ir.ACLEntry(
                 action=e.get('action', 'permit'),
                 proto=e.get('proto', 'ip'),
@@ -172,6 +175,8 @@ def to_ir(cfg: FTGConfig, device_name: str = None) -> "ir.Device":
                 bound_to=None,
                 binding=e.get('binding'),
                 direction='global',
+                src_interfaces=list(binding.get('srcintf') or []),
+                dst_interfaces=list(binding.get('dstintf') or []),
             )
             entries.append(entry)
 
@@ -275,6 +280,7 @@ def to_ir(cfg: FTGConfig, device_name: str = None) -> "ir.Device":
         os='FortiOS',
         version=version,
         name=device_name or cfg.vdom,
+        vdom=cfg.vdom,
         interfaces=interfaces,
         objects=objects,
         groups=groups,
