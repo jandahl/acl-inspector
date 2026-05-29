@@ -208,7 +208,7 @@ Dual Licensing
 ~~~~~~~~~~~~~~
 As the sole copyright holder, the author retains the right to grant alternative commercial licenses. By contributing to this project, you agree that your contributions are licensed under the MPL-2.0 and that the author retains the right to dual-license the collective work. 
 
-If you require a different license for proprietary integration or other commercial purposes that are incompatible with the MPL-2.0, please see `COMMERCIAL_LICENSE.md` or contact the author to negotiate an alternative license.
+If you require a different license for proprietary integration or other commercial purposes that are incompatible with the MPL-2.0, please see `COMMERCIAL_LICENSE.md` or contact the author at <email@example.com> to negotiate an alternative license.
 
 For contribution guidelines and CLA terms, see `CONTRIBUTING.md`.
 
