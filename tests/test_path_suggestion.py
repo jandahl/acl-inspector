@@ -2,8 +2,10 @@
 # Copyright (c) 2024-2026 Jan Gronemann
 import unittest
 
-from parsers.cisco.asa import path_check as asa_path_check
+from parsers.cisco.asa import path_check as asa_path_check, ASAConfig
 from parsers.fortigate import path_check as ftg_path_check
+from parsers.fortigate.config import FTGConfig
+from parsers.fortigate import ir_export as ftg_ir_export
 from parsers.suggest import suggest_corrections, SCHEMA_VERSION
 
 
@@ -155,6 +157,99 @@ class TestFortiGateSuggestion(unittest.TestCase):
         self.assertIn('edit CUSTOMER_A', cmds)
         verif_cmd = sug['verification'][0]['command']
         self.assertIn('edit CUSTOMER_A', verif_cmd)
+
+
+class TestSuggestionEdgeCases(unittest.TestCase):
+    """Address formatting, port-less protocols, and service-name synthesis."""
+
+    def _asa_blocked(self, src, dst, **kw):
+        return asa_path_check(ASA_SAMPLE, src, dst, **kw)
+
+    def test_asa_icmp_has_no_port_qualifier(self):
+        result = self._asa_blocked('203.0.113.5', 'WEB', proto='icmp')
+        cmds = [c for s in result['suggestion']['suggestions'] for c in s['commands']]
+        self.assertTrue(cmds)
+        self.assertTrue(all(' eq ' not in c for c in cmds))
+        self.assertTrue(all('permit icmp' in c for c in cmds))
+
+    def test_asa_network_destination_uses_mask(self):
+        # When a caller hands us a network (rather than a single host),
+        # the ACL line should render 'net mask', not 'host'. path_check
+        # itself collapses to a host, so exercise the formatter via a
+        # synthetic result dict (the documented public contract).
+        synthetic = {
+            "allowed": False,
+            "acl": {"decision": "no-match", "matches": []},
+            "input": {"proto": "tcp", "dports": [443], "src": "any", "dst": "10.0.0.0/24"},
+            "resolved": {"src": "203.0.113.5", "dst": "10.0.0.0/24"},
+            "context": {"src_interface": "outside", "dst_interface": "inside",
+                        "packet_tracer": []},
+        }
+        sug = suggest_corrections(synthetic, "asa")
+        cmds = [c for s in sug['suggestions'] for c in s['commands']]
+        self.assertTrue(any('10.0.0.0 255.255.255.0' in c for c in cmds))
+        self.assertFalse(any('host 10.0.0.0' in c for c in cmds))
+
+    def test_ftg_service_synthesis_variants(self):
+        # icmp -> ALL_ICMP, no proto -> ALL.
+        icmp = ftg_path_check(FTG_SAMPLE, 'SRC', '203.0.113.50', proto='icmp')
+        icmp_cmds = icmp['suggestion']['suggestions'][0]['commands']
+        self.assertTrue(any('set service "ALL_ICMP"' in c for c in icmp_cmds))
+
+        bare = ftg_path_check(FTG_SAMPLE, 'SRC', '203.0.113.50')
+        bare_cmds = bare['suggestion']['suggestions'][0]['commands']
+        self.assertTrue(any('set service "ALL"' in c for c in bare_cmds))
+
+    def test_ftg_verification_proto_number_for_icmp(self):
+        result = ftg_path_check(FTG_SAMPLE, 'SRC', '203.0.113.50', proto='icmp')
+        verif = result['suggestion']['verification'][0]['command']
+        # iprope proto-number for icmp is 1.
+        self.assertRegex(verif, r'iprope lookup .* 1 ')
+
+    def test_asa_verification_is_deduplicated(self):
+        result = self._asa_blocked('203.0.113.5', 'WEB', proto='tcp', dports={443})
+        cmds = [v['command'] for v in result['suggestion']['verification']]
+        self.assertEqual(len(cmds), len(set(cmds)))
+
+
+class TestIRMetadata(unittest.TestCase):
+    """The IR fields added to support rule generation must be populated."""
+
+    def test_asa_acl_entry_carries_ingress_interface(self):
+        dev = ASAConfig(ASA_SAMPLE).to_ir()
+        entry = dev.acls[0].entries[0]
+        # 'access-group outside_access_in in interface outside' -> ingress on outside.
+        self.assertEqual(entry.src_interfaces, ['outside'])
+        self.assertEqual(entry.dst_interfaces, [])
+        self.assertEqual(entry.direction, 'in')
+
+    def test_fortigate_policy_entry_carries_src_dst_interfaces(self):
+        dev = ftg_ir_export.to_ir(FTGConfig(FTG_SAMPLE))
+        entry = dev.acls[0].entries[0]
+        self.assertEqual(entry.src_interfaces, ['port1'])
+        self.assertEqual(entry.dst_interfaces, ['port2'])
+
+    def test_fortigate_device_and_interface_vdom_zone(self):
+        cfg_text = (
+            "config vdom\n"
+            "edit CUSTOMER_A\n"
+            "config system interface\n"
+            '    edit "port1"\n'
+            "        set ip 10.0.0.1 255.255.255.0\n"
+            "    next\n"
+            "end\n"
+            "config system zone\n"
+            '    edit "trust"\n'
+            '        set interface "port1"\n'
+            "    next\n"
+            "end\n"
+            "end\n"
+        )
+        dev = ftg_ir_export.to_ir(FTGConfig(cfg_text, vdom='CUSTOMER_A'))
+        self.assertEqual(dev.vdom, 'CUSTOMER_A')
+        iface = next(i for i in dev.interfaces if i.name == 'port1')
+        self.assertEqual(iface.zone, 'trust')
+        self.assertEqual(iface.vdom, 'CUSTOMER_A')
 
 
 class TestSuggestHelper(unittest.TestCase):
