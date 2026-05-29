@@ -348,6 +348,36 @@ class TestSuggestionEdgeCases(unittest.TestCase):
         # IPv4 still uses dotted netmask.
         self.assertEqual(_asa_addr_token('10.0.0.0/24'), '10.0.0.0 255.255.255.0')
 
+    def test_ftg_ipv6_synthesises_address6_object(self):
+        from parsers.suggest import _ftg_resolve_addr
+        name, block = _ftg_resolve_addr('2001:db8::1', [], set())
+        self.assertEqual(name, 'IP_2001:db8::1')
+        self.assertIn('config firewall address6', block)
+        self.assertTrue(any('set ip6 2001:db8::1/128' in c for c in block))
+        self.assertFalse(any('set subnet' in c for c in block))
+
+        name6, block6 = _ftg_resolve_addr('2001:db8::/64', [], set())
+        self.assertEqual(name6, 'NET_2001:db8::/64')
+        self.assertTrue(any('set ip6 2001:db8::/64' in c for c in block6))
+
+    def test_asa_always_emits_ingress_even_when_only_egress_known(self):
+        # ingress can't be inferred, egress is known -> still emit an ingress
+        # placeholder rule (ASA policy is primarily inbound).
+        synthetic = {
+            "allowed": False,
+            "acl": {"decision": "no-match", "matches": []},
+            "input": {"proto": "tcp", "dports": [443], "src": "10.0.0.1", "dst": "10.0.0.2"},
+            "resolved": {"src": "10.0.0.1", "dst": "10.0.0.2"},
+            "context": {"src_interface": None, "dst_interface": "inside",
+                        "packet_tracer": []},
+        }
+        sug = suggest_corrections(synthetic, "asa")
+        scenarios = [s['scenario'] for s in sug['suggestions']]
+        self.assertIn('ingress', scenarios)
+        self.assertIn('egress', scenarios)
+        ingress = next(s for s in sug['suggestions'] if s['scenario'] == 'ingress')
+        self.assertEqual(ingress['location']['nameif'], '<nameif>')
+
     def test_first_handles_set_deterministically(self):
         from parsers.suggest import _first
         self.assertEqual(_first({'port2', 'port1'}), 'port1')  # sorted

@@ -200,6 +200,10 @@ def _suggest_asa(result: dict, *, ingress_interface: Optional[str],
     notes = [n for n in (_ASA_ACL_NAME_NOTE, _multiport_note(proto, dports, port)) if n]
     note = " ".join(notes) if notes else None
 
+    # ASA security policy is applied inbound on the ingress interface, so an
+    # ingress rule is ALWAYS emitted (a '<nameif>' placeholder when the ingress
+    # interface can't be inferred) — never just an egress rule, which would
+    # leave the flow blocked at ingress.
     suggestions: List[dict] = []
     if ingress:
         suggestions.append({
@@ -209,6 +213,19 @@ def _suggest_asa(result: dict, *, ingress_interface: Optional[str],
                          "acl": f"{ingress}_access_in"},
             "commands": [_asa_acl_line(ingress, "in", proto, src, dst, port)],
             "rationale": f"Permit the flow as it enters the firewall on '{ingress}'.",
+            "note": note,
+        })
+    else:
+        suggestions.append({
+            "scenario": "ingress",
+            "vendor": "asa",
+            "location": {"nameif": "<nameif>", "direction": "in",
+                         "acl": "<nameif>_access_in"},
+            "commands": [_asa_acl_line("<nameif>", "in", proto, src, dst, port)],
+            "rationale": (
+                "Ingress interface could not be inferred; substitute the correct "
+                "nameif."
+            ),
             "note": note,
         })
     if egress and egress != ingress:
@@ -221,19 +238,6 @@ def _suggest_asa(result: dict, *, ingress_interface: Optional[str],
             "rationale": (
                 f"Permit the flow as it exits toward the destination subnet on "
                 f"'{egress}'."
-            ),
-            "note": note,
-        })
-    if not suggestions:
-        suggestions.append({
-            "scenario": "ingress",
-            "vendor": "asa",
-            "location": {"nameif": "<nameif>", "direction": "in",
-                         "acl": "<nameif>_access_in"},
-            "commands": [_asa_acl_line("<nameif>", "in", proto, src, dst, port)],
-            "rationale": (
-                "Ingress interface could not be inferred; substitute the correct "
-                "nameif."
             ),
             "note": note,
         })
@@ -360,13 +364,23 @@ def _ftg_resolve_addr(token: str, inventory: List[dict],
         suffix += 1
         name = f"{base}_{suffix}"
     taken.add(name)
-    block = [
-        "config firewall address",
-        f'    edit "{name}"',
-        f"        set subnet {_ftg_subnet_tokens(net)}",
-        "    next",
-        "end",
-    ]
+    if net.version == 6:
+        # FortiOS keeps IPv6 objects in a separate table with prefix notation.
+        block = [
+            "config firewall address6",
+            f'    edit "{name}"',
+            f"        set ip6 {net}",
+            "    next",
+            "end",
+        ]
+    else:
+        block = [
+            "config firewall address",
+            f'    edit "{name}"',
+            f"        set subnet {_ftg_subnet_tokens(net)}",
+            "    next",
+            "end",
+        ]
     return name, block
 
 
