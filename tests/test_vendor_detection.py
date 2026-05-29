@@ -240,6 +240,22 @@ at all in the content or filename.
         vendor_ios, score_ios, _ = _detect_vendor(config, "router-ios.cfg")
         self.assertEqual(vendor_ios, 'ios')
 
+    def test_filename_hints_false_positives(self):
+        """Ensure common substring filenames do not trigger false positives."""
+        config = "hostname SomeDevice\n"
+        
+        # 'ios' in bios.cfg
+        vendor, score, _ = _detect_vendor(config, "bios.cfg")
+        self.assertEqual(vendor, 'unknown')
+        
+        # 'xe' in deluxe.cfg
+        vendor, score, _ = _detect_vendor(config, "deluxe.cfg")
+        self.assertEqual(vendor, 'unknown')
+        
+        # 'xr' in flexr.cfg
+        vendor, score, _ = _detect_vendor(config, "flexr.cfg")
+        self.assertEqual(vendor, 'unknown')
+
     def test_mixed_vendor_signals_highest_score_wins(self):
         """When mixed vendor signals exist, highest score wins."""
         # Config with both ASA and IOS keywords, but stronger ASA signal

@@ -2,6 +2,7 @@
 # Copyright (c) 2024-2026 Jan Gronemann
 """Firewall vendor detection logic."""
 
+import re
 from typing import Dict, Tuple
 
 MAX_DETECTION_BYTES = 64 * 1024
@@ -49,11 +50,15 @@ def detect_vendor(text: str, filename: str = '') -> Tuple[str, int, str]:
         note('fortigate', 20, 'filename_hint')
 
     # Cisco IOS variants
-    if 'ios' in lower_name or lower_name.endswith('.ios'):
+    has_ios = any(p in lower_name for p in ('-ios', '_ios', 'ios-', 'ios_')) or lower_name.startswith('ios') or lower_name.endswith('.ios')
+    has_xr = any(p in lower_name for p in ('-xr', '_xr', 'xr-', 'xr_')) or lower_name.startswith('xr') or lower_name.endswith('.xr')
+    has_xe = any(p in lower_name for p in ('-xe', '_xe', 'xe-', 'xe_')) or lower_name.startswith('xe') or lower_name.endswith('.xe')
+
+    if has_ios:
         note('ios', 20, 'filename_hint')
-    if 'xr' in lower_name or lower_name.endswith('.xr'):
+    if has_xr:
         note('ios-xr', 50, 'filename_hint')  # Higher score to override generic IOS patterns
-    if 'xe' in lower_name or lower_name.endswith('.xe'):
+    if has_xe:
         note('ios-xe', 50, 'filename_hint')  # Higher score to override generic IOS patterns
 
     # Content-based detection (higher confidence)
@@ -98,7 +103,7 @@ def detect_vendor(text: str, filename: str = '') -> Tuple[str, int, str]:
     # Generic Cisco IOS patterns
     if 'cisco ios software' in sample:
         note('ios', 85, 'ios_version_banner')
-    if 'version 1' in sample[:1000]:
+    if re.search(r'^version 1[1-9]\.', sample[:1000], re.MULTILINE):
         note('ios', 60, 'ios_version_command')
     if 'interface gigabitethernet' in sample or 'interface fastethernet' in sample:
         note('ios', 45, 'ios_interface_naming')
