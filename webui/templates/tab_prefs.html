@@ -17,7 +17,6 @@
       <label>Default config filter min characters:<input type="number" id="pref_config_min_chars" min="1" max="20"></label>
       <label>Default context lines:<input type="number" id="pref_config_context_lines" min="0" max="20"></label>
     </div>
-    <p class="pref-note">Config viewer controls use these defaults and persist locally on this device.</p>
   </fieldset>
   <fieldset class="section section-layout">
     <legend>Layout &amp; Presentation</legend>
@@ -28,11 +27,9 @@
       <input type="range" id="pref_layout_width" min="70" max="150" step="5" value="100">
       <span class="pref-metric" id="pref_layout_width_value">100%</span>
     </div>
-    <p class="pref-note">Theme, font, and layout choices are remembered per-device and sync with the header toggle.</p>
     <div class="pref-inline">
       <label><input type="checkbox" id="pref_show_beta"> Show beta modules</label>
     </div>
-    <p class="pref-note">Sizing controls are available inside the customizer; beta tabs remain optional per device.</p>
   </fieldset>
   <fieldset class="section section-debug">
     <legend>Debug</legend>
@@ -81,7 +78,6 @@
               </div>
             </div>
           </div>
-          <p class="pref-note">Changes apply to this browser and sync with the toolbar toggle.</p>
           <div class="pref-inline">
             <label for="pref_font_body">Normal font</label>
             <select id="pref_font_body">
@@ -116,7 +112,6 @@
         <div class="theme-modal__preview">
           <div class="theme-preview-radar" id="theme_preview_box" aria-hidden="true">
             <div class="preview-content">
-              <p class="preview-intro">Preview is animated to showcase both light and dark palettes.</p>
               <div class="preview-grid">
                 <div class="preview-banners">
                   <div class="preview-banner" data-theme-preview="light">
@@ -131,7 +126,6 @@
                 <div class="preview-canvas">
                   <div class="preview-card" data-theme-preview="light">
                     <div class="preview-card__body">
-                    <p>Readable configs with consistent spacing.</p>
                     <code><span class="kw">object</span> <span class="kw">network</span> <span class="addr">SAMPLE_WEB</span></code>
                     <code><span class="kw"> host</span> <span class="addr">203.0.113.10</span></code>
                     <code><span class="kw"> description</span> <span class="act">Internet web tier</span></code>
@@ -145,7 +139,6 @@
                   </div>
                   <div class="preview-card" data-theme-preview="dark">
                     <div class="preview-card__body">
-                    <p>Contrast tuned for late-night reviews.</p>
                     <code><span class="kw">object</span> <span class="kw">network</span> <span class="addr">SAMPLE_WEB</span></code>
                     <code><span class="kw"> host</span> <span class="addr">203.0.113.10</span></code>
                     <code><span class="kw"> description</span> <span class="act">Internet web tier</span></code>
