@@ -460,13 +460,7 @@ def detect_vendor(
     Returns vendor identification with confidence score and detection reason.
     If vendor is provided, validates the guess against detected vendor.
     """
-    # Import vendor detection from scripts
-    import sys
-    script_path = Path(__file__).parent.parent.parent / "scripts"
-    if str(script_path) not in sys.path:
-        sys.path.insert(0, str(script_path))
-
-    from index_repo import _detect_vendor
+    from parsers.detector import detect_vendor as _detect_vendor
 
     # Try all vendor config roots to find the file
     config_path = None

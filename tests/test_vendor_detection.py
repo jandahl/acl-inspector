@@ -6,10 +6,7 @@ import unittest
 import sys
 import os
 
-# Add scripts to path for importing
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
-
-from index_repo import _detect_vendor
+from parsers.detector import detect_vendor as _detect_vendor
 
 
 class TestVendorDetection(unittest.TestCase):
