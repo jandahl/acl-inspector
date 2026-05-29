@@ -24,9 +24,14 @@
       <div class="toolbar">
         <h2>ACL Inspector</h2>
         <div class="toolbar-controls">
-          <div class="theme-mode-group" role="group" aria-label="Color scheme">
-            <button type="button" id="themeModeLight" class="toolbar-icon-btn" data-theme-mode="light" aria-pressed="false" aria-label="Light mode">
-              <svg viewBox="0 0 24 24" width="16" height="16" focusable="false" aria-hidden="true">
+          <button type="button" id="themeToggle" class="theme-toggle" aria-pressed="false" aria-label="Toggle light and dark mode">
+            <span class="theme-icon theme-icon-moon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false">
+                <path d="M21 12.79A9 9 0 0111.21 3a7 7 0 000 14 9 9 0 009.79-4.21z" fill="currentColor"></path>
+              </svg>
+            </span>
+            <span class="theme-icon theme-icon-sun" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false">
                 <circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"></circle>
                 <line x1="12" y1="2" x2="12" y2="5" stroke="currentColor" stroke-width="2" stroke-linecap="round"></line>
                 <line x1="12" y1="19" x2="12" y2="22" stroke="currentColor" stroke-width="2" stroke-linecap="round"></line>
@@ -37,34 +42,10 @@
                 <line x1="4.22" y1="19.78" x2="6.34" y2="17.66" stroke="currentColor" stroke-width="2" stroke-linecap="round"></line>
                 <line x1="17.66" y1="6.34" x2="19.78" y2="4.22" stroke="currentColor" stroke-width="2" stroke-linecap="round"></line>
               </svg>
-            </button>
-            <button type="button" id="themeModeDark" class="toolbar-icon-btn" data-theme-mode="dark" aria-pressed="false" aria-label="Dark mode">
-              <svg viewBox="0 0 24 24" width="16" height="16" focusable="false" aria-hidden="true">
-                <path d="M21 12.79A9 9 0 0111.21 3a7 7 0 000 14 9 9 0 009.79-4.21z" fill="currentColor"></path>
-              </svg>
-            </button>
-            <button type="button" id="themeModeAuto" class="toolbar-icon-btn" data-theme-mode="auto" aria-pressed="true" aria-label="Auto mode (follow system)">
-              <svg viewBox="0 0 24 24" width="16" height="16" focusable="false" aria-hidden="true">
-                <rect x="2" y="4" width="20" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="2"></rect>
-                <line x1="8" y1="21" x2="16" y2="21" stroke="currentColor" stroke-width="2" stroke-linecap="round"></line>
-                <line x1="12" y1="18" x2="12" y2="21" stroke="currentColor" stroke-width="2" stroke-linecap="round"></line>
-              </svg>
-            </button>
-          </div>
+            </span>
+          </button>
           <label class="hl-switch"><input type="checkbox" id="hlToggle"> Highlight output</label>
           <button type="button" id="histToggle" class="history-toggle">History</button>
-          <button type="button" id="settingsBtn" class="toolbar-icon-btn" aria-label="Settings">
-            <svg viewBox="0 0 24 24" width="16" height="16" focusable="false" aria-hidden="true">
-              <path fill="currentColor" d="M12 9.5a2.5 2.5 0 102.5 2.5A2.5 2.5 0 0012 9.5zm9.44 2a7.72 7.72 0 00-.1-1l2.11-1.65a.5.5 0 00.12-.64l-2-3.46a.5.5 0 00-.6-.22l-2.49 1a7.74 7.74 0 00-1.73-1L16.4 2.6a.5.5 0 00-.5-.6h-3.8a.5.5 0 00-.5.4l-.38 2.68a7.93 7.93 0 00-1.73 1l-2.49-1a.5.5 0 00-.6.22l-2 3.46a.5.5 0 00.12.64l2.11 1.65A7.72 7.72 0 004.56 12a7.72 7.72 0 00.1 1l-2.11 1.65a.5.5 0 00-.12.64l2 3.46a.5.5 0 00.6.22l2.49-1a7.74 7.74 0 001.73 1l.38 2.68a.5.5 0 00.5.4h3.8a.5.5 0 00.5-.4l.38-2.68a7.93 7.93 0 001.73-1l2.49 1a.5.5 0 00.6-.22l2-3.46a.5.5 0 00-.12-.64l-2.11-1.65a7.72 7.72 0 00.1-1z"></path>
-            </svg>
-          </button>
-          <button type="button" id="helpBtn" class="toolbar-icon-btn" aria-label="About / help">
-            <svg viewBox="0 0 24 24" width="16" height="16" focusable="false" aria-hidden="true">
-              <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"></circle>
-              <path d="M10 9a2 2 0 114 0c0 1.5-2 2-2 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
-              <circle cx="12" cy="17" r="0.5" fill="currentColor" stroke="currentColor" stroke-width="1.5"></circle>
-            </svg>
-          </button>
         </div>
       </div>
       <div class="tab-shell">
