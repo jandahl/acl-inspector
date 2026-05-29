@@ -12,6 +12,8 @@ import sys
 from pathlib import Path
 from typing import Optional, Tuple, Union, TYPE_CHECKING
 
+from parsers.detector import detect_vendor
+
 # Import types for type checking
 if TYPE_CHECKING:
     from parsers.cisco.asa.parser import ASAConfig
@@ -23,12 +25,6 @@ __all__ = ["load_config", "load_config_to_ir", "ConfigLoadError"]
 class ConfigLoadError(Exception):
     """Raised when config loading fails."""
     pass
-
-
-def _detect_vendor_internal(text: str, filename: str = '') -> Tuple[str, int, str]:
-    """Internal vendor detection (imported from detector module)."""
-    from parsers.detector import detect_vendor
-    return detect_vendor(text, filename)
 
 
 def load_config(
@@ -76,7 +72,7 @@ def load_config(
 
     # Auto-detect vendor if not specified
     if vendor is None:
-        detected_vendor, confidence, reason = _detect_vendor_internal(text, filename)
+        detected_vendor, confidence, reason = detect_vendor(text, filename)
 
         if detected_vendor == 'unknown':
             raise ConfigLoadError(

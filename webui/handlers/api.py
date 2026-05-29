@@ -460,11 +460,11 @@ def detect_vendor(
     Returns vendor identification with confidence score and detection reason.
     If vendor is provided, validates the guess against detected vendor.
     """
-    from parsers.detector import detect_vendor as _detect_vendor
+    from parsers.detector import detect_vendor as _detect_vendor, DEFAULT_SUPPORTED_VENDORS
 
     # Try all vendor config roots to find the file
     config_path = None
-    for v in ['asa', 'fortigate', 'ios', 'ios-xe', 'ios-xr']:
+    for v in DEFAULT_SUPPORTED_VENDORS:
         path = _resolve_config(state, v, filename)
         if path and path.is_file():
             config_path = path

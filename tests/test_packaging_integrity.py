@@ -3,6 +3,7 @@
 """Verification that the core package has no hidden dependency on scripts/."""
 
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -24,10 +25,11 @@ class PackagingIntegrityTest(unittest.TestCase):
             # Import and use loader
             from parsers.loader import load_config
             
-            # Simple ASA config
+            # Simple ASA config in a temporary file
             config_text = "ASA Version 9.8(2)\ninterface GigabitEthernet0/0\n nameif outside"
-            config_path = Path("test_integrity.conf")
-            config_path.write_text(config_text)
+            with tempfile.NamedTemporaryFile(suffix=".conf", mode="w", delete=False) as tmp:
+                tmp.write(config_text)
+                config_path = Path(tmp.name)
             
             try:
                 # This should NOT trigger a ModuleNotFoundError for 'index_repo'

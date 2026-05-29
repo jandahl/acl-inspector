@@ -122,4 +122,3 @@ If you are extending the framework to support a new firewall platform (e.g., Pal
 3. **Register the Detection**: Add detection heuristics to `detect_vendor` in `parsers/detector.py`. You must also update `vendor_to_os` and `DEFAULT_SUPPORTED_VENDORS` in the same file to fully integrate the new vendor. Finally, add dispatch branches to `load_config()` and `load_config_to_ir()` inside `parsers/loader.py` to support the new vendor string.
 
 > **Note on Architecture**: While existing production parsers (`ASAConfig`, `FTGConfig`) currently use custom methods for historical reasons, new modular components are encouraged to inherit from `FirewallParser` (defined in `parsers/base.py`) to move towards a more consistent interface.
- more consistent interface.
