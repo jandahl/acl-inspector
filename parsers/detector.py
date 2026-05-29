@@ -8,6 +8,14 @@ from typing import Dict, Tuple
 MAX_DETECTION_BYTES = 64 * 1024
 DEFAULT_SUPPORTED_VENDORS = ('asa', 'fortigate', 'ios', 'ios-xr', 'ios-xe')
 
+__all__ = [
+    "MAX_DETECTION_BYTES",
+    "DEFAULT_SUPPORTED_VENDORS",
+    "detect_vendor",
+    "vendor_to_os",
+    "confidence_level",
+]
+
 
 def detect_vendor(text: str, filename: str = '') -> Tuple[str, int, str]:
     """Detect firewall vendor from config text and filename.
