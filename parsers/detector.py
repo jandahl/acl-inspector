@@ -115,18 +115,14 @@ def vendor_to_os(vendor: str) -> str:
     """Map vendor identifier to OS name for display."""
     if not vendor:
         return 'Unknown'
-    vendor = vendor.lower()
-    if vendor == 'asa':
-        return 'ASA'
-    if vendor == 'fortigate':
-        return 'FortiOS'
-    if vendor == 'ios':
-        return 'IOS'
-    if vendor == 'ios-xe':
-        return 'IOS-XE'
-    if vendor == 'ios-xr':
-        return 'IOS-XR'
-    return 'Unknown'
+    mapping = {
+        'asa': 'ASA',
+        'fortigate': 'FortiOS',
+        'ios': 'IOS',
+        'ios-xe': 'IOS-XE',
+        'ios-xr': 'IOS-XR',
+    }
+    return mapping.get(vendor.lower(), 'Unknown')
 
 
 def confidence_level(score: int) -> str:
