@@ -6,9 +6,6 @@
 import sys
 from pathlib import Path
 
-# Add parent to path
-sys.path.insert(0, str(Path(__file__).parent))
-
 from parsers.cisco.asa.parser import ASAConfig
 from analysis_core import inspect_object, compare_objects, find_object_usage
 

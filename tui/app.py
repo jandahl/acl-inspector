@@ -529,12 +529,6 @@ class SingularityApp(App):
     def _load_config(self) -> None:
         """Load and parse the firewall config(s)."""
         try:
-            import sys
-
-            parent_dir = Path(__file__).parent.parent
-            if str(parent_dir) not in sys.path:
-                sys.path.insert(0, str(parent_dir))
-
             self.config_files = []
             self.parsed_configs.clear()
             self.all_objects = []
