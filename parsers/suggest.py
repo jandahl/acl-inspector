@@ -101,12 +101,12 @@ def _proto_number(proto: Optional[str]) -> int:
 
 def _first(value: Any) -> Optional[str]:
     if isinstance(value, (list, tuple)):
-        return value[0] if value else None
+        return str(value[0]) if value else None
     if isinstance(value, set):
         # Sets are unordered; sort for deterministic command generation.
         # Filter None and key on str so a mixed-type set can't raise TypeError.
         items = sorted((x for x in value if x is not None), key=str)
-        return items[0] if items else None
+        return str(items[0]) if items else None
     if not value:
         return None
     return str(value)
@@ -116,7 +116,7 @@ def _first(value: Any) -> Optional[str]:
 # ASA generation
 # ---------------------------------------------------------------------------
 
-def _asa_addr_token(addr: str) -> str:
+def _asa_addr_token(addr: Optional[str]) -> str:
     """Format an address as ASA ACL tokens ('host x' / 'net mask' / 'any').
 
     Wildcard tokens (``any``/``any4``/``any6``) collapse to ``any``. Anything
