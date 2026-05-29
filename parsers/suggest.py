@@ -282,8 +282,8 @@ def _ftg_service_name(proto: Optional[str], dports: List[int]) -> str:
 
 
 def _ftg_policy_block(srcintf: str, dstintf: str, src_obj: str, dst_obj: str,
-                      service: str, vdom: Optional[str]) -> List[str]:
-    inner = [
+                      service: str) -> List[str]:
+    return [
         "config firewall policy",
         "    edit 0",
         f'        set srcintf "{srcintf}"',
@@ -296,12 +296,78 @@ def _ftg_policy_block(srcintf: str, dstintf: str, src_obj: str, dst_obj: str,
         "    next",
         "end",
     ]
+
+
+def _ftg_vdom_wrap(commands: List[str], vdom: Optional[str]) -> List[str]:
+    """Wrap a command block in 'config vdom / edit <vdom> ... end' when set.
+
+    The trailing 'end' closes 'config vdom'; the inner blocks close themselves.
+    """
     if vdom:
-        # Wrap in the VDOM context so the block is paste-ready on a multi-VDOM
-        # box. The trailing 'end' here closes 'config vdom'; the 'end' already in
-        # `inner` closes 'config firewall policy'.
-        return ["config vdom", f"edit {vdom}", *inner, "end"]
-    return inner
+        return ["config vdom", f"edit {vdom}", *commands, "end"]
+    return commands
+
+
+def _ftg_subnet_tokens(net: "ipaddress.IPv4Network") -> str:
+    """FortiGate 'set subnet' value: '<addr> <mask>' for IPv4."""
+    return f"{net.network_address} {net.netmask}"
+
+
+def _ftg_resolve_addr(token: str, inventory: List[dict],
+                      taken: set) -> Tuple[str, List[str]]:
+    """Resolve a srcaddr/dstaddr token to a named FortiGate address object.
+
+    FortiGate policy ``set srcaddr``/``dstaddr`` only accept named ``firewall
+    address`` objects, never raw IPs/CIDRs. Strategy (per operator guidance):
+
+    1. If the token is not a raw IP/CIDR, assume it is already an object name
+       (or a ``<placeholder>``) and use it verbatim.
+    2. Otherwise reverse-look it up in the device's address inventory (the
+       "phone book") — if an existing object covers exactly that IP/CIDR, use
+       its name and emit no new object.
+    3. Failing that, synthesise an ``IP_<addr>`` / ``NET_<net>/<prefix>`` object,
+       choosing a name that does not collide with an existing one, and emit the
+       ``config firewall address`` block to create it.
+
+    Returns ``(object_name, address_block_commands)``.
+    """
+    net = None
+    try:
+        ip = ipaddress.ip_address(token)
+        net = ipaddress.ip_network(f"{ip}/32" if ip.version == 4 else f"{ip}/128",
+                                   strict=False)
+    except ValueError:
+        try:
+            net = ipaddress.ip_network(token, strict=False)
+        except ValueError:
+            net = None
+    if net is None:
+        # Already an object name (or placeholder) — use as-is.
+        return token, []
+
+    canonical = str(net)
+    # 2. Reverse lookup against the inventory.
+    for obj in inventory:
+        if canonical in (obj.get("subnets") or []):
+            return obj["name"], []
+
+    # 3. Synthesise a collision-free object name.
+    is_host = net.prefixlen in (32, 128)
+    base = f"IP_{net.network_address}" if is_host else f"NET_{canonical}"
+    name = base
+    suffix = 1
+    while name in taken:
+        suffix += 1
+        name = f"{base}_{suffix}"
+    taken.add(name)
+    block = [
+        "config firewall address",
+        f'    edit "{name}"',
+        f"        set subnet {_ftg_subnet_tokens(net)}",
+        "    next",
+        "end",
+    ]
+    return name, block
 
 
 def _ftg_interfaces(result: dict, ingress_interface: Optional[str],
@@ -322,12 +388,23 @@ def _suggest_fortigate(result: dict, *, ingress_interface: Optional[str],
     service = _ftg_service_name(proto, dports)
     port = _port_token(proto, dports)
 
-    # Address objects: prefer the original tokens (often object names already).
-    src_obj = inp.get("src") or "<src_obj>"
-    dst_obj = inp.get("dst") or "<dst_obj>"
+    # Address objects: prefer the original tokens (often object names already);
+    # for raw IP/CIDR inputs reuse an existing object or synthesise one, since
+    # FortiGate srcaddr/dstaddr only accept named objects.
+    src_token = inp.get("src") or "<src_obj>"
+    dst_token = inp.get("dst") or "<dst_obj>"
+    inventory = (result.get("context") or {}).get("address_objects") or []
+    taken = {obj.get("name") for obj in inventory if obj.get("name")}
+
+    src_name, src_block = _ftg_resolve_addr(src_token, inventory, taken)
+    dst_name, dst_block = _ftg_resolve_addr(dst_token, inventory, taken)
 
     srcintf, dstintf = _ftg_interfaces(result, ingress_interface, egress_interface)
-    commands = _ftg_policy_block(srcintf, dstintf, src_obj, dst_obj, service, vdom)
+    commands = _ftg_vdom_wrap(
+        [*src_block, *dst_block,
+         *_ftg_policy_block(srcintf, dstintf, src_name, dst_name, service)],
+        vdom,
+    )
 
     rationale = (
         f"Add a policy permitting {srcintf} -> {dstintf} for the flow. FortiGate "
@@ -336,13 +413,25 @@ def _suggest_fortigate(result: dict, *, ingress_interface: Optional[str],
     )
     if vdom:
         rationale += f" (VDOM '{vdom}')"
+
+    notes = []
+    created = [n for n, blk in ((src_name, src_block), (dst_name, dst_block)) if blk]
+    if created:
+        notes.append(
+            "Creates address object(s) " + ", ".join(created) +
+            "; adjust the name(s) to match your naming standard if required."
+        )
+    mp = _multiport_note(proto, dports, port)
+    if mp:
+        notes.append(mp)
+
     return [{
         "scenario": "policy",
         "vendor": "fortigate",
         "location": {"srcintf": srcintf, "dstintf": dstintf, "vdom": vdom},
         "commands": commands,
         "rationale": rationale,
-        "note": _multiport_note(proto, dports, port),
+        "note": " ".join(notes) if notes else None,
     }]
 
 

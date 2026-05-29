@@ -139,6 +139,69 @@ class TestFortiGateSuggestion(unittest.TestCase):
         self.assertTrue(result['allowed'])
         self.assertFalse(result['suggestion']['needed'])
 
+    def test_raw_ip_src_synthesises_address_object(self):
+        # FTG_SAMPLE has SRC/WEB objects; 198.51.100.9 is a raw IP with no object.
+        result = ftg_path_check(FTG_SAMPLE, '198.51.100.9', '203.0.113.50',
+                                proto='tcp', dports={8443})
+        cmds = result['suggestion']['suggestions'][0]['commands']
+        self.assertIn('config firewall address', cmds)
+        self.assertIn('    edit "IP_198.51.100.9"', cmds)
+        self.assertTrue(any('set subnet 198.51.100.9 255.255.255.255' in c for c in cmds))
+        self.assertTrue(any('set srcaddr "IP_198.51.100.9"' in c for c in cmds))
+        self.assertIn('Creates address object', result['suggestion']['suggestions'][0]['note'])
+
+    def test_raw_ip_reuses_existing_object_from_phonebook(self):
+        # 192.168.1.10 already exists as object WEB -> reuse, no new object.
+        result = ftg_path_check(FTG_SAMPLE, 'SRC', '192.168.1.10',
+                                proto='tcp', dports={8443})
+        cmds = result['suggestion']['suggestions'][0]['commands']
+        self.assertTrue(any('set dstaddr "WEB"' in c for c in cmds))
+        self.assertNotIn('config firewall address', cmds)
+
+    def test_raw_cidr_synthesises_net_object(self):
+        result = ftg_path_check(FTG_SAMPLE, 'SRC', '203.0.113.0/24',
+                                proto='tcp', dports={8443})
+        cmds = result['suggestion']['suggestions'][0]['commands']
+        self.assertIn('    edit "NET_203.0.113.0/24"', cmds)
+        self.assertTrue(any('set subnet 203.0.113.0 255.255.255.0' in c for c in cmds))
+
+    def test_synthesised_object_avoids_name_collision(self):
+        # Existing object named IP_10.0.0.9 mapped to a *different* subnet must
+        # not be clobbered; the generated object gets a suffixed name.
+        cfg = """
+config firewall address
+    edit "IP_10.0.0.9"
+        set subnet 172.16.0.1 255.255.255.255
+    next
+end
+config firewall policy
+    edit 1
+        set srcintf "port1"
+        set dstintf "port2"
+        set srcaddr "all"
+        set dstaddr "all"
+        set service "ALL"
+        set action deny
+    next
+end
+"""
+        result = ftg_path_check(cfg, '10.0.0.9', '203.0.113.7',
+                                proto='tcp', dports={443})
+        cmds = result['suggestion']['suggestions'][0]['commands']
+        self.assertIn('    edit "IP_10.0.0.9_2"', cmds)
+
+    def test_raw_ip_address_block_inside_vdom_wrap(self):
+        result = ftg_path_check(FTG_VDOM_SAMPLE, '198.51.100.9', '203.0.113.50',
+                                proto='tcp', dports={8443}, vdom='CUSTOMER_A')
+        cmds = result['suggestion']['suggestions'][0]['commands']
+        self.assertEqual(cmds[0], 'config vdom')
+        self.assertEqual(cmds[1], 'edit CUSTOMER_A')
+        self.assertEqual(cmds[-1], 'end')
+        # address + policy blocks both live inside the single vdom wrap.
+        self.assertEqual(cmds.count('config vdom'), 1)
+        self.assertIn('config firewall address', cmds)
+        self.assertIn('config firewall policy', cmds)
+
     def test_verification_has_iprope_lookup(self):
         result = ftg_path_check(FTG_SAMPLE, 'SRC', '203.0.113.50',
                                 proto='tcp', dports={443})

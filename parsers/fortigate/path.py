@@ -63,6 +63,12 @@ def path_check(
     }
     context = _build_context(flattened, winner, nat_result)
     context["vdom"] = cfg.vdom
+    # Address inventory ("phone book") so suggestions can reuse an existing
+    # firewall address object for a raw IP/CIDR instead of synthesising one.
+    context["address_objects"] = [
+        {"name": name, "subnets": sorted(str(n) for n in nets)}
+        for name, nets in sorted(cfg.addresses.items())
+    ]
 
     result = {
         "input": {
