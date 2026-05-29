@@ -7,6 +7,7 @@ from __future__ import annotations
 import ipaddress
 from typing import Dict, List, Optional, Sequence, Set, Tuple, Union
 
+from ..suggest import suggest_corrections
 from .config import FTGConfig, nets_overlap, _service_matches
 
 __all__ = ["path_check"]
@@ -61,8 +62,15 @@ def path_check(
         "warnings": [],
     }
     context = _build_context(flattened, winner, nat_result)
+    context["vdom"] = cfg.vdom
+    # Address inventory ("phone book") so suggestions can reuse an existing
+    # firewall address object for a raw IP/CIDR instead of synthesising one.
+    context["address_objects"] = [
+        {"name": name, "subnets": sorted(str(n) for n in nets)}
+        for name, nets in sorted(cfg.addresses.items())
+    ]
 
-    return {
+    result = {
         "input": {
             "src": src,
             "dst": dst,
@@ -81,6 +89,8 @@ def path_check(
         "context": context,
         "packet_tracer": [],  # FortiGate does not expose ASA-style packet-tracer
     }
+    result["suggestion"] = suggest_corrections(result, "fortigate", vdom=cfg.vdom)
+    return result
 
 
 def _resolve_endpoint(cfg: FTGConfig, token: str) -> Tuple[Optional[ipaddress.IPv4Address], Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]]]:
