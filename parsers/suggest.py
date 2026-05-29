@@ -101,7 +101,9 @@ def _proto_number(proto: Optional[str]) -> int:
 
 def _first(value: Any) -> Optional[str]:
     if isinstance(value, (list, tuple)):
-        return str(value[0]) if value else None
+        # Skip None members so a list like [None, "port1"] doesn't yield "None".
+        non_none = [x for x in value if x is not None]
+        return str(non_none[0]) if non_none else None
     if isinstance(value, set):
         # Sets are unordered; sort for deterministic command generation.
         # Filter None and key on str so a mixed-type set can't raise TypeError.
@@ -254,10 +256,21 @@ def _verify_asa(result: dict, *, ingress_interface: Optional[str] = None,
     seen: set = set()
     for tr in tracers:
         cmd = tr.get("command")
-        if not cmd or cmd in seen:
+        if not cmd:
+            continue
+        iface = tr.get("interface")
+        # Honor an ingress override so the verification interface matches the
+        # suggested ACL (consistent with _verify_fortigate). packet-tracer's
+        # ingress is the 'input <iface>' token.
+        if ingress_interface:
+            parts = cmd.split()
+            if len(parts) >= 3 and parts[0] == "packet-tracer" and parts[1] == "input":
+                parts[2] = ingress_interface
+                cmd = " ".join(parts)
+            iface = ingress_interface
+        if cmd in seen:
             continue
         seen.add(cmd)
-        iface = tr.get("interface")
         verifications.append({
             "vendor": "asa",
             "kind": "packet-tracer",

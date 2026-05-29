@@ -348,6 +348,22 @@ class TestSuggestionEdgeCases(unittest.TestCase):
         # IPv4 still uses dotted netmask.
         self.assertEqual(_asa_addr_token('10.0.0.0/24'), '10.0.0.0 255.255.255.0')
 
+    def test_first_skips_none_in_list(self):
+        from parsers.suggest import _first
+        self.assertEqual(_first([None, 'port1']), 'port1')
+        self.assertEqual(_first((None, None, 'p2')), 'p2')
+        self.assertIsNone(_first([None, None]))
+
+    def test_asa_verify_honors_ingress_override(self):
+        result = asa_path_check(ASA_SAMPLE, '203.0.113.5', 'WEB',
+                                proto='tcp', dports={443})
+        sug = suggest_corrections(result, "asa", ingress_interface="dmz")
+        verifs = sug['verification']
+        self.assertTrue(verifs)
+        # Every packet-tracer command must reference the overridden ingress.
+        for v in verifs:
+            self.assertIn('packet-tracer input dmz ', v['command'])
+
     def test_ftg_ipv6_synthesises_address6_object(self):
         from parsers.suggest import _ftg_resolve_addr
         name, block = _ftg_resolve_addr('2001:db8::1', [], set())
