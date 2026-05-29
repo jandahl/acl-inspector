@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, asdict, is_dataclass
 from typing import Any, Dict, List, Optional
 
-IR_VERSION = "1.0"
+IR_VERSION = "1.1"  # 1.1: + ACLEntry.src/dst_interfaces, Interface.zone/vdom, Device.vdom
 
 
 def _jsonable(obj: Any):

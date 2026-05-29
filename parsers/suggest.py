@@ -45,7 +45,7 @@ from typing import Any, Dict, List, Optional, Tuple
 __all__ = ["suggest_corrections", "SCHEMA_VERSION"]
 
 # Stable contract version for API/MCP consumers. Bump on breaking shape changes.
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.1"  # 1.1: + per-suggestion optional `note` field
 
 # IANA protocol numbers used by FortiGate's iprope lookup.
 _PROTO_NUMBERS = {"icmp": 1, "tcp": 6, "udp": 17}
@@ -102,6 +102,9 @@ def _proto_number(proto: Optional[str]) -> int:
 def _first(value: Any) -> Optional[str]:
     if isinstance(value, (list, tuple)):
         return value[0] if value else None
+    if isinstance(value, set):
+        # Sets are unordered; sort for deterministic command generation.
+        return sorted(value)[0] if value else None
     if not value:
         return None
     return str(value)
@@ -132,11 +135,13 @@ def _asa_addr_token(addr: str) -> str:
         pass
     try:
         net = ipaddress.ip_network(addr, strict=False)
-        if net.prefixlen == 32:
+        host_prefix = 128 if net.version == 6 else 32
+        if net.prefixlen == host_prefix:
             return f"host {net.network_address}"
         if net.prefixlen == 0:
             return "any"
-        return f"{net.network_address} {net.netmask}"
+        # IPv6 ACLs use prefix-length notation; IPv4 uses dotted netmask.
+        return str(net) if net.version == 6 else f"{net.network_address} {net.netmask}"
     except ValueError:
         return addr
 
@@ -151,6 +156,25 @@ def _asa_acl_line(nameif: str, suffix: str, proto: str, src: str, dst: str,
     if port is not None:
         line += f" eq {port}"
     return line
+
+
+def _multiport_note(proto: str, dports: List[int], port: Optional[int]) -> Optional[str]:
+    """Caveat when a multi-port flow collapses to a single representative port."""
+    if port is not None and len(dports) > 1:
+        others = ", ".join(str(p) for p in dports if p != port)
+        return (
+            f"Flow has multiple destination ports ({', '.join(map(str, dports))}); "
+            f"only {port} is shown — duplicate the line for: {others}."
+        )
+    return None
+
+
+# The ACL names below are the ASA auto-generated convention; a device may bind a
+# differently named ACL to the interface, so suggestions carry this caveat.
+_ASA_ACL_NAME_NOTE = (
+    "ACL name follows the '<nameif>_access_<dir>' convention; verify the ACL "
+    "actually bound to the interface ('show run access-group') before pasting."
+)
 
 
 def _suggest_asa(result: dict, *, ingress_interface: Optional[str],
@@ -171,6 +195,9 @@ def _suggest_asa(result: dict, *, ingress_interface: Optional[str],
     ingress = ingress_interface or ctx.get("src_interface")
     egress = egress_interface or ctx.get("dst_interface")
 
+    notes = [n for n in (_ASA_ACL_NAME_NOTE, _multiport_note(proto, dports, port)) if n]
+    note = " ".join(notes) if notes else None
+
     suggestions: List[dict] = []
     if ingress:
         suggestions.append({
@@ -180,6 +207,7 @@ def _suggest_asa(result: dict, *, ingress_interface: Optional[str],
                          "acl": f"{ingress}_access_in"},
             "commands": [_asa_acl_line(ingress, "in", proto, src, dst, port)],
             "rationale": f"Permit the flow as it enters the firewall on '{ingress}'.",
+            "note": note,
         })
     if egress and egress != ingress:
         suggestions.append({
@@ -192,6 +220,7 @@ def _suggest_asa(result: dict, *, ingress_interface: Optional[str],
                 f"Permit the flow as it exits toward the destination subnet on "
                 f"'{egress}'."
             ),
+            "note": note,
         })
     if not suggestions:
         suggestions.append({
@@ -204,6 +233,7 @@ def _suggest_asa(result: dict, *, ingress_interface: Optional[str],
                 "Ingress interface could not be inferred; substitute the correct "
                 "nameif."
             ),
+            "note": note,
         })
     return suggestions
 
@@ -265,7 +295,9 @@ def _ftg_policy_block(srcintf: str, dstintf: str, src_obj: str, dst_obj: str,
         "end",
     ]
     if vdom:
-        # Wrap in the VDOM context so the block is paste-ready on a multi-VDOM box.
+        # Wrap in the VDOM context so the block is paste-ready on a multi-VDOM
+        # box. The trailing 'end' here closes 'config vdom'; the 'end' already in
+        # `inner` closes 'config firewall policy'.
         return ["config vdom", f"edit {vdom}", *inner, "end"]
     return inner
 
@@ -283,9 +315,10 @@ def _suggest_fortigate(result: dict, *, ingress_interface: Optional[str],
                        egress_interface: Optional[str],
                        vdom: Optional[str]) -> List[dict]:
     inp = result.get("input") or {}
-    proto = inp.get("proto")
+    proto = (inp.get("proto") or "").lower()
     dports = inp.get("dports") or []
     service = _ftg_service_name(proto, dports)
+    port = _port_token(proto, dports)
 
     # Address objects: prefer the original tokens (often object names already).
     src_obj = inp.get("src") or "<src_obj>"
@@ -307,6 +340,7 @@ def _suggest_fortigate(result: dict, *, ingress_interface: Optional[str],
         "location": {"srcintf": srcintf, "dstintf": dstintf, "vdom": vdom},
         "commands": commands,
         "rationale": rationale,
+        "note": _multiport_note(proto, dports, port),
     }]
 
 

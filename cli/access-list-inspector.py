@@ -470,6 +470,8 @@ def main() -> None:
                 print(blue(f"  [{scenario}] {sug.get('rationale', '')}"))
                 for cmd in sug.get('commands', []):
                     print(green(f"    {cmd}"))
+                if sug.get('note'):
+                    print(f"    note: {sug['note']}")
             if args.verify:
                 verifications = suggestion.get('verification', [])
                 if verifications:

@@ -277,6 +277,36 @@ class TestSuggestionEdgeCases(unittest.TestCase):
         self.assertIn('wan1', verif_cmd)
         self.assertNotIn('<in>', verif_cmd)
 
+    def test_asa_ipv6_network_uses_prefix_notation(self):
+        from parsers.suggest import _asa_addr_token
+        self.assertEqual(_asa_addr_token('2001:db8::/64'), '2001:db8::/64')
+        self.assertEqual(_asa_addr_token('2001:db8::1/128'), 'host 2001:db8::1')
+        self.assertEqual(_asa_addr_token('::/0'), 'any')
+        # IPv4 still uses dotted netmask.
+        self.assertEqual(_asa_addr_token('10.0.0.0/24'), '10.0.0.0 255.255.255.0')
+
+    def test_first_handles_set_deterministically(self):
+        from parsers.suggest import _first
+        self.assertEqual(_first({'port2', 'port1'}), 'port1')  # sorted
+        self.assertEqual(_first(['port9', 'port1']), 'port9')  # list order kept
+        self.assertIsNone(_first(set()))
+
+    def test_asa_suggestion_carries_acl_name_note(self):
+        result = self._asa_blocked('203.0.113.5', 'WEB', proto='tcp', dports={443})
+        for s in result['suggestion']['suggestions']:
+            self.assertIn('convention', (s.get('note') or ''))
+
+    def test_multiport_note_present(self):
+        result = self._asa_blocked('203.0.113.5', 'WEB', proto='tcp',
+                                   dports={443, 8443})
+        notes = [s.get('note') or '' for s in result['suggestion']['suggestions']]
+        self.assertTrue(any('multiple destination ports' in n.lower() for n in notes))
+
+    def test_single_port_has_no_multiport_note(self):
+        result = self._asa_blocked('203.0.113.5', 'WEB', proto='tcp', dports={443})
+        for s in result['suggestion']['suggestions']:
+            self.assertNotIn('multiple destination ports', (s.get('note') or '').lower())
+
     def test_ftg_numeric_protocol_in_verification(self):
         # A numeric protocol token (e.g. GRE=47) is passed through, not zeroed.
         synthetic = {
