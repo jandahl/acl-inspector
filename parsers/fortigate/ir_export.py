@@ -163,7 +163,8 @@ def to_ir(cfg: FTGConfig, device_name: str = None) -> "ir.Device":
                 'dst_service_objects': [],  # FortiGate resolver returns groups, not individual objects
             }
 
-            binding = e.get('binding') or {}
+            policy_binding = e.get('binding')
+            binding_meta = policy_binding or {}
             entry = ir.ACLEntry(
                 action=e.get('action', 'permit'),
                 proto=e.get('proto', 'ip'),
@@ -173,10 +174,10 @@ def to_ir(cfg: FTGConfig, device_name: str = None) -> "ir.Device":
                 raw=e.get('raw', ''),
                 acl='policy',
                 bound_to=None,
-                binding=e.get('binding'),
+                binding=policy_binding,
                 direction='global',
-                src_interfaces=_ensure_list(binding.get('srcintf')),
-                dst_interfaces=_ensure_list(binding.get('dstintf')),
+                src_interfaces=_ensure_list(binding_meta.get('srcintf')),
+                dst_interfaces=_ensure_list(binding_meta.get('dstintf')),
             )
             entries.append(entry)
 

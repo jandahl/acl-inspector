@@ -40,13 +40,18 @@ the ingress/egress pairing (VDOM-wrapped when a VDOM is in play).
 from __future__ import annotations
 
 import ipaddress
+import re
 import socket
 from typing import Any, Dict, List, Optional, Tuple
 
 __all__ = ["suggest_corrections", "SCHEMA_VERSION"]
 
 # Stable contract version for API/MCP consumers. Bump on breaking shape changes.
-SCHEMA_VERSION = "1.1"  # 1.1: + per-suggestion optional `note` field
+# Independent of IR_VERSION in parsers/model.py — different clocks.
+#   1.0: initial suggestion/verification shape
+#   1.1: + per-suggestion `note` (str)
+#   1.2: `note` (str) -> `notes` (List[str]) so callers can act on each caveat
+SCHEMA_VERSION = "1.2"
 
 # IANA protocol numbers used by FortiGate's iprope lookup.
 _PROTO_NUMBERS = {"icmp": 1, "tcp": 6, "udp": 17}
@@ -79,12 +84,13 @@ def _port_token(proto: Optional[str], dports: List[int]) -> Optional[int]:
     """Single representative destination port for L4 protocols, else None.
 
     A multi-port flow (``--dport 80 --dport 443``) intentionally collapses to the
-    first port: the suggestion is a starting point an operator extends, not an
-    exhaustive rule set.
+    lowest port: the suggestion is a starting point an operator extends, not an
+    exhaustive rule set. ``min`` keeps the result deterministic even if a caller
+    passes an unsorted list or a set.
     """
     if (proto or "").lower() not in {"tcp", "udp"}:
         return None
-    return dports[0] if dports else None
+    return min(dports) if dports else None
 
 
 def _proto_number(proto: Optional[str]) -> int:
@@ -186,6 +192,26 @@ _ASA_ACL_NAME_NOTE = (
 )
 
 
+def _asa_ordering_note(acl_name: str) -> str:
+    return (
+        f"This permit is appended to the end of '{acl_name}'. The flow is blocked "
+        f"by an explicit deny, which is evaluated first — insert this line above "
+        f"that deny (e.g. 'access-list {acl_name} line <N> ...') or reorder."
+    )
+
+
+def _asa_egress_postnat_note(resolved: dict) -> Optional[str]:
+    """Egress ACLs on ASA 8.3+ match the post-NAT (translated) destination."""
+    pre = resolved.get("dst")
+    post = resolved.get("post_nat_dst")
+    if post and post != pre:
+        return (
+            f"Egress ACLs on ASA 8.3+ match the post-NAT destination "
+            f"({post}); adjust the dst address since a NAT translation applies."
+        )
+    return None
+
+
 def _suggest_asa(result: dict, *, ingress_interface: Optional[str],
                  egress_interface: Optional[str],
                  vdom: Optional[str]) -> List[dict]:
@@ -222,14 +248,24 @@ def _suggest_asa(result: dict, *, ingress_interface: Optional[str],
         elif egress and cand_if.lower() == egress.lower() and cand_dir == "out":
             egress_acl, has_custom_egress = cand_acls[0], True
 
-    def _note(name_is_known: bool) -> Optional[str]:
-        parts = []
+    # An explicit deny earlier in the ACL is evaluated before an appended permit,
+    # so the suggestion must warn the operator about ordering in that case.
+    explicit_deny = _blocking_rule(result) is not None
+
+    def _notes(name_is_known: bool, acl_name: str, *, egress: bool = False) -> List[str]:
+        notes: List[str] = []
         if not name_is_known:
-            parts.append(_ASA_ACL_NAME_NOTE)
+            notes.append(_ASA_ACL_NAME_NOTE)
+        if explicit_deny:
+            notes.append(_asa_ordering_note(acl_name))
+        if egress:
+            eg = _asa_egress_postnat_note(resolved)
+            if eg:
+                notes.append(eg)
         mp = _multiport_note(proto, dports, port)
         if mp:
-            parts.append(mp)
-        return " ".join(parts) if parts else None
+            notes.append(mp)
+        return notes
 
     # ASA security policy is applied inbound on the ingress interface, so an
     # ingress rule is ALWAYS emitted (a '<nameif>' placeholder when the ingress
@@ -243,7 +279,7 @@ def _suggest_asa(result: dict, *, ingress_interface: Optional[str],
             "location": {"nameif": ingress, "direction": "in", "acl": ingress_acl},
             "commands": [_asa_acl_line(ingress, "in", proto, src, dst, port, ingress_acl)],
             "rationale": f"Permit the flow as it enters the firewall on '{ingress}'.",
-            "note": _note(has_custom_ingress),
+            "notes": _notes(has_custom_ingress, ingress_acl),
         })
     else:
         suggestions.append({
@@ -256,7 +292,7 @@ def _suggest_asa(result: dict, *, ingress_interface: Optional[str],
                 "Ingress interface could not be inferred; substitute the correct "
                 "nameif."
             ),
-            "note": _note(False),
+            "notes": _notes(False, "<nameif>_access_in"),
         })
     if egress and egress != ingress:
         suggestions.append({
@@ -268,7 +304,7 @@ def _suggest_asa(result: dict, *, ingress_interface: Optional[str],
                 f"Permit the flow as it exits toward the destination subnet on "
                 f"'{egress}'."
             ),
-            "note": _note(has_custom_egress),
+            "notes": _notes(has_custom_egress, egress_acl, egress=True),
         })
     return suggestions
 
@@ -288,12 +324,10 @@ def _verify_asa(result: dict, *, ingress_interface: Optional[str] = None,
         iface = tr.get("interface")
         # Honor an ingress override so the verification interface matches the
         # suggested ACL (consistent with _verify_fortigate). packet-tracer's
-        # ingress is the 'input <iface>' token.
+        # ingress is the 'input <iface>' token; rewrite it robustly.
         if ingress_interface:
-            parts = cmd.split()
-            if len(parts) >= 3 and parts[0] == "packet-tracer" and parts[1] == "input":
-                parts[2] = ingress_interface
-                cmd = " ".join(parts)
+            cmd = re.sub(r"^(packet-tracer\s+input)\s+\S+",
+                         rf"\1 {ingress_interface}", cmd)
             iface = ingress_interface
         if cmd in seen:
             continue
@@ -355,7 +389,7 @@ def _ftg_vdom_wrap(commands: List[str], vdom: Optional[str]) -> List[str]:
     return commands
 
 
-def _ftg_subnet_tokens(net: "ipaddress.IPv4Network") -> str:
+def _ftg_subnet_tokens(net: ipaddress.IPv4Network) -> str:
     """FortiGate 'set subnet' value: '<addr> <mask>' for IPv4."""
     return f"{net.network_address} {net.netmask}"
 
@@ -478,12 +512,20 @@ def _suggest_fortigate(result: dict, *, ingress_interface: Optional[str],
     if vdom:
         rationale += f" (VDOM '{vdom}')"
 
-    notes = []
+    notes: List[str] = []
     created = [n for n, blk in ((src_name, src_block), (dst_name, dst_block)) if blk]
     if created:
         notes.append(
             "Creates address object(s) " + ", ".join(created) +
             "; adjust the name(s) to match your naming standard if required."
+        )
+    # 'edit 0' appends the policy to the end of the list. If an earlier policy
+    # explicitly denies the flow, it matches first, so warn about ordering.
+    if _blocking_rule(result) is not None:
+        notes.append(
+            "Policy is appended with 'edit 0'. An earlier policy denies this "
+            "flow and is matched first — move the new policy above it "
+            "('move <new-id> before <deny-id>')."
         )
     mp = _multiport_note(proto, dports, port)
     if mp:
@@ -495,7 +537,7 @@ def _suggest_fortigate(result: dict, *, ingress_interface: Optional[str],
         "location": {"srcintf": srcintf, "dstintf": dstintf, "vdom": vdom},
         "commands": commands,
         "rationale": rationale,
-        "note": " ".join(notes) if notes else None,
+        "notes": notes,
     }]
 
 
@@ -521,7 +563,7 @@ def _verify_fortigate(result: dict, *, ingress_interface: Optional[str] = None,
     dst = _ip_or(resolved.get("dst"), _ip_or(inp.get("dst"), "<dst_ip>"))
     proto_num = _proto_number(proto)
     sport = 0  # ephemeral; iprope only needs the destination socket
-    dport = dports[0] if dports else 0
+    dport = min(dports) if dports else 0
 
     # Keep the verification interface consistent with the suggested policy when
     # the caller supplied overrides.
@@ -578,13 +620,19 @@ def suggest_corrections(
         A JSON-serialisable dict (see module docstring / ``SCHEMA_VERSION``)::
 
             {
-              "schema_version": "1.1",
+              "schema_version": "1.2",
               "needed": bool,            # False when the flow is already allowed
               "reason": str,             # allowed | explicit-deny | implicit-deny
               "blocking_rule": dict|None,
-              "suggestions": [ {scenario, vendor, location, commands, rationale} ],
+              "suggestions": [ {scenario, vendor, location, commands, rationale,
+                                notes: List[str]} ],
               "verification": [ {vendor, kind, command, description} ],
             }
+
+    Note: ``notes`` is always a list (possibly empty); each entry is an
+    independent operator caveat (ACL-name convention, rule ordering, multi-port
+    collapse, post-NAT egress, synthesised objects) so callers can render or act
+    on them individually.
     """
     reason = _classify(result)
     if reason == "allowed":
@@ -602,6 +650,11 @@ def suggest_corrections(
         suggest_fn, verify_fn = _GENERATORS[v]
     except KeyError:
         raise ValueError(f"unsupported vendor for suggestions: {vendor!r}")
+
+    # Fall back to the VDOM carried in the result so a caller replaying a stored
+    # path-check result (e.g. an API/MCP handler) doesn't silently drop it.
+    if vdom is None:
+        vdom = (result.get("context") or {}).get("vdom")
 
     suggestions = suggest_fn(
         result,
