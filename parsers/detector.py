@@ -23,6 +23,9 @@ def detect_vendor(text: str, filename: str = '') -> Tuple[str, int, str]:
         Tuple of (vendor_name, confidence_score, detection_reason)
         vendor_name is 'unknown' if no match found
     """
+    if not text:
+        return 'unknown', 0, 'no_match'
+
     sample = text[:MAX_DETECTION_BYTES].lower()
     reasons: Dict[str, Tuple[int, str]] = {}
 
@@ -43,15 +46,15 @@ def detect_vendor(text: str, filename: str = '') -> Tuple[str, int, str]:
 
     # FortiGate
     if lower_name.endswith('.fgd') or 'fortigate' in lower_name:
-        note('fortigate', 20, 'filename_prefix')
+        note('fortigate', 20, 'filename_hint')
 
     # Cisco IOS variants
     if 'ios' in lower_name or lower_name.endswith('.ios'):
         note('ios', 20, 'filename_hint')
     if 'xr' in lower_name or lower_name.endswith('.xr'):
-        note('ios-xr', 50, 'filename_hint')
+        note('ios-xr', 50, 'filename_hint')  # Higher score to override generic IOS patterns
     if 'xe' in lower_name or lower_name.endswith('.xe'):
-        note('ios-xe', 50, 'filename_hint')
+        note('ios-xe', 50, 'filename_hint')  # Higher score to override generic IOS patterns
 
     # Content-based detection (higher confidence)
 
@@ -110,6 +113,8 @@ def detect_vendor(text: str, filename: str = '') -> Tuple[str, int, str]:
 
 def vendor_to_os(vendor: str) -> str:
     """Map vendor identifier to OS name for display."""
+    if not vendor:
+        return 'Unknown'
     vendor = vendor.lower()
     if vendor == 'asa':
         return 'ASA'
