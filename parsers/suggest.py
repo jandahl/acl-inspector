@@ -104,7 +104,9 @@ def _first(value: Any) -> Optional[str]:
         return value[0] if value else None
     if isinstance(value, set):
         # Sets are unordered; sort for deterministic command generation.
-        return sorted(value)[0] if value else None
+        # Filter None and key on str so a mixed-type set can't raise TypeError.
+        items = sorted((x for x in value if x is not None), key=str)
+        return items[0] if items else None
     if not value:
         return None
     return str(value)
@@ -413,7 +415,7 @@ def suggest_corrections(
         A JSON-serialisable dict (see module docstring / ``SCHEMA_VERSION``)::
 
             {
-              "schema_version": "1.0",
+              "schema_version": "1.1",
               "needed": bool,            # False when the flow is already allowed
               "reason": str,             # allowed | explicit-deny | implicit-deny
               "blocking_rule": dict|None,

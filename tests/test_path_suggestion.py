@@ -290,6 +290,9 @@ class TestSuggestionEdgeCases(unittest.TestCase):
         self.assertEqual(_first({'port2', 'port1'}), 'port1')  # sorted
         self.assertEqual(_first(['port9', 'port1']), 'port9')  # list order kept
         self.assertIsNone(_first(set()))
+        # Mixed-type / None-containing sets must not raise TypeError.
+        self.assertEqual(_first({None, 'port1'}), 'port1')
+        self.assertIsNone(_first({None}))
 
     def test_asa_suggestion_carries_acl_name_note(self):
         result = self._asa_blocked('203.0.113.5', 'WEB', proto='tcp', dports={443})
