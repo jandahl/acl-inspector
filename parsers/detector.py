@@ -87,10 +87,12 @@ def detect_vendor(text: str, filename: str = '') -> Tuple[str, int, str]:
     # Cisco IOS-XR patterns
     if 'cisco ios xr software' in sample or 'ios-xr' in sample:
         note('ios-xr', 95, 'ios_xr_version_banner')
-    if 'rp/0/rp' in sample or 'disk0:' in sample:
+    if 'rp/0/rp' in sample:
         note('ios-xr', 70, 'ios_xr_filesystem_hint')
     if 'router bgp' in sample and 'address-family' in sample:
         note('ios-xr', 40, 'ios_xr_bgp_syntax')
+    if 'route-policy' in sample:
+        note('ios-xr', 65, 'ios_xr_policy_syntax')
 
     # Generic Cisco IOS patterns
     if 'cisco ios software' in sample:
