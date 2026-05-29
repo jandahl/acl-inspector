@@ -12,7 +12,9 @@ import sys
 from pathlib import Path
 from typing import Optional, Tuple, Union, TYPE_CHECKING
 
-# Import vendor detection from scripts
+from parsers.detector import detect_vendor
+
+# Import types for type checking
 if TYPE_CHECKING:
     from parsers.cisco.asa.parser import ASAConfig
     from parsers.fortigate.config import FTGConfig
@@ -23,17 +25,6 @@ __all__ = ["load_config", "load_config_to_ir", "ConfigLoadError"]
 class ConfigLoadError(Exception):
     """Raised when config loading fails."""
     pass
-
-
-def _detect_vendor_internal(text: str, filename: str = '') -> Tuple[str, int, str]:
-    """Internal vendor detection (imported from scripts)."""
-    # Add scripts to path
-    script_path = Path(__file__).parent.parent / "scripts"
-    if str(script_path) not in sys.path:
-        sys.path.insert(0, str(script_path))
-
-    from index_repo import _detect_vendor
-    return _detect_vendor(text, filename)
 
 
 def load_config(
@@ -81,7 +72,7 @@ def load_config(
 
     # Auto-detect vendor if not specified
     if vendor is None:
-        detected_vendor, confidence, reason = _detect_vendor_internal(text, filename)
+        detected_vendor, confidence, reason = detect_vendor(text, filename)
 
         if detected_vendor == 'unknown':
             raise ConfigLoadError(
