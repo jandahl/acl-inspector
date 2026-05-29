@@ -368,9 +368,11 @@ def _ftg_resolve_addr(token: str, inventory: List[dict],
         if canonical in (obj.get("subnets") or []):
             return obj["name"], []
 
-    # 3. Synthesise a collision-free object name.
+    # 3. Synthesise a collision-free object name. FortiOS object names disallow
+    # ':' and '/', so sanitise IPv6 colons and the CIDR slash to underscores.
     is_host = net.prefixlen in (32, 128)
     base = f"IP_{net.network_address}" if is_host else f"NET_{canonical}"
+    base = base.replace(":", "_").replace("/", "_")
     name = base
     suffix = 1
     while name in taken:
@@ -394,6 +396,9 @@ def _ftg_resolve_addr(token: str, inventory: List[dict],
             "    next",
             "end",
         ]
+    # Register the new object so a second endpoint with the same address reuses
+    # it (e.g. src == dst) rather than synthesising a duplicate.
+    inventory.append({"name": name, "subnets": [canonical]})
     return name, block
 
 
@@ -420,7 +425,9 @@ def _suggest_fortigate(result: dict, *, ingress_interface: Optional[str],
     # FortiGate srcaddr/dstaddr only accept named objects.
     src_token = inp.get("src") or "<src_obj>"
     dst_token = inp.get("dst") or "<dst_obj>"
-    inventory = (result.get("context") or {}).get("address_objects") or []
+    # Copy the inventory so synthesised objects (appended during resolution to
+    # enable src==dst reuse) don't mutate the shared result dict.
+    inventory = list((result.get("context") or {}).get("address_objects") or [])
     taken = {obj.get("name") for obj in inventory if obj.get("name")}
 
     src_name, src_block = _ftg_resolve_addr(src_token, inventory, taken)
@@ -470,8 +477,18 @@ def _verify_fortigate(result: dict, *, ingress_interface: Optional[str] = None,
     proto = (inp.get("proto") or "").lower()
     dports = inp.get("dports") or []
 
-    src = resolved.get("src") or inp.get("src") or "<src_ip>"
-    dst = resolved.get("dst") or inp.get("dst") or "<dst_ip>"
+    # iprope lookup needs literal IPs; never leak an object name into it.
+    def _ip_or(val: Optional[str], fallback: str) -> str:
+        if not val:
+            return fallback
+        try:
+            ipaddress.ip_address(val)
+            return val
+        except ValueError:
+            return fallback
+
+    src = _ip_or(resolved.get("src"), _ip_or(inp.get("src"), "<src_ip>"))
+    dst = _ip_or(resolved.get("dst"), _ip_or(inp.get("dst"), "<dst_ip>"))
     proto_num = _proto_number(proto)
     sport = 0  # ephemeral; iprope only needs the destination socket
     dport = dports[0] if dports else 0

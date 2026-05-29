@@ -162,7 +162,8 @@ class TestFortiGateSuggestion(unittest.TestCase):
         result = ftg_path_check(FTG_SAMPLE, 'SRC', '203.0.113.0/24',
                                 proto='tcp', dports={8443})
         cmds = result['suggestion']['suggestions'][0]['commands']
-        self.assertIn('    edit "NET_203.0.113.0/24"', cmds)
+        # The CIDR slash is sanitised out of the object name.
+        self.assertIn('    edit "NET_203.0.113.0_24"', cmds)
         self.assertTrue(any('set subnet 203.0.113.0 255.255.255.0' in c for c in cmds))
 
     def test_synthesised_object_avoids_name_collision(self):
@@ -189,6 +190,32 @@ end
                                 proto='tcp', dports={443})
         cmds = result['suggestion']['suggestions'][0]['commands']
         self.assertIn('    edit "IP_10.0.0.9_2"', cmds)
+
+    def test_same_raw_ip_src_and_dst_no_duplicate_object(self):
+        # When src == dst (same new IP), only one address object is created and
+        # both endpoints reference it.
+        result = ftg_path_check(FTG_SAMPLE, '198.51.100.9', '198.51.100.9',
+                                proto='tcp', dports={8443})
+        cmds = result['suggestion']['suggestions'][0]['commands']
+        self.assertEqual(cmds.count('config firewall address'), 1)
+        self.assertEqual(cmds.count('    edit "IP_198.51.100.9"'), 1)
+        self.assertTrue(any('set srcaddr "IP_198.51.100.9"' in c for c in cmds))
+        self.assertTrue(any('set dstaddr "IP_198.51.100.9"' in c for c in cmds))
+
+    def test_ftg_verify_does_not_leak_object_name(self):
+        # Object-name endpoints with no resolved IP must not leak into iprope.
+        synthetic = {
+            "allowed": False,
+            "acl": {"decision": "implicit-deny", "matches": []},
+            "input": {"proto": "tcp", "dports": [443], "src": "SRC", "dst": "WEB"},
+            "resolved": {},
+            "context": {},
+        }
+        verif = suggest_corrections(synthetic, "fortigate")['verification'][0]
+        self.assertNotIn('SRC', verif['command'])
+        self.assertNotIn('WEB', verif['command'])
+        self.assertIn('<src_ip>', verif['command'])
+        self.assertIn('<dst_ip>', verif['command'])
 
     def test_raw_ip_address_block_inside_vdom_wrap(self):
         result = ftg_path_check(FTG_VDOM_SAMPLE, '198.51.100.9', '203.0.113.50',
@@ -367,13 +394,16 @@ class TestSuggestionEdgeCases(unittest.TestCase):
     def test_ftg_ipv6_synthesises_address6_object(self):
         from parsers.suggest import _ftg_resolve_addr
         name, block = _ftg_resolve_addr('2001:db8::1', [], set())
-        self.assertEqual(name, 'IP_2001:db8::1')
+        # Name must be free of ':' and '/' (invalid in FortiOS object names).
+        self.assertNotIn(':', name)
+        self.assertNotIn('/', name)
         self.assertIn('config firewall address6', block)
         self.assertTrue(any('set ip6 2001:db8::1/128' in c for c in block))
         self.assertFalse(any('set subnet' in c for c in block))
 
         name6, block6 = _ftg_resolve_addr('2001:db8::/64', [], set())
-        self.assertEqual(name6, 'NET_2001:db8::/64')
+        self.assertNotIn(':', name6)
+        self.assertNotIn('/', name6)
         self.assertTrue(any('set ip6 2001:db8::/64' in c for c in block6))
 
     def test_asa_always_emits_ingress_even_when_only_egress_known(self):
