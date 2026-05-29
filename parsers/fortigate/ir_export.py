@@ -175,8 +175,8 @@ def to_ir(cfg: FTGConfig, device_name: str = None) -> "ir.Device":
                 bound_to=None,
                 binding=e.get('binding'),
                 direction='global',
-                src_interfaces=list(binding.get('srcintf') or []),
-                dst_interfaces=list(binding.get('dstintf') or []),
+                src_interfaces=_ensure_list(binding.get('srcintf')),
+                dst_interfaces=_ensure_list(binding.get('dstintf')),
             )
             entries.append(entry)
 

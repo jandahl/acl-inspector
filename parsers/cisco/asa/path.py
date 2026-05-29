@@ -212,7 +212,6 @@ def path_check(
             acl_info["matches"] = matches
         if inferred_warnings:
             warnings.extend(inferred_warnings)
-            acl_info["warnings"] = warnings
 
     context_walks: List[dict] = []
     for candidate in candidates:
@@ -246,8 +245,8 @@ def path_check(
         )
     allowed = acl_info.get("decision") == "permit"
     packet_tracer_cmds = _build_packet_tracer_commands(src_ip, dst_ip, proto, dports, candidates)
-    if warnings and "warnings" not in acl_info:
-        acl_info["warnings"] = warnings
+    if warnings:
+        acl_info.setdefault("warnings", []).extend(warnings)
 
     context = {
         "src_interface": src_iface,

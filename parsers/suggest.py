@@ -40,7 +40,7 @@ the ingress/egress pairing (VDOM-wrapped when a VDOM is in play).
 from __future__ import annotations
 
 import ipaddress
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 __all__ = ["suggest_corrections", "SCHEMA_VERSION"]
 
@@ -75,17 +75,35 @@ def _blocking_rule(result: dict) -> Optional[dict]:
 
 
 def _port_token(proto: Optional[str], dports: List[int]) -> Optional[int]:
-    """Single representative destination port for L4 protocols, else None."""
+    """Single representative destination port for L4 protocols, else None.
+
+    A multi-port flow (``--dport 80 --dport 443``) intentionally collapses to the
+    first port: the suggestion is a starting point an operator extends, not an
+    exhaustive rule set.
+    """
     if (proto or "").lower() not in {"tcp", "udp"}:
         return None
     return dports[0] if dports else None
 
 
+def _proto_number(proto: Optional[str]) -> int:
+    """IANA protocol number for FortiGate iprope lookup.
+
+    Falls back to a numeric ``proto`` token if one is supplied, else 0.
+    """
+    p = (proto or "").lower()
+    if p in _PROTO_NUMBERS:
+        return _PROTO_NUMBERS[p]
+    if p.isdigit():
+        return int(p)
+    return 0
+
+
 def _first(value: Any) -> Optional[str]:
-    if not value:
-        return None
     if isinstance(value, (list, tuple)):
         return value[0] if value else None
+    if not value:
+        return None
     return str(value)
 
 
@@ -94,7 +112,15 @@ def _first(value: Any) -> Optional[str]:
 # ---------------------------------------------------------------------------
 
 def _asa_addr_token(addr: str) -> str:
-    """Format an address as ASA ACL tokens ('host x' / 'net mask' / 'any')."""
+    """Format an address as ASA ACL tokens ('host x' / 'net mask' / 'any').
+
+    Wildcard tokens (``any``/``any4``/``any6``) collapse to ``any``. Anything
+    that is neither a valid IP nor a CIDR (e.g. an object name that could not be
+    resolved) is returned verbatim so we never emit invalid lines like
+    ``host any`` or ``host WebServer01``.
+    """
+    if (addr or "").lower() in {"any", "any4", "any6"}:
+        return "any"
     try:
         ipaddress.ip_address(addr)
         return f"host {addr}"
@@ -108,7 +134,7 @@ def _asa_addr_token(addr: str) -> str:
             return "any"
         return f"{net.network_address} {net.netmask}"
     except ValueError:
-        return f"host {addr}"
+        return addr
 
 
 def _asa_acl_line(nameif: str, suffix: str, proto: str, src: str, dst: str,
@@ -239,7 +265,7 @@ def _ftg_policy_block(srcintf: str, dstintf: str, src_obj: str, dst_obj: str,
 
 
 def _ftg_interfaces(result: dict, ingress_interface: Optional[str],
-                    egress_interface: Optional[str]) -> tuple:
+                    egress_interface: Optional[str]) -> Tuple[str, str]:
     blocking = _blocking_rule(result)
     binding = (blocking or {}).get("binding") or {}
     srcintf = ingress_interface or _first(binding.get("srcintf")) or "<in>"
@@ -286,7 +312,7 @@ def _verify_fortigate(result: dict, *, vdom: Optional[str]) -> List[dict]:
 
     src = resolved.get("src") or inp.get("src")
     dst = resolved.get("dst") or inp.get("dst")
-    proto_num = _PROTO_NUMBERS.get(proto, 0)
+    proto_num = _proto_number(proto)
     sport = 0  # ephemeral; iprope only needs the destination socket
     dport = dports[0] if dports else 0
 

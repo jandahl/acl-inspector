@@ -211,6 +211,55 @@ class TestSuggestionEdgeCases(unittest.TestCase):
         cmds = [v['command'] for v in result['suggestion']['verification']]
         self.assertEqual(len(cmds), len(set(cmds)))
 
+    def test_asa_wildcard_and_unresolved_tokens(self):
+        # 'any' must collapse to 'any'; an unresolved object name must NOT get a
+        # 'host' prefix (would be invalid ASA syntax).
+        synthetic = {
+            "allowed": False,
+            "acl": {"decision": "no-match", "matches": []},
+            "input": {"proto": "tcp", "dports": [443], "src": "any", "dst": "WEB"},
+            "resolved": {"src": "any", "dst": "WEB"},  # dst unresolved -> name
+            "context": {"src_interface": "outside", "dst_interface": "inside",
+                        "packet_tracer": []},
+        }
+        cmds = [c for s in suggest_corrections(synthetic, "asa")['suggestions']
+                for c in s['commands']]
+        self.assertTrue(cmds)
+        self.assertTrue(all('host any' not in c for c in cmds))
+        self.assertTrue(all('host WEB' not in c for c in cmds))
+        self.assertTrue(any('permit tcp any WEB eq 443' in c for c in cmds))
+
+    def test_asa_egress_equals_ingress_emits_single_rule(self):
+        # When ingress and egress resolve to the same nameif, only one rule.
+        sug = suggest_corrections(
+            {"allowed": False, "acl": {"decision": "no-match", "matches": []},
+             "input": {"proto": "tcp", "dports": [443], "src": "a", "dst": "b"},
+             "resolved": {"src": "10.0.0.1", "dst": "10.0.0.2"},
+             "context": {"packet_tracer": []}},
+            "asa", ingress_interface="dmz", egress_interface="dmz")
+        self.assertEqual(len(sug['suggestions']), 1)
+        self.assertEqual(sug['suggestions'][0]['scenario'], 'ingress')
+
+    def test_multi_port_collapses_to_first(self):
+        result = self._asa_blocked('203.0.113.5', 'WEB', proto='tcp',
+                                   dports={443, 8443})
+        cmds = [c for s in result['suggestion']['suggestions'] for c in s['commands']]
+        # input.dports is sorted -> first is 443.
+        self.assertTrue(all('eq 443' in c for c in cmds))
+        self.assertFalse(any('eq 8443' in c for c in cmds))
+
+    def test_ftg_numeric_protocol_in_verification(self):
+        # A numeric protocol token (e.g. GRE=47) is passed through, not zeroed.
+        synthetic = {
+            "allowed": False,
+            "acl": {"decision": "implicit-deny", "matches": []},
+            "input": {"proto": "47", "dports": [], "src": "SRC", "dst": "DST"},
+            "resolved": {"src": "10.0.0.1", "dst": "10.0.0.2"},
+            "context": {},
+        }
+        verif = suggest_corrections(synthetic, "fortigate")['verification'][0]
+        self.assertRegex(verif['command'], r'iprope lookup .* 47 ')
+
 
 class TestIRMetadata(unittest.TestCase):
     """The IR fields added to support rule generation must be populated."""
