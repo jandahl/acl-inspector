@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2024-2026 Jan Gronemann
 """FortiGate parser and evaluation helpers.
 
 This module parses the FortiOS CLI syntax used across configuration blocks and

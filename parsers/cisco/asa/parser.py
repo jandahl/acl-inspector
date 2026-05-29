@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2024-2026 Jan Gronemann
 """Core Cisco ASA parsing primitives.
 
 This module encapsulates parsing of Cisco ASA configuration constructs relevant

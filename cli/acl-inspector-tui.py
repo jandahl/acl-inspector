@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2024-2026 Jan Gronemann
 """ACL-inspector Singularity TUI entry point.
 
 A search-first terminal user interface for firewall configuration analysis.

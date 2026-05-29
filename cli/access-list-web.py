@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2024-2026 Jan Gronemann
 """Minimal web UI for access-list inspection and comparison.
 
 This server is intentionally separate from the core CLI to keep concerns

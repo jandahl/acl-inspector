@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2024-2026 Jan Gronemann
 """IR import functionality for FortiGate.
 
 Converts vendor-agnostic Intermediate Representation (IR) format to FortiGate

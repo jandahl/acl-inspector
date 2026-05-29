@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2024-2026 Jan Gronemann
 """Shared helpers for resolving project root and key entrypoints."""
 
 from __future__ import annotations

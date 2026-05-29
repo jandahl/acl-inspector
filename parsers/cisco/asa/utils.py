@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2024-2026 Jan Gronemann
 """Network and IP address utilities for ASA parser.
 
 Utility functions for working with IPv4 addresses and networks.

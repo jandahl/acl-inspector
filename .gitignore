@@ -12,3 +12,5 @@ configs/cisco/idz-inf-ctx
 fonts/downloaded/
 !fonts/downloaded/.gitkeep
 preview/
+logs/
+.zed/

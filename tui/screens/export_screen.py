@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2024-2026 Jan Gronemann
 """Export dialog screen for exporting tab data."""
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2024-2026 Jan Gronemann
 """Thin compatibility layer so existing imports still work."""
 
 from common.vendor_caps import VendorCaps, all_caps, get_caps, supports_feature, _CAPS as _ROOT_CAPS  # noqa: F401

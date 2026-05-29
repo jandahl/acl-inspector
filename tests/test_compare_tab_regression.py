@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2024-2026 Jan Gronemann
 """Regression test for Compare tab IndexError bug.
 
 This test specifically checks the bug where selecting the Compare tab

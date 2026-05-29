@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2024-2026 Jan Gronemann
 """Main menu modal screen for TUI."""
 
 from textual.app import ComposeResult
