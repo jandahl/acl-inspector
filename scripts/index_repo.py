@@ -21,7 +21,6 @@ from typing import Dict, Iterable, Optional, Tuple
 from parsers.cisco import asa as asa_parser
 from parsers.detector import (
     DEFAULT_SUPPORTED_VENDORS,
-    MAX_DETECTION_BYTES,
     confidence_level,
     detect_vendor,
     vendor_to_os,

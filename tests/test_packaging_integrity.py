@@ -3,68 +3,76 @@
 """Verification that the core package has no hidden dependency on scripts/."""
 
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
 
 class PackagingIntegrityTest(unittest.TestCase):
     def test_loader_without_scripts_on_path(self):
-        """Verify that parsers.loader works even if scripts/ is not in sys.path."""
-        # Force a reload of the modules to ensure we aren't using a cached version
-        # that already did the sys.path manipulation or holds references to scripts
-        for mod in ("parsers.loader", "parsers.detector"):
-            sys.modules.pop(mod, None)
-            
-        # Ensure 'scripts' is NOT in sys.path
-        original_path = sys.path.copy()
-        scripts_path = str(Path(__file__).parent.parent / "scripts")
-        resolved_scripts = Path(scripts_path).resolve()
+        """Verify that parsers.loader works even if scripts/ is not in sys.path.
         
-        new_path = []
+        This test runs in a subprocess to ensure absolute isolation and avoid
+        polluting the global sys.path or sys.modules of the test runner.
+        """
+        import subprocess
+        
+        repo_root = Path(__file__).parent.parent.resolve()
+        
+        # This script runs in a clean subprocess. It manually sets sys.path
+        # to include the repo root but explicitly EXCLUDES the scripts directory.
+        code = f"""
+import sys
+import os
+import tempfile
+from pathlib import Path
+
+# Add repo root but NOT scripts
+repo_root = Path({repr(str(repo_root))})
+sys.path.insert(0, str(repo_root))
+
+# Ensure 'scripts' is NOT accidentally inherited in sys.path
+scripts_path = repo_root / "scripts"
+resolved_scripts = scripts_path.resolve()
+
+sys.path = [p for p in sys.path if not p or (Path(p).exists() and Path(p).resolve() != resolved_scripts)]
+
+try:
+    from parsers.loader import load_config
+    
+    config_text = "ASA Version 9.8(2)\\ninterface GigabitEthernet0/0\\n nameif outside"
+    with tempfile.NamedTemporaryFile(suffix=".conf", mode="w", delete=False) as tmp:
+        tmp.write(config_text)
+        config_path = tmp.name
+
+    try:
+        cfg, vendor, score = load_config(config_path)
+        if vendor != 'asa' or score < 80:
+            print(f"Unexpected detection results: {{vendor}} ({{score}}%)")
+            sys.exit(3)
+            
+        # Verify that scripts/ was not added back to sys.path by the loader
         for p in sys.path:
             try:
-                if Path(p).resolve() != resolved_scripts:
-                    new_path.append(p)
+                if p and Path(p).resolve() == resolved_scripts:
+                    print("Error: scripts/ was added to sys.path by parsers.loader")
+                    sys.exit(2)
             except Exception:
-                # If path is invalid, keep it as is
-                new_path.append(p)
-        sys.path = new_path
-        
-        config_path = None
+                pass
+    finally:
         try:
-            # Import and use loader
-            from parsers.loader import load_config
-            
-            # Simple ASA config in a temporary file
-            config_text = "ASA Version 9.8(2)\ninterface GigabitEthernet0/0\n nameif outside"
-            
-            # Consolidated try-finally for file creation and test execution
-            try:
-                with tempfile.NamedTemporaryFile(suffix=".conf", mode="w", delete=False) as tmp:
-                    tmp.write(config_text)
-                    config_path = Path(tmp.name)
-                
-                # This should NOT trigger a ModuleNotFoundError for 'index_repo'
-                cfg, vendor, score = load_config(config_path)
-                self.assertEqual(vendor, 'asa')
-                self.assertGreaterEqual(score, 80)
-            finally:
-                if config_path and config_path.exists():
-                    config_path.unlink()
-                    
-            # Also verify that parsers.loader didn't add scripts to sys.path
-            for p in sys.path:
-                try:
-                    resolved_p = Path(p).resolve()
-                except Exception:
-                    continue
-                self.assertNotEqual(resolved_p, resolved_scripts, 
-                                    "parsers.loader should not add scripts/ to sys.path")
-                                    
-        finally:
-            # Restore path
-            sys.path = original_path
+            os.unlink(config_path)
+        except Exception:
+            pass
+except Exception as e:
+    print(f"Import or execution error: {{e}}")
+    import traceback
+    traceback.print_exc()
+    sys.exit(1)
+
+sys.exit(0)
+"""
+        res = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+        self.assertEqual(res.returncode, 0, f"Subprocess failed with exit code {res.returncode}. \nstdout: {res.stdout}\nstderr: {res.stderr}")
 
 
 if __name__ == "__main__":
