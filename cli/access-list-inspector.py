@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2024-2026 Jan Gronemann
 """Access-list Inspector CLI
 
 Vendor-agnostic CLI entry point that delegates to vendor-specific parsers.

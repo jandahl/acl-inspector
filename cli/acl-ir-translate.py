@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2024-2026 Jan Gronemann
 """CLI tool for IR translation between firewall vendors.
 
 Converts firewall configurations to/from the vendor-agnostic Intermediate

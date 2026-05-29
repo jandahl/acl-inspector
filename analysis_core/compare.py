@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2024-2026 Jan Gronemann
 """Compare analysis: compare ACL impact between two targets.
 
 This module provides vendor-agnostic comparison of two network objects.

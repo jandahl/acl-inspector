@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2024-2026 Jan Gronemann
 import re
 import unittest
 from pathlib import Path

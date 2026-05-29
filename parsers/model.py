@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2024-2026 Jan Gronemann
 """Versioned Intermediate Representation (IR) for firewall configs.
 
 This module defines stable, JSON‑friendly dataclasses that vendors map to.

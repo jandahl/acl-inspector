@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2024-2026 Jan Gronemann
 """ACL usage analysis: find where network objects are referenced.
 
 This module provides vendor-agnostic analysis of object usage across ACLs and groups.

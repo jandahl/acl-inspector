@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2024-2026 Jan Gronemann
 """TUI widgets for Singularity interface."""
 
 from .search_bar import SearchBar

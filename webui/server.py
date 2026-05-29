@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2024-2026 Jan Gronemann
 """Initial HTTP server bootstrap for the modular web UI.
 
 At this stage we still rely on the legacy WebHandler implementation from

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2024-2026 Jan Gronemann
 """Deprecated entry point.
 
 Use ./aclinspector.py inspect for the CLI and ./aclinspector.py web for the web UI.
