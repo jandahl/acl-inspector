@@ -34,7 +34,7 @@ sys.path.insert(0, str(repo_root))
 scripts_path = repo_root / "scripts"
 resolved_scripts = scripts_path.resolve()
 
-sys.path = [p for p in sys.path if not p or (Path(p).exists() and Path(p).resolve() != resolved_scripts)]
+sys.path = [p for p in sys.path if not p or not Path(p).exists() or Path(p).resolve() != resolved_scripts]
 
 try:
     from parsers.loader import load_config

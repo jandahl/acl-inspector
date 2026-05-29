@@ -36,7 +36,7 @@ def detect_vendor(text: str, filename: str = '') -> Tuple[str, int, str]:
             reasons[vendor] = (score, reason)
 
     # Filename-based detection (lower confidence)
-    lower_name = filename.lower()
+    lower_name = (filename or '').lower()
 
     # Cisco ASA
     if lower_name.startswith('asa'):
@@ -89,6 +89,7 @@ def detect_vendor(text: str, filename: str = '') -> Tuple[str, int, str]:
         note('ios-xr', 95, 'ios_xr_version_banner')
     if 'rp/0/rp' in sample:
         note('ios-xr', 70, 'ios_xr_filesystem_hint')
+    # Note: 'disk0:' check intentionally omitted as it causes false positives with generic IOS/ASA
     if 'router bgp' in sample and 'address-family' in sample:
         note('ios-xr', 40, 'ios_xr_bgp_syntax')
     if 'route-policy' in sample:
