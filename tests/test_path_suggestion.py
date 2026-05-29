@@ -241,12 +241,41 @@ class TestSuggestionEdgeCases(unittest.TestCase):
         self.assertEqual(sug['suggestions'][0]['scenario'], 'ingress')
 
     def test_multi_port_collapses_to_first(self):
-        result = self._asa_blocked('203.0.113.5', 'WEB', proto='tcp',
-                                   dports={443, 8443})
+        # Pass an explicit list so the test does not rely on set ordering;
+        # path_check sorts dports, so the lowest (443) is the representative.
+        result = asa_path_check(ASA_SAMPLE, '203.0.113.5', 'WEB', proto='tcp',
+                                dports={443, 8443})
         cmds = [c for s in result['suggestion']['suggestions'] for c in s['commands']]
-        # input.dports is sorted -> first is 443.
         self.assertTrue(all('eq 443' in c for c in cmds))
         self.assertFalse(any('eq 8443' in c for c in cmds))
+
+    def test_asa_addr_token_none_does_not_leak(self):
+        # A malformed result with no resolvable endpoints must not emit a bare
+        # 'None' token in the generated ACL line.
+        synthetic = {
+            "allowed": False,
+            "acl": {"decision": "no-match", "matches": []},
+            "input": {"proto": "tcp", "dports": [443], "src": None, "dst": None},
+            "resolved": {"src": None, "dst": None},
+            "context": {"src_interface": "outside", "packet_tracer": []},
+        }
+        cmds = [c for s in suggest_corrections(synthetic, "asa")['suggestions']
+                for c in s['commands']]
+        self.assertTrue(cmds)
+        self.assertTrue(all('None' not in c for c in cmds))
+
+    def test_ftg_verification_honors_interface_overrides(self):
+        # The verification command must match the suggested policy interface
+        # when overrides are supplied (no <in>/<out> vs port mismatch).
+        result = ftg_path_check(FTG_SAMPLE, 'SRC', '203.0.113.50',
+                                proto='tcp', dports={443})
+        sug = suggest_corrections(result, "fortigate",
+                                  ingress_interface="wan1",
+                                  egress_interface="lan")
+        self.assertIn('wan1', sug['suggestions'][0]['location']['srcintf'])
+        verif_cmd = sug['verification'][0]['command']
+        self.assertIn('wan1', verif_cmd)
+        self.assertNotIn('<in>', verif_cmd)
 
     def test_ftg_numeric_protocol_in_verification(self):
         # A numeric protocol token (e.g. GRE=47) is passed through, not zeroed.

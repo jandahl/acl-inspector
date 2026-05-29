@@ -119,7 +119,11 @@ def _asa_addr_token(addr: str) -> str:
     resolved) is returned verbatim so we never emit invalid lines like
     ``host any`` or ``host WebServer01``.
     """
-    if (addr or "").lower() in {"any", "any4", "any6"}:
+    if not addr:
+        # Defensive: a missing endpoint (malformed result dict) must not leak a
+        # bare ``None`` into the generated line.
+        return "any"
+    if addr.lower() in {"any", "any4", "any6"}:
         return "any"
     try:
         ipaddress.ip_address(addr)
@@ -204,7 +208,9 @@ def _suggest_asa(result: dict, *, ingress_interface: Optional[str],
     return suggestions
 
 
-def _verify_asa(result: dict, *, vdom: Optional[str]) -> List[dict]:
+def _verify_asa(result: dict, *, ingress_interface: Optional[str] = None,
+                egress_interface: Optional[str] = None,
+                vdom: Optional[str] = None) -> List[dict]:
     """Reuse the packet-tracer commands the ASA path builder already produced."""
     verifications: List[dict] = []
     ctx = result.get("context") or {}
@@ -304,7 +310,9 @@ def _suggest_fortigate(result: dict, *, ingress_interface: Optional[str],
     }]
 
 
-def _verify_fortigate(result: dict, *, vdom: Optional[str]) -> List[dict]:
+def _verify_fortigate(result: dict, *, ingress_interface: Optional[str] = None,
+                      egress_interface: Optional[str] = None,
+                      vdom: Optional[str] = None) -> List[dict]:
     inp = result.get("input") or {}
     resolved = result.get("resolved") or {}
     proto = (inp.get("proto") or "").lower()
@@ -316,7 +324,9 @@ def _verify_fortigate(result: dict, *, vdom: Optional[str]) -> List[dict]:
     sport = 0  # ephemeral; iprope only needs the destination socket
     dport = dports[0] if dports else 0
 
-    srcintf, _dstintf = _ftg_interfaces(result, None, None)
+    # Keep the verification interface consistent with the suggested policy when
+    # the caller supplied overrides.
+    srcintf, _dstintf = _ftg_interfaces(result, ingress_interface, egress_interface)
     lookup = (
         f"diagnose firewall iprope lookup {src} {sport} {dst} {dport} "
         f"{proto_num} {srcintf}"
@@ -400,7 +410,12 @@ def suggest_corrections(
         egress_interface=egress_interface,
         vdom=vdom,
     )
-    verification = verify_fn(result, vdom=vdom)
+    verification = verify_fn(
+        result,
+        ingress_interface=ingress_interface,
+        egress_interface=egress_interface,
+        vdom=vdom,
+    )
 
     return {
         "schema_version": SCHEMA_VERSION,
