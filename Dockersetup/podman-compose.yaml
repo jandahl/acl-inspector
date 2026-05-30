@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   acl-inspector-web:
     build:
@@ -8,16 +6,35 @@ services:
     ports:
       - "8083:8083"
     volumes:
-      - ../configs:/app/configs
+      - ../configs:/app/configs:ro
       - aclinspector_cache:/app/cache
-    # Command to override the Dockerfile CMD if needed, but for now, it's good.
-    # command: ["python", "aclinspector.py", "web", "--port", "8083", "--host", "0.0.0.0"]
     environment:
       - ACLINSPECTOR_CACHE_DIR=/app/cache
       - ACLINSPECTOR_SEARCH_LIMIT=${ACLINSPECTOR_SEARCH_LIMIT}
       # Optional per-vendor config roots (can be the same path)
       - ACLINSPECTOR_CONFIGS_CISCO=${ACLINSPECTOR_CONFIGS_CISCO:-/app/configs/cisco}
       - ACLINSPECTOR_CONFIGS_FORTIGATE=${ACLINSPECTOR_CONFIGS_FORTIGATE:-/app/configs/fortigate}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8083/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    # Prevent privilege escalation inside the container
+    security_opt:
+      - no-new-privileges:true
+    # Block all outbound internet access at runtime.
+    # The app reads local config files and serves the web UI — it has no
+    # legitimate reason to initiate external connections.
+    # Port publishing (8083:8083) still works: that NAT lives on the host,
+    # not inside the container network.
+    networks:
+      - internal
+
+networks:
+  internal:
+    driver: bridge
+    internal: true
 
 volumes:
   aclinspector_cache:

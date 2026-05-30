@@ -1,26 +1,23 @@
 # Use a slim Python image for a smaller footprint
 FROM python:3.11-slim-bookworm
 
-# Set the working directory inside the container
 WORKDIR /app
 
-# Copy the entire application code into the container
+# Non-root user for runtime isolation
+RUN groupadd -r -g 1000 appuser && useradd -r -u 1000 -g appuser -d /app appuser
+
+# Copy application code (see .dockerignore at repo root for exclusions)
 COPY . /app
 
-# Ensure basic build tools and curl for installer scripts
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+# Ensure the cache directory exists and is owned by the runtime user.
+# No pip installs needed: core web UI uses stdlib only (pyproject.toml dependencies=[]).
+RUN mkdir -p /app/cache && chown -R appuser:appuser /app/cache
 
-# Install Playwright (for headless tests) and fetch Chromium
-RUN pip install playwright && playwright install --with-deps chromium
+USER appuser
 
-# Optional: install the MCP server adapter for Playwright automation
-
-# Expose the port the web UI will listen on
 EXPOSE 8083
 
-# Command to run the web UI via the dispatcher
-# `aclinspector.py web` wraps the new cli/access-list-web.py location.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8083/healthz', timeout=3)"
+
 CMD ["python", "aclinspector.py", "web", "--port", "8083", "--addr", "0.0.0.0"]
