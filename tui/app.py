@@ -1305,6 +1305,8 @@ class SingularityApp(App):
         # Key it by object name so a stale render can't leak across objects.
         obj_name = self.selected_object.get("name") if self.selected_object else None
         self.current_tab_result = result
+        # Reset the verify toggle so each new run starts hidden (consistent default).
+        self._path_show_verify = False
         self._path_render_state = (obj_name, result, src, dst, protocol, port)
         self._render_path_results()
         logger.info(

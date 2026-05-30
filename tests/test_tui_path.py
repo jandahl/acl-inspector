@@ -145,6 +145,20 @@ access-group outside_access_in in interface outside
         app.action_toggle_path_verify()
         self.assertTrue(app._path_show_verify)
 
+    def test_new_path_check_resets_verify_toggle(self):
+        # A fresh run must start with verification hidden, even if a prior run
+        # had toggled it visible.
+        from unittest import mock
+        from parsers.cisco.asa import ASAConfig
+        app = SingularityApp(vendor="asa", config_path="")
+        app._path_show_verify = True  # left visible from a previous run
+        config = ASAConfig(self.DENY_CFG)
+        app.selected_object = {"name": "WEB", "vendor": "asa"}
+        with mock.patch.object(app, "_get_object_config", return_value=config), \
+             mock.patch.object(app, "_render_path_results"):
+            app._run_path_check("203.0.113.5", "WEB", "tcp", 443)
+        self.assertFalse(app._path_show_verify)
+
 
 @unittest.skipUnless(TEXTUAL_AVAILABLE, "textual not installed")
 class TestTUIPathForm(unittest.TestCase):
