@@ -135,6 +135,7 @@ access-group outside_access_in in interface outside
         # State stored for object 'A'; current selection is 'B' -> toggle no-ops
         # (prevents rendering a previous object's results).
         app = SingularityApp(vendor="asa", config_path="")
+        app.current_tab_id = "path"
         app._path_render_state = ('A', {"allowed": False}, 's', 'd', 'tcp', 443)
         app._path_show_verify = False
         app.selected_object = {"name": "B"}
@@ -158,6 +159,36 @@ access-group outside_access_in in interface outside
              mock.patch.object(app, "_render_path_results"):
             app._run_path_check("203.0.113.5", "WEB", "tcp", 443)
         self.assertFalse(app._path_show_verify)
+
+    def test_toggle_noops_off_path_tab(self):
+        # ctrl+v on a non-path tab must bail before touching render state.
+        app = SingularityApp(vendor="asa", config_path="")
+        app.current_tab_id = "details"
+        app._path_render_state = ('A', {"allowed": False}, 's', 'd', 'tcp', 443)
+        app._path_show_verify = False
+        app.selected_object = {"name": "A"}
+        app.action_toggle_path_verify()
+        self.assertFalse(app._path_show_verify)  # unchanged — wrong tab
+
+    def test_string_commands_not_iterated_charwise(self):
+        # A malformed suggestion node carrying bare strings must not be
+        # iterated character-by-character.
+        result = {
+            "allowed": False,
+            "suggestion": {
+                "needed": True,
+                "reason": "implicit-deny",
+                "suggestions": [{
+                    "scenario": "ingress",
+                    "rationale": "permit the flow",
+                    "commands": "access-list outside_access_in permit ip any any",
+                    "notes": "single note",
+                }],
+            },
+        }
+        _panels, text = self._panels_text(result, show_verify=False)
+        self.assertIn('access-list outside_access_in permit ip any any', text)
+        self.assertIn('note: single note', text)
 
 
 @unittest.skipUnless(TEXTUAL_AVAILABLE, "textual not installed")

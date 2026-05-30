@@ -52,6 +52,20 @@ def setup_logging():
 logger = setup_logging()
 
 
+def _as_str_list(value) -> list:
+    """Coerce a suggestion field to a list of strings.
+
+    Suggestion payloads normally carry ``commands``/``notes`` as lists, but a
+    malformed node may hand us a bare string (which would iterate
+    character-by-character) or ``None``. Normalise both to a clean list.
+    """
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    return list(value)
+
+
 class ParsedConfigStore(MutableMapping):
     """Mapping that prefers path keys but falls back to filenames when requested."""
 
@@ -1432,9 +1446,9 @@ class SingularityApp(App):
             scenario = (sug.get("scenario") or "").upper()
             sugg_text.append(f"[{scenario}] ", style="bold cyan")
             sugg_text.append(f"{sug.get('rationale', '')}\n", style="white")
-            for cmd in sug.get("commands", []):
+            for cmd in _as_str_list(sug.get("commands")):
                 sugg_text.append(f"  {cmd}\n", style="green")
-            for note in sug.get("notes") or []:
+            for note in _as_str_list(sug.get("notes")):
                 sugg_text.append(f"  note: {note}\n", style="dim")
         panels.append(Panel(sugg_text, title=f"Correction Suggestion ({reason})",
                             border_style="green"))
@@ -1460,6 +1474,10 @@ class SingularityApp(App):
 
     def action_toggle_path_verify(self) -> None:
         """Toggle display of live-verification commands in the path-check view."""
+        # Cheap guard: ctrl+v on any other tab has no path results to toggle, so
+        # bail before touching render state (avoids relying on the except below).
+        if self.current_tab_id != "path":
+            return
         current = self.selected_object.get("name") if self.selected_object else None
         # Only act when the stored results belong to the current object.
         if not self._path_render_state or self._path_render_state[0] != current:

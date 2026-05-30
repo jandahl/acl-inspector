@@ -2727,3 +2727,5 @@
 2025-11-26 11:01:57,125 INFO analysis_core.index: Finished index for asa (/Users/jangronemann/Library/CloudStorage/OneDrive-Sentia/Scandlines/scand-ops/rancid-backups/sysloghost) in 0.00s (objects=0 groups=0)
 2025-11-26 11:01:57,125 INFO analysis_core.index: Building index for fortigate (/Users/jangronemann/code/ACL-inspector/configs/fortigate/fortigate7-4-example)
 2025-11-26 11:01:57,125 INFO analysis_core.index: Finished index for fortigate (/Users/jangronemann/code/ACL-inspector/configs/fortigate/fortigate7-4-example) in 0.00s (objects=0 groups=0)
+2026-05-30 19:48:49,962 INFO webui.state: Theme directory '/home/user/acl-inspector/themes' is missing; using built-in themes only.
+2026-05-30 19:48:49,962 INFO webui.themes: Theme directory /home/user/acl-inspector/themes not found; using built-in themes.

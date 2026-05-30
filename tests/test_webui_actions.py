@@ -218,6 +218,20 @@ class ActionHandlersTest(unittest.TestCase):
         self.assertNotIn("<script>", html)
         self.assertIn("&lt;script&gt;", html)
 
+    def test_render_packet_suggestion_coerces_string_fields(self):
+        # A malformed node carrying bare strings for commands/notes must not be
+        # iterated character-by-character.
+        suggestion = {
+            "needed": True, "reason": "implicit-deny", "blocking_rule": None,
+            "suggestions": [{"scenario": "policy", "vendor": "asa",
+                             "commands": "access-list outside permit ip any any",
+                             "rationale": "x", "notes": "single note"}],
+            "verification": [],
+        }
+        html = action_handlers._render_packet_suggestion(suggestion, "asa")
+        self.assertIn("access-list outside permit ip any any", html)
+        self.assertIn("<li>single note</li>", html)
+
     def test_format_list_includes_more_suffix(self):
         text = action_handlers._format_list(["a", "b", "c", "d"], limit=2)
         self.assertEqual(text, "a, b (+2 more)")
