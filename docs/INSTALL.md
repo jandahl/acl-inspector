@@ -45,6 +45,43 @@ ACLINSPECTOR_SEARCH_LIMIT=100
 
 Place these in `Dockersetup/.env` for automatic expansion by Compose. Note: `.env` files do not support inline comments — comments must be on their own lines as shown above.
 
+### Security properties
+
+The container is hardened by default — no configuration needed:
+
+| Property | Value |
+|---|---|
+| Runtime user | `appuser` (uid/gid 1000, never root) |
+| Config mount | `../configs` mounted read-only (`:ro`) |
+| Linux capabilities | All dropped (`cap_drop: ALL`) |
+| Privilege escalation | Blocked (`no-new-privileges:true`) |
+| Egress network | Blocked (`internal: true` bridge) |
+| Health check | `GET /healthz` every 30 s |
+
+Port 8083 is published via a host-side NAT rule, which is unaffected by the internal network restriction — incoming connections still reach the container.
+
+To build the image separately from starting it:
+
+```bash
+make container-build
+```
+
+### Running CLI subcommands via the container
+
+The wrapper script `Dockersetup/aclinspector-container` lets you run `inspect`, `translate`, and `optimize` subcommands through the pre-built image without a Python install:
+
+```bash
+# One-time setup: make executable and add to PATH
+chmod +x Dockersetup/aclinspector-container
+ln -s "$(pwd)/Dockersetup/aclinspector-container" ~/.local/bin/aclinspector-container
+
+# Your current directory is mounted read-only at /data inside the container
+aclinspector-container inspect --vendor asa --config /data/fw.conf --inspect 10.1.1.1
+aclinspector-container translate --vendor asa --config /data/fw.conf --format json
+```
+
+The wrapper uses `--network none` (stricter than the web UI) and inherits your uid/gid so file ownership is correct. Build the image first with `make container-build`.
+
 ---
 
 ## Option 2: Run directly from a clone (CLI, web UI, or TUI)
