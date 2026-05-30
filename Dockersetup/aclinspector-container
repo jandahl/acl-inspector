@@ -38,6 +38,7 @@ exec "$RUNTIME" run \
     --security-opt no-new-privileges \
     --cap-drop ALL \
     --user "$(id -u):$(id -g)" \
+    --env HOME=/tmp \
     --volume "$(pwd):/data:ro" \
     --env ACLINSPECTOR_CONFIGS_CISCO=/data/configs/cisco \
     --env ACLINSPECTOR_CONFIGS_FORTIGATE=/data/configs/fortigate \
