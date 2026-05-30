@@ -1465,9 +1465,10 @@ class SingularityApp(App):
         self._path_show_verify = not self._path_show_verify
         try:
             self._render_path_results()
-        except Exception:
-            # Path results widget not mounted (different tab) — ignore.
-            pass
+        except Exception as exc:
+            # Path results widget not mounted (different tab) — ignore, but log
+            # so a real rendering bug isn't silently swallowed during dev.
+            logger.debug("toggle_path_verify: render skipped (%s)", exc)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses in path check form."""

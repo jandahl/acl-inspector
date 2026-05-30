@@ -1260,6 +1260,8 @@ def _render_packet_suggestion(suggestion: dict, vendor: str = "asa") -> str:
             f"  <p class='blocking-rule'>Blocked by: "
             f"<code>{_escape_text(blocking.get('raw'))}</code></p>\n"
         )
+    # `location` (nameif/srcintf/etc.) is intentionally not rendered here — the
+    # generated command already embeds it; keeping the block concise.
     for sug in suggestion.get("suggestions", []):
         scenario = (sug.get("scenario") or "").upper()
         rationale = sug.get("rationale") or ""
@@ -1267,7 +1269,7 @@ def _render_packet_suggestion(suggestion: dict, vendor: str = "asa") -> str:
         parts.append(
             "  <div class='diff diff-added'>"
             f"<h4>[{_escape_text(scenario)}] {_escape_text(rationale)}</h4>\n"
-            f"  <pre data-lang='{_escape_text(vendor)}'>{_escape_text(cmds)}</pre>\n"
+            f"  <pre data-lang='{_escape_attr(vendor)}'>{_escape_text(cmds)}</pre>\n"
         )
         notes = sug.get("notes") or []
         if notes:
@@ -1285,7 +1287,7 @@ def _render_packet_suggestion(suggestion: dict, vendor: str = "asa") -> str:
             if desc:
                 ver_parts.append(f"  <p>{_escape_text(desc)}</p>\n")
             ver_parts.append(
-                f"  <pre data-lang='{_escape_text(vendor)}'>{_escape_text(cmd)}</pre>\n"
+                f"  <pre data-lang='{_escape_attr(vendor)}'>{_escape_text(cmd)}</pre>\n"
             )
         ver_parts.append("  </details>\n")
         parts.append("".join(ver_parts))
