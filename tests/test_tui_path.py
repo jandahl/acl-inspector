@@ -73,6 +73,66 @@ class FakeButton:
 
 
 @unittest.skipUnless(TEXTUAL_AVAILABLE, "textual not installed")
+class TestTUIPathSuggestionPanels(unittest.TestCase):
+    """The path-check view surfaces correction suggestions + a verify toggle."""
+
+    DENY_CFG = """
+interface GigabitEthernet0/0
+ nameif outside
+ security-level 0
+ ip address 203.0.113.2 255.255.255.0
+!
+interface GigabitEthernet0/1
+ nameif inside
+ security-level 100
+ ip address 10.0.0.1 255.255.255.0
+!
+object network WEB
+ host 10.0.0.10
+!
+access-list outside_access_in extended permit tcp any host 10.0.0.99 eq 443
+access-list outside_access_in extended deny ip any host 10.0.0.10
+access-group outside_access_in in interface outside
+"""
+
+    def _panels_text(self, result, show_verify):
+        from rich.console import Console
+        app = SingularityApp(vendor="asa", config_path="")
+        app._path_show_verify = show_verify
+        panels = app._build_path_suggestion_panels(result)
+        console = Console(width=100, record=True)
+        for p in panels:
+            console.print(p)
+        return panels, console.export_text()
+
+    def test_blocked_flow_renders_suggestion_panel(self):
+        from parsers.cisco.asa import path_check
+        result = path_check(self.DENY_CFG, '203.0.113.5', 'WEB',
+                            proto='tcp', dports={443})
+        panels, text = self._panels_text(result, show_verify=False)
+        self.assertTrue(panels)
+        self.assertIn('Correction Suggestion', text)
+        self.assertIn('access-list outside_access_in extended permit', text)
+        # Verification hidden by default.
+        self.assertNotIn('packet-tracer input', text)
+        self.assertIn('ctrl+v to show', text)
+
+    def test_verify_toggle_reveals_commands(self):
+        from parsers.cisco.asa import path_check
+        result = path_check(self.DENY_CFG, '203.0.113.5', 'WEB',
+                            proto='tcp', dports={443})
+        _panels, text = self._panels_text(result, show_verify=True)
+        self.assertIn('packet-tracer input', text)
+
+    def test_allowed_flow_has_no_suggestion_panel(self):
+        from parsers.cisco.asa import path_check
+        result = path_check(self.DENY_CFG, '203.0.113.5', '10.0.0.99',
+                            proto='tcp', dports={443})
+        app = SingularityApp(vendor="asa", config_path="")
+        self.assertEqual(app._build_path_suggestion_panels(result), [])
+
+
+@unittest.skipUnless(TEXTUAL_AVAILABLE, "textual not installed")
 class TestTUIPathForm(unittest.TestCase):
     """Ensure path check UI mounts controls safely."""
 

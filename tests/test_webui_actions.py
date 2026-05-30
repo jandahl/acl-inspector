@@ -171,6 +171,53 @@ class ActionHandlersTest(unittest.TestCase):
         self.assertIn("NAT Steps", html)
         self.assertIn("VIP", html)
 
+    def test_render_packet_suggestion_blocked(self):
+        suggestion = {
+            "needed": True,
+            "reason": "explicit-deny",
+            "blocking_rule": {"raw": "access-list X deny ip any host 10.0.0.10"},
+            "suggestions": [{
+                "scenario": "ingress",
+                "vendor": "asa",
+                "location": {"nameif": "outside"},
+                "commands": ["access-list outside_access_in extended permit tcp host 1.1.1.1 host 10.0.0.10 eq 443"],
+                "rationale": "Permit the flow on 'outside'.",
+                "notes": ["reorder above the deny"],
+            }],
+            "verification": [{
+                "vendor": "asa", "kind": "packet-tracer",
+                "command": "packet-tracer input outside tcp 1.1.1.1 12345 10.0.0.10 443",
+                "description": "Simulate the flow.",
+            }],
+        }
+        html = action_handlers._render_packet_suggestion(suggestion, "asa")
+        self.assertIn("Correction Suggestion (Explicit Deny)", html)
+        self.assertIn("[INGRESS]", html)
+        self.assertIn("extended permit tcp host 1.1.1.1", html)
+        self.assertIn("<li>reorder above the deny</li>", html)
+        self.assertIn("Blocked by:", html)
+        # Verification behind a collapsed <details> toggle.
+        self.assertIn("<details class='verify'>", html)
+        self.assertIn("packet-tracer input outside", html)
+
+    def test_render_packet_suggestion_not_needed(self):
+        self.assertEqual(
+            action_handlers._render_packet_suggestion({"needed": False}, "asa"), ""
+        )
+        self.assertEqual(action_handlers._render_packet_suggestion({}, "asa"), "")
+
+    def test_render_packet_suggestion_escapes(self):
+        suggestion = {
+            "needed": True, "reason": "implicit-deny", "blocking_rule": None,
+            "suggestions": [{"scenario": "policy", "vendor": "fortigate",
+                             "commands": ["set srcaddr \"<script>\""],
+                             "rationale": "x", "notes": []}],
+            "verification": [],
+        }
+        html = action_handlers._render_packet_suggestion(suggestion, "fortigate")
+        self.assertNotIn("<script>", html)
+        self.assertIn("&lt;script&gt;", html)
+
     def test_format_list_includes_more_suffix(self):
         text = action_handlers._format_list(["a", "b", "c", "d"], limit=2)
         self.assertEqual(text, "a, b (+2 more)")

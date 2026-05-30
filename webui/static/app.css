@@ -289,3 +289,7 @@ pre.wrap.line-numbers .line .txt{text-indent:0;}
 .config-card-collapsible[open]>.config-card-collapsible-summary::after{content:attr(data-label-expanded);}
 .config-card-extra{padding:4px 14px 12px;display:flex;flex-direction:column;gap:4px;background:color-mix(in srgb,var(--muted) 60%, var(--bg) 40%);border-top:1px solid color-mix(in srgb,var(--border) 70%, transparent);}
 .config-card-extra-line{font-family:var(--font-mono);font-size:calc(0.9rem * var(--font-scale));color:var(--text);}
+.results-packet .suggestion h4{margin:8px 0 4px;font-size:calc(0.95rem * var(--font-scale));}
+.results-packet .suggestion .notes{margin:2px 0 4px 0;padding-left:18px;color:var(--muted-text,#888);font-size:calc(0.85rem * var(--font-scale));}
+.results-packet .suggestion .blocking-rule{margin:4px 0;}
+.results-packet .verify>summary{cursor:pointer;font-weight:600;color:var(--accent);padding:4px 0;}
