@@ -104,7 +104,7 @@ Docker notes
   - `cap_drop: [ALL]` — no Linux capabilities needed (port 8083 > 1024, non-root)
   - `networks: internal: true` — egress-blocked bridge; no outbound internet from the container
   - `../configs:/app/configs:ro` — config volume is read-only
-- **Healthcheck**: `GET /healthz` → 200 OK, interval 30 s, start grace 15 s, 5 s timeout, 3 retries.
+- **Healthcheck**: `GET /healthz` → 200 OK, interval 30 s, start grace 60 s, 5 s timeout, 3 retries.
 - **OCI labels**: image carries `org.opencontainers.image.*` metadata. Inject at build time with `--build-arg VERSION=... VCS_REF=... BUILD_DATE=...`; defaults are sensible for local builds.
 - **Cache volume**: named volume `aclinspector_cache` mounted at `/app/cache`; set `ACLINSPECTOR_CACHE_DIR=/app/cache` (the compose default).
 - **`.env`**: copy `Dockersetup/.env.example` to `Dockersetup/.env` for variable overrides; absence is safe.

@@ -18,8 +18,9 @@ LABEL org.opencontainers.image.title="acl-inspector" \
 
 WORKDIR /app
 
-# Non-root user for runtime isolation
-RUN groupadd -r -g 1000 appuser && useradd -r -u 1000 -g appuser -d /app appuser
+# Non-root user for runtime isolation. No home dir set here; HOME=/tmp below
+# redirects runtime writes to world-writable /tmp.
+RUN groupadd -r -g 1000 appuser && useradd -r -u 1000 -g appuser appuser
 
 # Copy application code (see .dockerignore at repo root for exclusions)
 COPY . /app
@@ -28,7 +29,8 @@ COPY . /app
 # dirs) never hits a PermissionError at runtime.
 # Also ensure the cache dir is writable and home writes go to /tmp.
 RUN python -m compileall -q /app && \
-    mkdir -p /app/cache && chown -R appuser:appuser /app/cache
+    mkdir -p /app/cache && \
+    chown -R appuser:0 /app/cache && chmod 775 /app/cache
 
 # Redirect home-dir writes (e.g. library caches) to world-writable /tmp so
 # the container works correctly when run with an arbitrary host uid/gid.

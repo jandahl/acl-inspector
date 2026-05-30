@@ -12,8 +12,10 @@
 # Both docker and podman are supported; podman is preferred when both are installed.
 #
 # Environment overrides:
-#   ACLINSPECTOR_RUNTIME  — force "podman" or "docker"
-#   ACLINSPECTOR_IMAGE    — override image name (default: acl-inspector-web:latest)
+#   ACLINSPECTOR_RUNTIME              — force "podman" or "docker"
+#   ACLINSPECTOR_IMAGE                — override image name (default: acl-inspector-web:latest)
+#   ACLINSPECTOR_CONFIGS_CISCO        — override ASA config path inside container
+#   ACLINSPECTOR_CONFIGS_FORTIGATE    — override FortiGate config path inside container
 
 set -euo pipefail
 
@@ -32,15 +34,25 @@ if [ -z "$RUNTIME" ]; then
     fi
 fi
 
+# Allocate a TTY only when running interactively so that ANSI colours work in
+# terminals but stdin piping (cat fw.conf | aclinspector-container ...) is
+# not broken. -i is always passed to allow stdin forwarding.
+TTY_FLAG=()
+if [ -t 0 ] && [ -t 1 ]; then
+    TTY_FLAG=("-t")
+fi
+
 exec "$RUNTIME" run \
     --rm \
+    -i \
+    "${TTY_FLAG[@]}" \
     --network none \
     --security-opt no-new-privileges \
     --cap-drop ALL \
     --user "$(id -u):$(id -g)" \
     --env HOME=/tmp \
     --volume "$(pwd):/data:ro" \
-    --env ACLINSPECTOR_CONFIGS_CISCO=/data/configs/cisco \
-    --env ACLINSPECTOR_CONFIGS_FORTIGATE=/data/configs/fortigate \
+    --env "ACLINSPECTOR_CONFIGS_CISCO=${ACLINSPECTOR_CONFIGS_CISCO:-/data/configs/cisco}" \
+    --env "ACLINSPECTOR_CONFIGS_FORTIGATE=${ACLINSPECTOR_CONFIGS_FORTIGATE:-/data/configs/fortigate}" \
     "$IMAGE" \
     python aclinspector.py "$@"

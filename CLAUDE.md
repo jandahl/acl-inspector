@@ -317,7 +317,7 @@ Understanding the planned evolution helps maintain architecture alignment:
 - **Capabilities**: `cap_drop: ALL` — no Linux capabilities needed (port > 1024, non-root)
 - **Privilege escalation**: blocked via `security_opt: no-new-privileges:true`
 - **Egress**: blocked via `internal: true` bridge network (port publishing NAT is on the host, unaffected)
-- **Healthcheck**: `GET /healthz` → 200 OK, interval 30 s, start grace 15 s
+- **Healthcheck**: `GET /healthz` → 200 OK, interval 30 s, start grace 60 s
 - **OCI labels**: `org.opencontainers.image.*` metadata; inject via `--build-arg VERSION=... VCS_REF=... BUILD_DATE=...`; defaults work for local builds
 - **Optional `.env`**: Place in `Dockersetup/` (copy from `.env.example`) for variable expansion; absence is safe
 - **Volumes**: named volume `aclinspector_cache` for predictive search index

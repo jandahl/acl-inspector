@@ -18,4 +18,7 @@ GEMINI.md
 CONTRIBUTING.md
 COMMERCIAL_LICENSE.md
 THIRD_PARTY_NOTICES.txt
-Dockersetup/.env
+Dockersetup/
+Makefile
+.claude/
+.env*
