@@ -30,6 +30,7 @@ COPY . /app
 # Also ensure the cache dir is writable and home writes go to /tmp.
 RUN python -m compileall -q /app && \
     mkdir -p /app/cache && \
+    # group 0 + 775: OpenShift/K8s arbitrary-UID pattern (random UID, GID 0)
     chown -R appuser:0 /app/cache && chmod 775 /app/cache
 
 # Redirect home-dir writes (e.g. library caches) to world-writable /tmp so
@@ -40,7 +41,10 @@ USER appuser
 
 EXPOSE 8083
 
+# Use 127.0.0.1 rather than localhost to avoid IPv6 loopback (::1) resolution
+# on dual-stack hosts where the app binds IPv4 only. The inner timeout=3 gives
+# Python a clean exit window; the outer --timeout=5s is the hard Docker kill.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8083/healthz', timeout=3)"
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8083/healthz', timeout=3)"
 
 CMD ["python", "aclinspector.py", "web", "--port", "8083", "--addr", "0.0.0.0"]

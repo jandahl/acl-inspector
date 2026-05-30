@@ -34,6 +34,14 @@ if [ -z "$RUNTIME" ]; then
     fi
 fi
 
+# Verify the image exists locally before attempting to run; provides a clear
+# error rather than a confusing pull-from-registry attempt.
+if ! "$RUNTIME" image inspect "$IMAGE" >/dev/null 2>&1; then
+    echo "error: container image '$IMAGE' not found." >&2
+    echo "Build it first with: make container-build" >&2
+    exit 1
+fi
+
 # Allocate a TTY only when running interactively so that ANSI colours work in
 # terminals but stdin piping (cat fw.conf | aclinspector-container ...) is
 # not broken. -i is always passed to allow stdin forwarding.

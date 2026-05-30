@@ -18,7 +18,8 @@ services:
       # Set to 1 to build all search indices at startup (slower start, faster first query)
       - ACLINSPECTOR_PREWARM_ALL=${ACLINSPECTOR_PREWARM_ALL:-0}
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8083/healthz', timeout=3)"]
+      # 127.0.0.1 avoids IPv6 loopback resolution on dual-stack hosts
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8083/healthz', timeout=3)"]
       interval: 30s
       timeout: 5s
       start_period: 60s
