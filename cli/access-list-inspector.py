@@ -312,6 +312,8 @@ def main() -> None:
         parser.error('--new is required when --old is provided')
     if args.packet and (not args.packet_src or not args.packet_dst):
         parser.error('--packet-src and --packet-dst are required with --packet')
+    if args.verify and not args.packet:
+        parser.error('--verify only applies to --packet path checks')
     if args.translate and not args.target_vendor:
         parser.error('--target-vendor is required with --translate')
 
@@ -470,8 +472,8 @@ def main() -> None:
                 print(blue(f"  [{scenario}] {sug.get('rationale', '')}"))
                 for cmd in sug.get('commands', []):
                     print(green(f"    {cmd}"))
-                if sug.get('note'):
-                    print(f"    note: {sug['note']}")
+                for note in sug.get('notes') or []:
+                    print(f"    note: {note}")
             if args.verify:
                 verifications = suggestion.get('verification', [])
                 if verifications:
