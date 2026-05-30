@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# aclinspector-container — run acl-inspector CLI subcommands via the container image.
+#
+# Usage:
+#   aclinspector-container inspect --vendor asa --config /data/fw.conf --inspect 10.1.1.1
+#   aclinspector-container translate --vendor asa --config /data/fw.conf --format json
+#
+# Your current directory is mounted read-only at /data inside the container.
+# Reference config files as /data/<relative-path-from-here>.
+#
+# Prerequisites: build the image first with `make container-build`.
+# Both docker and podman are supported; podman is preferred when both are installed.
+#
+# Environment overrides:
+#   ACLINSPECTOR_RUNTIME              — force "podman" or "docker"
+#   ACLINSPECTOR_IMAGE                — override image name (default: acl-inspector-web:latest)
+#   ACLINSPECTOR_CONFIGS_CISCO        — override ASA config path inside container
+#   ACLINSPECTOR_CONFIGS_FORTIGATE    — override FortiGate config path inside container
+
+set -euo pipefail
+
+IMAGE="${ACLINSPECTOR_IMAGE:-acl-inspector-web:latest}"
+
+# Prefer podman over docker (rootless-friendly, no daemon required)
+RUNTIME="${ACLINSPECTOR_RUNTIME:-}"
+if [ -z "$RUNTIME" ]; then
+    if command -v podman >/dev/null 2>&1; then
+        RUNTIME="podman"
+    elif command -v docker >/dev/null 2>&1; then
+        RUNTIME="docker"
+    else
+        echo "error: neither podman nor docker found in PATH" >&2
+        exit 1
+    fi
+fi
+
+# Verify the image exists locally before attempting to run; provides a clear
+# error rather than a confusing pull-from-registry attempt.
+if ! "$RUNTIME" image inspect "$IMAGE" >/dev/null 2>&1; then
+    echo "error: container image '$IMAGE' not found." >&2
+    echo "Build it first with: make container-build" >&2
+    exit 1
+fi
+
+# Allocate a TTY only when running interactively so that ANSI colours work in
+# terminals but stdin piping (cat fw.conf | aclinspector-container ...) is
+# not broken. -i is always passed to allow stdin forwarding.
+TTY_FLAG=()
+if [ -t 0 ] && [ -t 1 ]; then
+    TTY_FLAG=("-t")
+fi
+
+exec "$RUNTIME" run \
+    --rm \
+    -i \
+    "${TTY_FLAG[@]}" \
+    --network none \
+    --security-opt no-new-privileges \
+    --cap-drop ALL \
+    --user "$(id -u):$(id -g)" \
+    --env HOME=/tmp \
+    --volume "$(pwd):/data:ro" \
+    --env "ACLINSPECTOR_CONFIGS_CISCO=${ACLINSPECTOR_CONFIGS_CISCO:-/data/configs/cisco}" \
+    --env "ACLINSPECTOR_CONFIGS_FORTIGATE=${ACLINSPECTOR_CONFIGS_FORTIGATE:-/data/configs/fortigate}" \
+    "$IMAGE" \
+    python aclinspector.py "$@"
