@@ -1,12 +1,20 @@
 # SPDX-License-Identifier: MPL-2.0
 # Copyright (c) 2024-2026 Jan Gronemann
+import subprocess
+import sys
 import unittest
+from pathlib import Path
+
+from common.project_paths import project_root
 
 from parsers.cisco.asa import path_check as asa_path_check, ASAConfig
 from parsers.fortigate import path_check as ftg_path_check
 from parsers.fortigate.config import FTGConfig
 from parsers.fortigate import ir_export as ftg_ir_export
 from parsers.suggest import suggest_corrections, SCHEMA_VERSION
+
+
+_SCRIPT = project_root() / 'aclinspector.py'
 
 
 ASA_SAMPLE = """
@@ -670,6 +678,17 @@ class TestSuggestHelper(unittest.TestCase):
         with self.assertRaises(ValueError):
             suggest_corrections({'allowed': False, 'acl': {'decision': 'no-match'}},
                                 'paloalto')
+
+
+class TestVerifyFlagGuard(unittest.TestCase):
+    def test_verify_without_packet_errors(self):
+        proc = subprocess.run(
+            [sys.executable, str(_SCRIPT), 'inspect', '--vendor', 'asa',
+             '--config', '-', '--inspect', 'OBJ1', '--verify'],
+            input='', text=True, capture_output=True,
+        )
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn('--verify', proc.stderr)
 
 
 if __name__ == '__main__':
