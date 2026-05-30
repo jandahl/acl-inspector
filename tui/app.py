@@ -319,6 +319,7 @@ class SingularityApp(App):
         Binding("ctrl+t", "toggle_theme", "Theme", show=True),
         Binding("ctrl+e", "export_current", "Export", show=True),
         Binding("ctrl+r", "refresh", "Refresh", show=False),
+        Binding("ctrl+v", "toggle_path_verify", "Verify cmds", show=False),
         Binding("/", "focus_search", "Search", show=False),
         Binding("escape", "close_detail_or_clear", "Close/Clear", show=False),
     ]
@@ -360,6 +361,10 @@ class SingularityApp(App):
         self.last_tab_id = "details"
         self.current_tab_data: Optional[Any] = None
         self.current_tab_result: Optional[Any] = None  # Stores InspectResult, CompareResult, etc.
+
+        # Path-check rendering state (for the verification-commands toggle)
+        self._path_render_state: Optional[tuple] = None
+        self._path_show_verify: bool = False
 
         # Track inspect filters
         self.inspect_filters: Dict[str, Any] = {
@@ -1296,7 +1301,40 @@ class SingularityApp(App):
                 include_any=True
             )
 
-        # Format results
+        # Store and render. The verification toggle re-renders from this state.
+        # Key it by object name so a stale render can't leak across objects.
+        obj_name = self.selected_object.get("name") if self.selected_object else None
+        self.current_tab_result = result
+        # Reset the verify toggle so each new run starts hidden (consistent default).
+        self._path_show_verify = False
+        self._path_render_state = (obj_name, result, src, dst, protocol, port)
+        self._render_path_results()
+        logger.info(
+            "Path check completed: verdict=%s, NAT=%s, matches=%s",
+            result.get("allowed"),
+            result.get("nat", {}).get("applied"),
+            len(result.get("acl", {}).get("matches", [])),
+        )
+
+    def _render_path_results(self) -> None:
+        """Render the stored path-check result (incl. correction suggestion).
+
+        Reads ``self._path_render_state`` so the verification toggle
+        (``action_toggle_path_verify``) can re-render without re-running the
+        path check.
+        """
+        from rich.panel import Panel
+        from rich.text import Text
+        from rich.console import Group
+        from textual.widgets import Static
+
+        if not self._path_render_state:
+            return
+        obj_name, result, src, dst, protocol, port = self._path_render_state
+        # Don't render stale results for a different (or no) selected object.
+        current = self.selected_object.get("name") if self.selected_object else None
+        if obj_name != current:
+            return
         content_parts = []
 
         # Header
@@ -1363,14 +1401,76 @@ class SingularityApp(App):
         else:
             content_parts.append(Text("No matching ACL rules found\n", style="yellow"))
 
+        # Correction suggestion (only when the flow is blocked)
+        for panel in self._build_path_suggestion_panels(result):
+            content_parts.append(panel)
+
         # Show results
         detail_view = self.query_one(DetailView)
         results_widget = detail_view.query_one("#path-results", Static)
         results_widget.update(Group(*content_parts))
 
-        # Store result for export
-        self.current_tab_result = result
-        logger.info(f"Path check completed: verdict={allowed}, NAT={nat_info.get('applied')}, matches={len(matches)}")
+    def _build_path_suggestion_panels(self, result: dict) -> list:
+        """Build Rich panels for the correction suggestion + verification toggle."""
+        from rich.panel import Panel
+        from rich.text import Text
+
+        suggestion = result.get("suggestion") or {}
+        if not suggestion.get("needed"):
+            return []
+        panels = []
+
+        reason = (suggestion.get("reason") or "deny").replace("-", " ").title()
+        sugg_text = Text()
+        blocking = suggestion.get("blocking_rule") or {}
+        if blocking.get("raw"):
+            sugg_text.append("Blocked by: ", style="bold red")
+            sugg_text.append(f"{blocking['raw']}\n\n", style="dim")
+        for idx, sug in enumerate(suggestion.get("suggestions", [])):
+            if idx:
+                sugg_text.append("\n")
+            scenario = (sug.get("scenario") or "").upper()
+            sugg_text.append(f"[{scenario}] ", style="bold cyan")
+            sugg_text.append(f"{sug.get('rationale', '')}\n", style="white")
+            for cmd in sug.get("commands", []):
+                sugg_text.append(f"  {cmd}\n", style="green")
+            for note in sug.get("notes") or []:
+                sugg_text.append(f"  note: {note}\n", style="dim")
+        panels.append(Panel(sugg_text, title=f"Correction Suggestion ({reason})",
+                            border_style="green"))
+
+        verifications = suggestion.get("verification") or []
+        if verifications:
+            ver_text = Text()
+            if self._path_show_verify:
+                for ver in verifications:
+                    desc = ver.get("description")
+                    if desc:
+                        ver_text.append(f"{desc}\n", style="cyan")
+                    for line in (ver.get("command") or "").splitlines():
+                        ver_text.append(f"  {line}\n", style="green")
+                title = "Live Verification (ctrl+v to hide)"
+            else:
+                ver_text.append(
+                    f"{len(verifications)} live-verification command(s) hidden — "
+                    "press ctrl+v to show.\n", style="dim")
+                title = "Live Verification (ctrl+v to show)"
+            panels.append(Panel(ver_text, title=title, border_style="cyan"))
+        return panels
+
+    def action_toggle_path_verify(self) -> None:
+        """Toggle display of live-verification commands in the path-check view."""
+        current = self.selected_object.get("name") if self.selected_object else None
+        # Only act when the stored results belong to the current object.
+        if not self._path_render_state or self._path_render_state[0] != current:
+            return
+        self._path_show_verify = not self._path_show_verify
+        try:
+            self._render_path_results()
+        except Exception as exc:
+            # Path results widget not mounted (different tab) — ignore, but log
+            # so a real rendering bug isn't silently swallowed during dev.
+            logger.debug("toggle_path_verify: render skipped (%s)", exc)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses in path check form."""

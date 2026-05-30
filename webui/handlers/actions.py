@@ -1239,6 +1239,62 @@ def _render_find(target: str, results: List[dict], verbose: bool) -> str:
     )
 
 
+def _render_packet_suggestion(suggestion: dict, vendor: str = "asa") -> str:
+    """Render the path-check correction `suggestion` node as an HTML block.
+
+    Consumes the payload as-is (see parsers/suggest.py); only shown when the
+    flow is blocked (``needed`` is true). Commands live in selectable ``<pre>``
+    blocks; live-verification commands sit behind a collapsed ``<details>``
+    toggle (mirrors the CLI ``--verify`` flag).
+    """
+    if not suggestion or not suggestion.get("needed"):
+        return ""
+    reason = (suggestion.get("reason") or "deny").replace("-", " ").title()
+    parts = [
+        "  <div class='section suggestion'>"
+        f"<h3>Correction Suggestion ({_escape_text(reason)})</h3>\n"
+    ]
+    blocking = suggestion.get("blocking_rule") or {}
+    if blocking.get("raw"):
+        parts.append(
+            f"  <p class='blocking-rule'>Blocked by: "
+            f"<code>{_escape_text(blocking.get('raw'))}</code></p>\n"
+        )
+    # `location` (nameif/srcintf/etc.) is intentionally not rendered here — the
+    # generated command already embeds it; keeping the block concise.
+    for sug in suggestion.get("suggestions", []):
+        scenario = (sug.get("scenario") or "").upper()
+        rationale = sug.get("rationale") or ""
+        cmds = "\n".join(sug.get("commands") or [])
+        parts.append(
+            "  <div class='diff diff-added'>"
+            f"<h4>[{_escape_text(scenario)}] {_escape_text(rationale)}</h4>\n"
+            f"  <pre data-lang='{_escape_attr(vendor)}'>{_escape_text(cmds)}</pre>\n"
+        )
+        notes = sug.get("notes") or []
+        if notes:
+            items = "".join(f"<li>{_escape_text(n)}</li>" for n in notes)
+            parts.append(f"  <ul class='notes'>{items}</ul>\n")
+        parts.append("  </div>\n")
+    verifications = suggestion.get("verification") or []
+    if verifications:
+        ver_parts = [
+            "  <details class='verify'><summary>Live verification commands</summary>\n"
+        ]
+        for ver in verifications:
+            desc = ver.get("description") or ""
+            cmd = ver.get("command") or ""
+            if desc:
+                ver_parts.append(f"  <p>{_escape_text(desc)}</p>\n")
+            ver_parts.append(
+                f"  <pre data-lang='{_escape_attr(vendor)}'>{_escape_text(cmd)}</pre>\n"
+            )
+        ver_parts.append("  </details>\n")
+        parts.append("".join(ver_parts))
+    parts.append("  </div>\n")
+    return "".join(parts)
+
+
 def _render_packet(cfg_file: str, pkt: dict, vendor: str = "asa") -> str:
     if pkt.get("error"):
         return (
@@ -1332,6 +1388,7 @@ def _render_packet(cfg_file: str, pkt: dict, vendor: str = "asa") -> str:
         f"{warning_block}"
         "  <div class='diff diff-raw'><h3>ACL Matches</h3>\n"
         f"  <pre data-lang='{_escape_text(vendor)}'>{_escape_text(content)}</pre></div>\n"
+        f"{_render_packet_suggestion(pkt.get('suggestion') or {}, vendor)}"
         "</div>\n"
     )
 
