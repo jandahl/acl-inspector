@@ -194,9 +194,9 @@ _ASA_ACL_NAME_NOTE = (
 
 def _asa_ordering_note(acl_name: str) -> str:
     return (
-        f"This permit is appended to the end of '{acl_name}'. The flow is blocked "
-        f"by an explicit deny, which is evaluated first — insert this line above "
-        f"that deny (e.g. 'access-list {acl_name} line <N> ...') or reorder."
+        f"This permit is appended after the explicit deny that blocks the flow "
+        f"on '{acl_name}'. ASA evaluates ACEs top-to-bottom, so reorder the "
+        f"permit to sit above that deny for it to take effect."
     )
 
 
@@ -326,8 +326,10 @@ def _verify_asa(result: dict, *, ingress_interface: Optional[str] = None,
         # suggested ACL (consistent with _verify_fortigate). packet-tracer's
         # ingress is the 'input <iface>' token; rewrite it robustly.
         if ingress_interface:
+            # lambda replacement avoids backslash escapes in the iface name being
+            # interpreted as regex group references.
             cmd = re.sub(r"^(packet-tracer\s+input)\s+\S+",
-                         rf"\1 {ingress_interface}", cmd)
+                         lambda m: f"{m.group(1)} {ingress_interface}", cmd)
             iface = ingress_interface
         if cmd in seen:
             continue

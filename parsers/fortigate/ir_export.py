@@ -164,7 +164,7 @@ def to_ir(cfg: FTGConfig, device_name: str = None) -> "ir.Device":
             }
 
             policy_binding = e.get('binding')
-            binding_meta = policy_binding or {}
+            binding_dict = policy_binding or {}
             entry = ir.ACLEntry(
                 action=e.get('action', 'permit'),
                 proto=e.get('proto', 'ip'),
@@ -176,8 +176,8 @@ def to_ir(cfg: FTGConfig, device_name: str = None) -> "ir.Device":
                 bound_to=None,
                 binding=policy_binding,
                 direction='global',
-                src_interfaces=_ensure_list(binding_meta.get('srcintf')),
-                dst_interfaces=_ensure_list(binding_meta.get('dstintf')),
+                src_interfaces=_ensure_list(binding_dict.get('srcintf')),
+                dst_interfaces=_ensure_list(binding_dict.get('dstintf')),
             )
             entries.append(entry)
 

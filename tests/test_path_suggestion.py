@@ -484,12 +484,14 @@ access-group OUTSIDE-IN in interface outside
                        if s['scenario'] == 'ingress')
         joined = ' '.join(ingress['notes']).lower()
         self.assertIn('appended', joined)
-        self.assertIn('deny', joined)
+        self.assertIn('reorder', joined)
+        # Generic about ordering — no line-number assumption.
+        self.assertNotIn('line <n>', joined)
 
     def test_implicit_deny_has_no_ordering_note(self):
         result = self._asa_blocked('203.0.113.5', 'WEB', proto='tcp', dports={443})
         for s in result['suggestion']['suggestions']:
-            self.assertNotIn('appended to the end', ' '.join(s.get('notes') or []))
+            self.assertNotIn('reorder the permit', ' '.join(s.get('notes') or []))
 
     def test_ftg_explicit_deny_ordering_note(self):
         cfg = """
@@ -523,7 +525,8 @@ end
         synthetic = {
             "allowed": False,
             "acl": {"decision": "no-match", "matches": []},
-            "input": {"proto": "tcp", "dports": [443], "src": "a", "dst": "b"},
+            "input": {"proto": "tcp", "dports": [443],
+                      "src": "10.0.0.1", "dst": "10.0.0.2"},
             "resolved": {"src": "10.0.0.1", "dst": "10.0.0.2",
                          "post_nat_dst": "203.0.113.9"},
             "context": {"src_interface": "outside", "dst_interface": "inside"},
