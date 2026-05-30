@@ -1,12 +1,20 @@
 # SPDX-License-Identifier: MPL-2.0
 # Copyright (c) 2024-2026 Jan Gronemann
+import subprocess
+import sys
 import unittest
+from pathlib import Path
+
+from common.project_paths import project_root
 
 from parsers.cisco.asa import path_check as asa_path_check, ASAConfig
 from parsers.fortigate import path_check as ftg_path_check
 from parsers.fortigate.config import FTGConfig
 from parsers.fortigate import ir_export as ftg_ir_export
 from parsers.suggest import suggest_corrections, SCHEMA_VERSION
+
+
+_SCRIPT = project_root() / 'aclinspector.py'
 
 
 ASA_SAMPLE = """
@@ -148,7 +156,8 @@ class TestFortiGateSuggestion(unittest.TestCase):
         self.assertIn('    edit "IP_198.51.100.9"', cmds)
         self.assertTrue(any('set subnet 198.51.100.9 255.255.255.255' in c for c in cmds))
         self.assertTrue(any('set srcaddr "IP_198.51.100.9"' in c for c in cmds))
-        self.assertIn('Creates address object', result['suggestion']['suggestions'][0]['note'])
+        self.assertTrue(any('Creates address object' in n
+                            for n in result['suggestion']['suggestions'][0]['notes']))
 
     def test_raw_ip_reuses_existing_object_from_phonebook(self):
         # 192.168.1.10 already exists as object WEB -> reuse, no new object.
@@ -440,12 +449,12 @@ class TestSuggestionEdgeCases(unittest.TestCase):
         ingress = next(s for s in result['suggestion']['suggestions']
                        if s['scenario'] == 'ingress')
         self.assertEqual(ingress['location']['acl'], 'outside_access_in')
-        self.assertNotIn('convention', (ingress.get('note') or ''))
+        self.assertNotIn('convention', ' '.join(ingress.get('notes') or []))
         # The egress interface (inside) has no bound ACL -> convention caveat.
         egress = next((s for s in result['suggestion']['suggestions']
                        if s['scenario'] == 'egress'), None)
         if egress:
-            self.assertIn('convention', (egress.get('note') or ''))
+            self.assertIn('convention', ' '.join(egress.get('notes') or []))
 
     def test_asa_resolves_custom_acl_name(self):
         cfg = """
@@ -467,6 +476,95 @@ access-group OUTSIDE-IN in interface outside
         self.assertTrue(any('access-list OUTSIDE-IN extended permit' in c
                             for c in ingress['commands']))
 
+    def test_notes_is_always_a_list(self):
+        result = self._asa_blocked('203.0.113.5', 'WEB', proto='tcp', dports={443})
+        for s in result['suggestion']['suggestions']:
+            self.assertIsInstance(s.get('notes'), list)
+        self.assertEqual(result['suggestion']['schema_version'], '1.2')
+
+    def test_asa_explicit_deny_carries_ordering_note(self):
+        cfg = ASA_SAMPLE + (
+            "access-list outside_access_in extended deny ip any host 10.0.0.10\n"
+        )
+        result = asa_path_check(cfg, '203.0.113.5', 'WEB', proto='tcp', dports={443})
+        self.assertEqual(result['suggestion']['reason'], 'explicit-deny')
+        ingress = next(s for s in result['suggestion']['suggestions']
+                       if s['scenario'] == 'ingress')
+        joined = ' '.join(ingress['notes']).lower()
+        self.assertIn('appended', joined)
+        self.assertIn('reorder', joined)
+        # Generic about ordering — no line-number assumption.
+        self.assertNotIn('line <n>', joined)
+
+    def test_implicit_deny_has_no_ordering_note(self):
+        result = self._asa_blocked('203.0.113.5', 'WEB', proto='tcp', dports={443})
+        for s in result['suggestion']['suggestions']:
+            self.assertNotIn('reorder the permit', ' '.join(s.get('notes') or []))
+
+    def test_ftg_explicit_deny_ordering_note(self):
+        cfg = """
+config firewall address
+    edit "SRC"
+        set subnet 10.10.10.10 255.255.255.255
+    next
+    edit "WEB"
+        set subnet 192.168.1.10 255.255.255.255
+    next
+end
+config firewall policy
+    edit 1
+        set srcintf "port1"
+        set dstintf "port2"
+        set srcaddr "SRC"
+        set dstaddr "WEB"
+        set service "ALL"
+        set action deny
+    next
+end
+"""
+        result = ftg_path_check(cfg, 'SRC', 'WEB', proto='tcp', dports={443})
+        self.assertEqual(result['suggestion']['reason'], 'explicit-deny')
+        notes = ' '.join(result['suggestion']['suggestions'][0]['notes']).lower()
+        self.assertIn('edit 0', notes)
+        self.assertIn('move', notes)
+
+    def test_asa_egress_postnat_note(self):
+        # Synthetic result where NAT translates the destination.
+        synthetic = {
+            "allowed": False,
+            "acl": {"decision": "no-match", "matches": []},
+            "input": {"proto": "tcp", "dports": [443],
+                      "src": "10.0.0.1", "dst": "10.0.0.2"},
+            "resolved": {"src": "10.0.0.1", "dst": "10.0.0.2",
+                         "post_nat_dst": "203.0.113.9"},
+            "context": {"src_interface": "outside", "dst_interface": "inside"},
+        }
+        sug = suggest_corrections(synthetic, "asa")
+        egress = next(s for s in sug['suggestions'] if s['scenario'] == 'egress')
+        self.assertTrue(any('post-NAT destination (203.0.113.9)' in n
+                            for n in egress['notes']))
+
+    def test_port_token_is_min_not_first(self):
+        from parsers.suggest import _port_token
+        self.assertEqual(_port_token('tcp', [8443, 443]), 443)  # unsorted list
+        self.assertEqual(_port_token('tcp', []), None)
+        self.assertIsNone(_port_token('icmp', [443]))
+
+    def test_vdom_falls_back_to_context(self):
+        # No vdom kwarg, but context carries it (replayed-result scenario).
+        result = ftg_path_check(FTG_VDOM_SAMPLE, 'SRC', '203.0.113.50',
+                                proto='tcp', dports={8443}, vdom='CUSTOMER_A')
+        sug = suggest_corrections(result, "fortigate")  # no vdom kwarg
+        cmds = sug['suggestions'][0]['commands']
+        self.assertIn('edit CUSTOMER_A', cmds)
+
+    def test_verify_asa_override_via_regex(self):
+        result = asa_path_check(ASA_SAMPLE, '203.0.113.5', 'WEB',
+                                proto='tcp', dports={443})
+        sug = suggest_corrections(result, "asa", ingress_interface="dmz")
+        for v in sug['verification']:
+            self.assertIn('packet-tracer input dmz ', v['command'])
+
     def test_proto_number_resolves_named_protocols(self):
         from parsers.suggest import _proto_number
         self.assertEqual(_proto_number('gre'), 47)
@@ -483,13 +581,15 @@ access-group OUTSIDE-IN in interface outside
     def test_multiport_note_present(self):
         result = self._asa_blocked('203.0.113.5', 'WEB', proto='tcp',
                                    dports={443, 8443})
-        notes = [s.get('note') or '' for s in result['suggestion']['suggestions']]
+        notes = [' '.join(s.get('notes') or [])
+                 for s in result['suggestion']['suggestions']]
         self.assertTrue(any('multiple destination ports' in n.lower() for n in notes))
 
     def test_single_port_has_no_multiport_note(self):
         result = self._asa_blocked('203.0.113.5', 'WEB', proto='tcp', dports={443})
         for s in result['suggestion']['suggestions']:
-            self.assertNotIn('multiple destination ports', (s.get('note') or '').lower())
+            joined = ' '.join(s.get('notes') or []).lower()
+            self.assertNotIn('multiple destination ports', joined)
 
     def test_ftg_verification_no_none_leak_on_missing_endpoints(self):
         synthetic = {
@@ -578,6 +678,17 @@ class TestSuggestHelper(unittest.TestCase):
         with self.assertRaises(ValueError):
             suggest_corrections({'allowed': False, 'acl': {'decision': 'no-match'}},
                                 'paloalto')
+
+
+class TestVerifyFlagGuard(unittest.TestCase):
+    def test_verify_without_packet_errors(self):
+        proc = subprocess.run(
+            [sys.executable, str(_SCRIPT), 'inspect', '--vendor', 'asa',
+             '--config', '-', '--inspect', 'OBJ1', '--verify'],
+            input='', text=True, capture_output=True,
+        )
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn('--verify', proc.stderr)
 
 
 if __name__ == '__main__':
