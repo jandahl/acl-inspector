@@ -11,10 +11,21 @@ from parsers.cisco.asa import path_check as asa_path_check, ASAConfig
 from parsers.fortigate import path_check as ftg_path_check
 from parsers.fortigate.config import FTGConfig
 from parsers.fortigate import ir_export as ftg_ir_export
-from parsers.suggest import suggest_corrections, SCHEMA_VERSION
+from parsers.suggest import suggest_corrections, SCHEMA_VERSION, as_str_list
 
 
 _SCRIPT = project_root() / 'aclinspector.py'
+
+
+class TestAsStrList(unittest.TestCase):
+    def test_none_and_str_and_list(self):
+        self.assertEqual(as_str_list(None), [])
+        self.assertEqual(as_str_list("a"), ["a"])
+        self.assertEqual(as_str_list(["a", "b"]), ["a", "b"])
+
+    def test_coerces_elements_and_non_iterable(self):
+        self.assertEqual(as_str_list([1, 2]), ["1", "2"])
+        self.assertEqual(as_str_list(42), ["42"])
 
 
 ASA_SAMPLE = """

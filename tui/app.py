@@ -52,20 +52,6 @@ def setup_logging():
 logger = setup_logging()
 
 
-def _as_str_list(value) -> list:
-    """Coerce a suggestion field to a list of strings.
-
-    Suggestion payloads normally carry ``commands``/``notes`` as lists, but a
-    malformed node may hand us a bare string (which would iterate
-    character-by-character) or ``None``. Normalise both to a clean list.
-    """
-    if value is None:
-        return []
-    if isinstance(value, str):
-        return [value]
-    return list(value)
-
-
 class ParsedConfigStore(MutableMapping):
     """Mapping that prefers path keys but falls back to filenames when requested."""
 
@@ -1429,6 +1415,8 @@ class SingularityApp(App):
         from rich.panel import Panel
         from rich.text import Text
 
+        from parsers.suggest import as_str_list
+
         suggestion = result.get("suggestion") or {}
         if not suggestion.get("needed"):
             return []
@@ -1446,9 +1434,9 @@ class SingularityApp(App):
             scenario = (sug.get("scenario") or "").upper()
             sugg_text.append(f"[{scenario}] ", style="bold cyan")
             sugg_text.append(f"{sug.get('rationale', '')}\n", style="white")
-            for cmd in _as_str_list(sug.get("commands")):
+            for cmd in as_str_list(sug.get("commands")):
                 sugg_text.append(f"  {cmd}\n", style="green")
-            for note in _as_str_list(sug.get("notes")):
+            for note in as_str_list(sug.get("notes")):
                 sugg_text.append(f"  note: {note}\n", style="dim")
         panels.append(Panel(sugg_text, title=f"Correction Suggestion ({reason})",
                             border_style="green"))
