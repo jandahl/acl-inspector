@@ -131,6 +131,20 @@ access-group outside_access_in in interface outside
         app = SingularityApp(vendor="asa", config_path="")
         self.assertEqual(app._build_path_suggestion_panels(result), [])
 
+    def test_verify_toggle_ignores_stale_object(self):
+        # State stored for object 'A'; current selection is 'B' -> toggle no-ops
+        # (prevents rendering a previous object's results).
+        app = SingularityApp(vendor="asa", config_path="")
+        app._path_render_state = ('A', {"allowed": False}, 's', 'd', 'tcp', 443)
+        app._path_show_verify = False
+        app.selected_object = {"name": "B"}
+        app.action_toggle_path_verify()
+        self.assertFalse(app._path_show_verify)  # unchanged — stale object
+        # Matching object -> toggle flips (render attempt is harmless w/o widget).
+        app.selected_object = {"name": "A"}
+        app.action_toggle_path_verify()
+        self.assertTrue(app._path_show_verify)
+
 
 @unittest.skipUnless(TEXTUAL_AVAILABLE, "textual not installed")
 class TestTUIPathForm(unittest.TestCase):

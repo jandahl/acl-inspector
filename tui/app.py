@@ -1302,8 +1302,10 @@ class SingularityApp(App):
             )
 
         # Store and render. The verification toggle re-renders from this state.
+        # Key it by object name so a stale render can't leak across objects.
+        obj_name = self.selected_object.get("name") if self.selected_object else None
         self.current_tab_result = result
-        self._path_render_state = (result, src, dst, protocol, port)
+        self._path_render_state = (obj_name, result, src, dst, protocol, port)
         self._render_path_results()
         logger.info(
             "Path check completed: verdict=%s, NAT=%s, matches=%s",
@@ -1326,7 +1328,11 @@ class SingularityApp(App):
 
         if not self._path_render_state:
             return
-        result, src, dst, protocol, port = self._path_render_state
+        obj_name, result, src, dst, protocol, port = self._path_render_state
+        # Don't render stale results for a different (or no) selected object.
+        current = self.selected_object.get("name") if self.selected_object else None
+        if obj_name != current:
+            return
         content_parts = []
 
         # Header
@@ -1452,13 +1458,16 @@ class SingularityApp(App):
 
     def action_toggle_path_verify(self) -> None:
         """Toggle display of live-verification commands in the path-check view."""
+        current = self.selected_object.get("name") if self.selected_object else None
+        # Only act when the stored results belong to the current object.
+        if not self._path_render_state or self._path_render_state[0] != current:
+            return
         self._path_show_verify = not self._path_show_verify
-        if self._path_render_state:
-            try:
-                self._render_path_results()
-            except Exception:
-                # Path results widget not mounted (different tab) — ignore.
-                pass
+        try:
+            self._render_path_results()
+        except Exception:
+            # Path results widget not mounted (different tab) — ignore.
+            pass
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses in path check form."""
