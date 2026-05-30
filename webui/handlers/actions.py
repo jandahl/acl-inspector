@@ -1239,6 +1239,20 @@ def _render_find(target: str, results: List[dict], verbose: bool) -> str:
     )
 
 
+def _as_str_list(value) -> list:
+    """Coerce a suggestion field to a list of strings.
+
+    ``commands``/``notes`` are normally lists, but a malformed suggestion node
+    may carry a bare string (which would iterate character-by-character) or
+    ``None``. Normalise both to a clean list.
+    """
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    return list(value)
+
+
 def _render_packet_suggestion(suggestion: dict, vendor: str = "asa") -> str:
     """Render the path-check correction `suggestion` node as an HTML block.
 
@@ -1265,13 +1279,13 @@ def _render_packet_suggestion(suggestion: dict, vendor: str = "asa") -> str:
     for sug in suggestion.get("suggestions", []):
         scenario = (sug.get("scenario") or "").upper()
         rationale = sug.get("rationale") or ""
-        cmds = "\n".join(sug.get("commands") or [])
+        cmds = "\n".join(_as_str_list(sug.get("commands")))
         parts.append(
             "  <div class='diff diff-added'>"
             f"<h4>[{_escape_text(scenario)}] {_escape_text(rationale)}</h4>\n"
             f"  <pre data-lang='{_escape_attr(vendor)}'>{_escape_text(cmds)}</pre>\n"
         )
-        notes = sug.get("notes") or []
+        notes = _as_str_list(sug.get("notes"))
         if notes:
             items = "".join(f"<li>{_escape_text(n)}</li>" for n in notes)
             parts.append(f"  <ul class='notes'>{items}</ul>\n")
