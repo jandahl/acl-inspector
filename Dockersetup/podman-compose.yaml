@@ -3,6 +3,7 @@ services:
     build:
       context: ..
       dockerfile: ./Dockersetup/Dockerfile
+    image: acl-inspector-web:latest
     ports:
       - "8083:8083"
     volumes:
@@ -10,10 +11,12 @@ services:
       - aclinspector_cache:/app/cache
     environment:
       - ACLINSPECTOR_CACHE_DIR=/app/cache
-      - ACLINSPECTOR_SEARCH_LIMIT=${ACLINSPECTOR_SEARCH_LIMIT}
+      - ACLINSPECTOR_SEARCH_LIMIT=${ACLINSPECTOR_SEARCH_LIMIT:-50}
       # Optional per-vendor config roots (can be the same path)
       - ACLINSPECTOR_CONFIGS_CISCO=${ACLINSPECTOR_CONFIGS_CISCO:-/app/configs/cisco}
       - ACLINSPECTOR_CONFIGS_FORTIGATE=${ACLINSPECTOR_CONFIGS_FORTIGATE:-/app/configs/fortigate}
+      # Set to 1 to build all search indices at startup (slower start, faster first query)
+      - ACLINSPECTOR_PREWARM_ALL=${ACLINSPECTOR_PREWARM_ALL:-0}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8083/healthz', timeout=3)"]
       interval: 30s
@@ -23,6 +26,13 @@ services:
     # Prevent privilege escalation inside the container
     security_opt:
       - no-new-privileges:true
+    # Drop all Linux capabilities — port 8083 is above 1024 (no NET_BIND_SERVICE
+    # needed), process runs as uid 1000, and only reads files from mounted volumes.
+    cap_drop:
+      - ALL
+    # Restart on crash but not on explicit stop/down.
+    # Note: silently ignored by rootless Podman (lifecycle managed by systemd/user).
+    restart: on-failure
     # Block all outbound internet access at runtime.
     # The app reads local config files and serves the web UI — it has no
     # legitimate reason to initiate external connections.

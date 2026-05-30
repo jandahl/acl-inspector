@@ -95,27 +95,22 @@ ASA parsing (current subset)
 
 Docker notes
 ------------
-- Containerization plan:
-  - Base image with Python 3.11+; copy repo; optional install of linters
-  - Entrypoints: CLI (`cli/access-list-inspector.py`) and web UI (`cli/access-list-web.py`)
-  - Expose a port for web UI; mount `configs/` from host for UAT files
-  - Optionally place Nginx in front of the web UI for TLS/headers, or run UI directly
-  - Local testing will be using `podman`, production will be using `docker`
-- Current setup for web UI:
-  - `Dockerfile` and `podman-compose.yaml` are located in `Dockersetup/`.
-  - The web UI listens on port `8083`.
-  - To build and run the container using `podman-compose` (from the project root):
-    ```bash
-    cd Dockersetup && podman-compose -p aclinspector up --build -d
-    ```
-    Access the web UI at `http://localhost:8083`.
-- Optional persistent cache volume for predictive index: see `Dockersetup/podman-compose.yaml` and set `ACLINSPECTOR_CACHE_DIR=/app/cache` (default) and `ACLINSPECTOR_SEARCH_LIMIT`.
-- `.env` is optional. Compose will read `Dockersetup/.env` if present for variable expansion (e.g., `ACLINSPECTOR_SEARCH_LIMIT=100`); absence will not cause failures.
-  - Convenience targets:
-    - `make container-stop` to halt the running container.
-    - `make container-prune` to remove the container while keeping the cached image layers for faster rebuilds.
-    - `make container-clean` for a full reset (removes containers, volumes, and cached images).
-- Startup options: `--prewarm-all-configs` (or env `ACLINSPECTOR_PREWARM_ALL=1`) builds all suggestion indexes eagerly so the UI responds instantly even on first query.
+- `Dockerfile` and `podman-compose.yaml` are in `Dockersetup/`. Both `docker-compose` and `podman-compose` are supported; the Makefile auto-detects which is installed.
+- **Entry point**: `python aclinspector.py web --port 8083 --addr 0.0.0.0`
+  (the `aclinspector.py` dispatcher replaced the old `cli/access-list-web.py` entrypoint)
+- **Runtime user**: `appuser` (uid/gid 1000) — container never runs as root.
+- **Security properties** applied in `podman-compose.yaml`:
+  - `security_opt: no-new-privileges:true` — blocks privilege escalation via setuid
+  - `cap_drop: [ALL]` — no Linux capabilities needed (port 8083 > 1024, non-root)
+  - `networks: internal: true` — egress-blocked bridge; no outbound internet from the container
+  - `../configs:/app/configs:ro` — config volume is read-only
+- **Healthcheck**: `GET /healthz` → 200 OK, interval 30 s, start grace 15 s, 5 s timeout, 3 retries.
+- **OCI labels**: image carries `org.opencontainers.image.*` metadata. Inject at build time with `--build-arg VERSION=... VCS_REF=... BUILD_DATE=...`; defaults are sensible for local builds.
+- **Cache volume**: named volume `aclinspector_cache` mounted at `/app/cache`; set `ACLINSPECTOR_CACHE_DIR=/app/cache` (the compose default).
+- **`.env`**: copy `Dockersetup/.env.example` to `Dockersetup/.env` for variable overrides; absence is safe.
+- **Convenience targets**: `make container-build`, `make container-run`, `make container-stop`, `make container-prune`, `make container-clean`, `make container-logs`.
+- **Prewarming**: `ACLINSPECTOR_PREWARM_ALL=1` builds all suggestion indices at startup (slower start, faster first query).
+- **CLI wrapper**: `Dockersetup/aclinspector-container` runs CLI subcommands (`inspect`, `translate`, `optimize`) ephemerally through the built image — mounts `$(pwd)` at `/data` read-only, uses `--network none`, inherits the caller's uid/gid.
 
 Config directories
 ------------------

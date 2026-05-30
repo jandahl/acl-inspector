@@ -308,12 +308,22 @@ Understanding the planned evolution helps maintain architecture alignment:
 
 ## Docker Notes
 
-- **Compose file**: `Dockersetup/podman-compose.yaml`
-- **Base image**: `python:3.11-slim-bookworm`
+- **Compose file**: `Dockersetup/podman-compose.yaml` — works with both `docker-compose` and `podman-compose`
+- **Dockerfile**: `Dockersetup/Dockerfile` — builds from `python:3.11-slim-bookworm`, no pip install needed (stdlib-only web UI)
+- **Entry point inside container**: `python aclinspector.py web --port 8083 --addr 0.0.0.0`
 - **Exposed port**: 8083
-- **Optional `.env`**: Place in `Dockersetup/` for variable expansion (e.g., `ACLINSPECTOR_SEARCH_LIMIT=100`)
-- **Volumes**: Mount `configs/` from host for dynamic config updates
+- **Runtime user**: `appuser` (uid/gid 1000) — container never runs as root
+- **Config mount**: `../configs:/app/configs:ro` — read-only at runtime
+- **Capabilities**: `cap_drop: ALL` — no Linux capabilities needed (port > 1024, non-root)
+- **Privilege escalation**: blocked via `security_opt: no-new-privileges:true`
+- **Egress**: blocked via `internal: true` bridge network (port publishing NAT is on the host, unaffected)
+- **Healthcheck**: `GET /healthz` → 200 OK, interval 30 s, start grace 15 s
+- **OCI labels**: `org.opencontainers.image.*` metadata; inject via `--build-arg VERSION=... VCS_REF=... BUILD_DATE=...`; defaults work for local builds
+- **Optional `.env`**: Place in `Dockersetup/` (copy from `.env.example`) for variable expansion; absence is safe
+- **Volumes**: named volume `aclinspector_cache` for predictive search index
 - **Prewarming**: Set `ACLINSPECTOR_PREWARM_ALL=1` to build all indices at startup (slower start, faster first query)
+- **CLI wrapper**: `Dockersetup/aclinspector-container` — runs CLI subcommands ephemerally via the built image; mounts `$(pwd)` at `/data:ro`, uses `--network none`
+- **Make targets**: `container-build`, `container-run`, `container-stop`, `container-prune`, `container-clean`, `container-logs`
 
 ## Additional Resources
 

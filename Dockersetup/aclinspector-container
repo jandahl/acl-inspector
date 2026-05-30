@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# aclinspector-container — run acl-inspector CLI subcommands via the container image.
+#
+# Usage:
+#   aclinspector-container inspect --vendor asa --config /data/fw.conf --inspect 10.1.1.1
+#   aclinspector-container translate --vendor asa --config /data/fw.conf --format json
+#
+# Your current directory is mounted read-only at /data inside the container.
+# Reference config files as /data/<relative-path-from-here>.
+#
+# Prerequisites: build the image first with `make container-build`.
+# Both docker and podman are supported; podman is preferred when both are installed.
+#
+# Environment overrides:
+#   ACLINSPECTOR_RUNTIME  — force "podman" or "docker"
+#   ACLINSPECTOR_IMAGE    — override image name (default: acl-inspector-web:latest)
+
+set -euo pipefail
+
+IMAGE="${ACLINSPECTOR_IMAGE:-acl-inspector-web:latest}"
+
+# Prefer podman over docker (rootless-friendly, no daemon required)
+RUNTIME="${ACLINSPECTOR_RUNTIME:-}"
+if [ -z "$RUNTIME" ]; then
+    if command -v podman >/dev/null 2>&1; then
+        RUNTIME="podman"
+    elif command -v docker >/dev/null 2>&1; then
+        RUNTIME="docker"
+    else
+        echo "error: neither podman nor docker found in PATH" >&2
+        exit 1
+    fi
+fi
+
+exec "$RUNTIME" run \
+    --rm \
+    --network none \
+    --security-opt no-new-privileges \
+    --cap-drop ALL \
+    --user "$(id -u):$(id -g)" \
+    --volume "$(pwd):/data:ro" \
+    --env ACLINSPECTOR_CONFIGS_CISCO=/data/configs/cisco \
+    --env ACLINSPECTOR_CONFIGS_FORTIGATE=/data/configs/fortigate \
+    "$IMAGE" \
+    python aclinspector.py "$@"

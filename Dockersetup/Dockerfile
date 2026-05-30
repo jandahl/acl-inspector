@@ -1,6 +1,21 @@
 # Use a slim Python image for a smaller footprint
 FROM python:3.11-slim-bookworm
 
+# Build-time metadata; inject at CI build time with --build-arg.
+# Defaults are sensible for local builds.
+ARG VERSION="0.1.0"
+ARG VCS_REF="unknown"
+ARG BUILD_DATE="unknown"
+
+LABEL org.opencontainers.image.title="acl-inspector" \
+      org.opencontainers.image.description="Firewall ACL analysis tool for Cisco ASA and FortiGate configurations" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.source="https://github.com/jandahl/acl-inspector" \
+      org.opencontainers.image.licenses="MPL-2.0" \
+      org.opencontainers.image.vendor="Jan Gronemann"
+
 WORKDIR /app
 
 # Non-root user for runtime isolation
