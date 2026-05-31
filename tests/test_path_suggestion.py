@@ -27,6 +27,12 @@ class TestAsStrList(unittest.TestCase):
     def test_coerces_elements_and_non_iterable(self):
         self.assertEqual(as_str_list([1, 2]), ["1", "2"])
         self.assertEqual(as_str_list(42), ["42"])
+        self.assertEqual(as_str_list(("a", "b")), ["a", "b"])
+
+    def test_mapping_and_bytes_treated_as_single_item(self):
+        # A dict would otherwise iterate to keys-only; bytes to ints.
+        self.assertEqual(as_str_list({"cmd": "x"}), [str({"cmd": "x"})])
+        self.assertEqual(as_str_list(b"hi"), [str(b"hi")])
 
 
 ASA_SAMPLE = """

@@ -17,12 +17,24 @@ logs/
 .vscode/
 .DS_Store
 
+# Editors / OS (cont.)
+.zed/
+
+# Build artifacts
+dist/
+build/
+
 # Caches and local artifacts
 cache/
 .cache/
 *.tmp
 *.pid
 node_modules/
+preview/
+
+# Downloaded fonts (keep the directory, ignore the binaries)
+fonts/downloaded/
+!fonts/downloaded/.gitkeep
 
 # Local config
 config.local.json

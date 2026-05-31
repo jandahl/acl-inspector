@@ -59,10 +59,10 @@ def as_str_list(value: Any) -> List[str]:
         return []
     if isinstance(value, str):
         return [value]
-    try:
+    if isinstance(value, (list, tuple, set)):
         return [str(item) for item in value]
-    except TypeError:
-        return [str(value)]
+    # Mappings (keys-only), bytes (ints), and scalars become a single item.
+    return [str(value)]
 
 
 # IANA protocol numbers used by FortiGate's iprope lookup.
