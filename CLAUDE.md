@@ -317,12 +317,17 @@ Understanding the planned evolution helps maintain architecture alignment:
 - **Capabilities**: `cap_drop: ALL` — no Linux capabilities needed (port > 1024, non-root)
 - **Privilege escalation**: blocked via `security_opt: no-new-privileges:true`
 - **Egress**: blocked via `internal: true` bridge network (port publishing NAT is on the host, unaffected)
+- **Read-only rootfs**: `read_only: true` — container filesystem is immutable; only the cache volume and `/tmp` are writable
+- **tmpfs `/tmp`**: 64 MiB size cap (via long-form compose volumes entry), mode 1777 (default)
+- **Process limit**: `pids_limit: 50` — prevents accidental resource exhaustion
+- **Graceful stop**: `stop_grace_period: 5s` — SIGTERM window before SIGKILL
+- **Python flags & HOME**: `HOME=/tmp` (redirects home-dir writes for arbitrary UID support); `PYTHONDONTWRITEBYTECODE=1` (no runtime `.pyc` writes on read-only rootfs); `PYTHONUNBUFFERED=1` (immediate log flushing)
 - **Healthcheck**: `GET /healthz` → 200 OK, interval 30 s, start grace 60 s
 - **OCI labels**: `org.opencontainers.image.*` metadata; inject via `--build-arg VERSION=... VCS_REF=... BUILD_DATE=...`; defaults work for local builds
 - **Optional `.env`**: Place in `Dockersetup/` (copy from `.env.example`) for variable expansion; absence is safe
 - **Volumes**: named volume `aclinspector_cache` for predictive search index
 - **Prewarming**: Set `ACLINSPECTOR_PREWARM_ALL=1` to build all indices at startup (slower start, faster first query)
-- **CLI wrapper**: `Dockersetup/aclinspector-container` — runs CLI subcommands ephemerally via the built image; mounts `$(pwd)` at `/data:ro`, uses `--network none`
+- **CLI wrapper**: `Dockersetup/aclinspector-container` — runs CLI subcommands ephemerally via the built image; mounts `$(pwd)` at `/data:ro`, uses `--network none`, `--read-only`, size-capped tmpfs on `/tmp` and `/app/cache`, inherits caller's uid/gid
 - **Make targets**: `container-build`, `container-run`, `container-stop`, `container-prune`, `container-clean`, `container-logs`
 
 ## Additional Resources

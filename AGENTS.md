@@ -104,13 +104,18 @@ Docker notes
   - `cap_drop: [ALL]` — no Linux capabilities needed (port 8083 > 1024, non-root)
   - `networks: internal: true` — egress-blocked bridge; no outbound internet from the container
   - `../configs:/app/configs:ro` — config volume is read-only
+  - `read_only: true` — rootfs is immutable at runtime; only `/app/cache` (named volume) and `/tmp` (tmpfs) are writable
+  - `tmpfs` mount on `/tmp` — 64 MiB size cap (provided via long-form volumes entry), mode 1777 (default)
+  - `pids_limit: 50` — caps process count; prevents resource exhaustion
+  - `stop_grace_period: 5s` — SIGTERM window before SIGKILL
+- **Dockerfile ENV**: `HOME=/tmp` redirects home-dir writes to `/tmp` for arbitrary UID support; `PYTHONDONTWRITEBYTECODE=1` suppresses runtime `.pyc` write attempts (bytecode pre-compiled at build time); `PYTHONUNBUFFERED=1` flushes stdout/stderr immediately.
 - **Healthcheck**: `GET /healthz` → 200 OK, interval 30 s, start grace 60 s, 5 s timeout, 3 retries.
 - **OCI labels**: image carries `org.opencontainers.image.*` metadata. Inject at build time with `--build-arg VERSION=... VCS_REF=... BUILD_DATE=...`; defaults are sensible for local builds.
 - **Cache volume**: named volume `aclinspector_cache` mounted at `/app/cache`; set `ACLINSPECTOR_CACHE_DIR=/app/cache` (the compose default).
 - **`.env`**: copy `Dockersetup/.env.example` to `Dockersetup/.env` for variable overrides; absence is safe.
 - **Convenience targets**: `make container-build`, `make container-run`, `make container-stop`, `make container-prune`, `make container-clean`, `make container-logs`.
 - **Prewarming**: `ACLINSPECTOR_PREWARM_ALL=1` builds all suggestion indices at startup (slower start, faster first query).
-- **CLI wrapper**: `Dockersetup/aclinspector-container` runs CLI subcommands (`inspect`, `translate`, `optimize`) ephemerally through the built image — mounts `$(pwd)` at `/data` read-only, uses `--network none`, inherits the caller's uid/gid.
+- **CLI wrapper**: `Dockersetup/aclinspector-container` runs CLI subcommands (`inspect`, `translate`, `optimize`) ephemerally through the built image — mounts `$(pwd)` at `/data:ro`, uses `--network none`, `--read-only`, size-capped tmpfs on `/tmp` and `/app/cache`, inherits the caller's uid/gid.
 
 Config directories
 ------------------
