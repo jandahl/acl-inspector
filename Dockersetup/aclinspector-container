@@ -61,7 +61,7 @@ exec "$RUNTIME" run \
     --cap-drop ALL \
     --read-only \
     --tmpfs /tmp:size=64m,mode=1777 \
-    --tmpfs /app/cache:size=128m \
+    --tmpfs /app/cache:size=128m,mode=1777 \
     --user "$(id -u):$(id -g)" \
     --env HOME=/tmp \
     --volume "$(pwd):/data:ro" \
