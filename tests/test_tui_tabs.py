@@ -567,5 +567,117 @@ class TestActionTabsCapabilities(unittest.TestCase):
         self.assertTrue(compare_btn.hidden)
 
 
+class TestOnItemSelected(unittest.TestCase):
+    """Regression tests for on_suggestion_list_item_selected (issue #49)."""
+
+    def _make_app_with_stubs(self):
+        """Return a SingularityApp with query_one, _get_object_config, and
+        _apply_caps_to_tabs stubbed so the handler can run without a real
+        Textual event loop."""
+        try:
+            from tui.app import SingularityApp
+            from tui.widgets.suggestion_list import SuggestionList
+            from tui.widgets.detail_view import DetailView
+            from tui.widgets.action_tabs import ActionTabs
+        except ImportError:
+            self.skipTest("textual not installed")
+
+        app = SingularityApp(vendor="asa", config_path="", vdom="", vendor_targets=[])
+
+        class _Container:
+            def add_class(self, _): pass
+            def remove_class(self, _): pass
+
+        class _Breadcrumb:
+            def update(self, _): pass
+
+        class _SuggestionList:
+            selected_index = 3
+
+        class _DetailView:
+            def __init__(self):
+                self.last_item = None
+                self.last_config = None
+            def update_object(self, item, config):
+                self.last_item = item
+                self.last_config = config
+
+        detail_view = _DetailView()
+
+        _widgets = {
+            SuggestionList: _SuggestionList(),
+            DetailView: detail_view,
+            "#breadcrumb": _Breadcrumb(),
+            "#breadcrumb-container": _Container(),
+            "#actions-container": _Container(),
+            "#suggestions-container": _Container(),
+            "#detail-container": _Container(),
+        }
+
+        def fake_query_one(selector, *_args, **_kwargs):
+            if selector in _widgets:
+                return _widgets[selector]
+            # ActionTabs lookup is wrapped in try/except in the handler; let it fail
+            raise Exception(f"no stub for {selector!r}")
+
+        app.query_one = fake_query_one
+
+        return app, detail_view
+
+    def test_obj_config_passed_to_apply_caps_and_detail_view(self):
+        """_apply_caps_to_tabs and detail_view.update_object must both receive
+        the config returned by _get_object_config (regression for issue #49)."""
+        try:
+            from tui.app import SingularityApp
+            from tui.widgets.suggestion_list import SuggestionList
+        except ImportError:
+            self.skipTest("textual not installed")
+
+        app, detail_view = self._make_app_with_stubs()
+
+        sentinel_config = object()  # unique identity — proves the right value was passed
+        app._get_object_config = Mock(return_value=sentinel_config)
+
+        caps_calls = []
+        app._apply_caps_to_tabs = lambda vendor, config=None: caps_calls.append((vendor, config))
+
+        item = {"name": "OBJ_WEB", "type": "object", "vendor": "asa"}
+
+        class _Msg:
+            pass
+        msg = _Msg()
+        msg.item = item
+
+        # This would raise UnboundLocalError before the fix.
+        app.on_suggestion_list_item_selected(msg)
+
+        self.assertEqual(len(caps_calls), 1, "_apply_caps_to_tabs should be called once")
+        _vendor, _config = caps_calls[0]
+        self.assertIs(_config, sentinel_config,
+                      "_apply_caps_to_tabs must receive the config from _get_object_config")
+        self.assertIs(detail_view.last_config, sentinel_config,
+                      "detail_view.update_object must receive the same config")
+
+    def test_vendor_falls_back_to_app_vendor(self):
+        """When the item has no 'vendor' key, the app's own vendor is used."""
+        try:
+            from tui.app import SingularityApp
+        except ImportError:
+            self.skipTest("textual not installed")
+
+        app, _ = self._make_app_with_stubs()
+        app._get_object_config = Mock(return_value=None)
+
+        caps_calls = []
+        app._apply_caps_to_tabs = lambda vendor, config=None: caps_calls.append(vendor)
+
+        class _Msg:
+            item = {"name": "OBJ_X", "type": "object"}  # no "vendor" key
+
+        app.on_suggestion_list_item_selected(_Msg())
+
+        self.assertEqual(caps_calls, ["asa"])
+
+
 if __name__ == '__main__':
     unittest.main()
