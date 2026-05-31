@@ -29,13 +29,19 @@ COPY . /app
 # dirs) never hits a PermissionError at runtime.
 # Also ensure the cache dir is writable and home writes go to /tmp.
 RUN python -m compileall -q /app && \
+    find /app -name __pycache__ -exec chown -R appuser:appuser {} + && \
     mkdir -p /app/cache && \
     # group 0 + 775: OpenShift/K8s arbitrary-UID pattern (random UID, GID 0)
     chown -R appuser:0 /app/cache && chmod 775 /app/cache
 
 # Redirect home-dir writes (e.g. library caches) to world-writable /tmp so
 # the container works correctly when run with an arbitrary host uid/gid.
-ENV HOME=/tmp
+# PYTHONDONTWRITEBYTECODE: bytecode was pre-compiled above; suppress runtime
+# write attempts (which would fail on the read-only rootfs).
+# PYTHONUNBUFFERED: flush stdout/stderr immediately so `docker logs` is current.
+ENV HOME=/tmp \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
 USER appuser
 
