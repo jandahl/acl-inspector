@@ -1,16 +1,46 @@
-idz-inf-ctx
+# Python
+__pycache__/
+*.py[cod]
+*.so
+venv/
+.venv/
 *.egg-info/
+.pytest_cache/
+
+# Logs and runtime artifacts
+logs/
+*.log
+*.log.*
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Editors / OS (cont.)
+.zed/
+
+# Build artifacts
 dist/
 build/
-.venv/
-venv/
-__pycache__
-.pyc_cache
-configs/cisco/idz-inf-ctx
-.pycache
-*.DS_Store
+
+# Caches and local artifacts
+cache/
+.cache/
+*.tmp
+*.pid
+node_modules/
+preview/
+
+# Downloaded fonts (keep the directory, ignore the binaries)
 fonts/downloaded/
 !fonts/downloaded/.gitkeep
-preview/
-logs/
-.zed/
+
+# Local config
+config.local.json
+settings.local.json
+.env
+
+# Developer-private config stashes (never commit real device configs)
+idz-inf-ctx
+configs/cisco/idz-inf-ctx

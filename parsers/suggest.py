@@ -44,7 +44,7 @@ import re
 import socket
 from typing import Any, Dict, List, Optional, Tuple
 
-__all__ = ["suggest_corrections", "SCHEMA_VERSION"]
+__all__ = ["suggest_corrections", "SCHEMA_VERSION", "as_str_list"]
 
 # Stable contract version for API/MCP consumers. Bump on breaking shape changes.
 # Independent of IR_VERSION in parsers/model.py — different clocks.
@@ -52,6 +52,20 @@ __all__ = ["suggest_corrections", "SCHEMA_VERSION"]
 #   1.1: + per-suggestion `note` (str)
 #   1.2: `note` (str) -> `notes` (List[str]) so callers can act on each caveat
 SCHEMA_VERSION = "1.2"
+
+
+def as_str_list(value: Any) -> List[str]:
+    """Coerce a suggestion field (commands/notes) to a list of strings; tolerates bare str, None, and non-iterables."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    # Ordered sequences only; sets aren't part of the List[str] contract.
+    if isinstance(value, (list, tuple)):
+        return [str(item) for item in value if item is not None]
+    # dicts (would yield keys), bytes (would yield ints), and scalars: coerce whole.
+    return [str(value)]
+
 
 # IANA protocol numbers used by FortiGate's iprope lookup.
 _PROTO_NUMBERS = {"icmp": 1, "tcp": 6, "udp": 17}

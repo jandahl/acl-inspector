@@ -29,6 +29,7 @@ from .widgets.detail_view import DetailView
 from .widgets.action_tabs import ActionTabs
 from common.vendor_caps import get_caps, VendorCaps
 from analysis_core import path_check_supported
+from parsers.suggest import as_str_list
 
 
 # Set up file logging
@@ -1432,9 +1433,9 @@ class SingularityApp(App):
             scenario = (sug.get("scenario") or "").upper()
             sugg_text.append(f"[{scenario}] ", style="bold cyan")
             sugg_text.append(f"{sug.get('rationale', '')}\n", style="white")
-            for cmd in sug.get("commands", []):
+            for cmd in as_str_list(sug.get("commands")):
                 sugg_text.append(f"  {cmd}\n", style="green")
-            for note in sug.get("notes") or []:
+            for note in as_str_list(sug.get("notes")):
                 sugg_text.append(f"  note: {note}\n", style="dim")
         panels.append(Panel(sugg_text, title=f"Correction Suggestion ({reason})",
                             border_style="green"))
@@ -1460,6 +1461,10 @@ class SingularityApp(App):
 
     def action_toggle_path_verify(self) -> None:
         """Toggle display of live-verification commands in the path-check view."""
+        # Cheap guard: ctrl+v on any other tab has no path results to toggle, so
+        # bail before touching render state (avoids relying on the except below).
+        if self.current_tab_id != "path":
+            return
         current = self.selected_object.get("name") if self.selected_object else None
         # Only act when the stored results belong to the current object.
         if not self._path_render_state or self._path_render_state[0] != current:

@@ -14,6 +14,7 @@ from parsers.cisco import asa as asa_parser
 from parsers.fortigate import inspect as fortigate_parser
 from parsers.fortigate import path_check as fortigate_path
 from parsers.fortigate.config import FTGConfig
+from parsers.suggest import as_str_list
 from ..vendor_caps import get_caps
 
 from ..state import AppState
@@ -1265,13 +1266,13 @@ def _render_packet_suggestion(suggestion: dict, vendor: str = "asa") -> str:
     for sug in suggestion.get("suggestions", []):
         scenario = (sug.get("scenario") or "").upper()
         rationale = sug.get("rationale") or ""
-        cmds = "\n".join(sug.get("commands") or [])
+        cmds = "\n".join(as_str_list(sug.get("commands")))
         parts.append(
             "  <div class='diff diff-added'>"
             f"<h4>[{_escape_text(scenario)}] {_escape_text(rationale)}</h4>\n"
             f"  <pre data-lang='{_escape_attr(vendor)}'>{_escape_text(cmds)}</pre>\n"
         )
-        notes = sug.get("notes") or []
+        notes = as_str_list(sug.get("notes"))
         if notes:
             items = "".join(f"<li>{_escape_text(n)}</li>" for n in notes)
             parts.append(f"  <ul class='notes'>{items}</ul>\n")
