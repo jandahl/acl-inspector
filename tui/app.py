@@ -1018,6 +1018,7 @@ class SingularityApp(App):
         self.last_selected_index = suggestions.selected_index
 
         obj_vendor = message.item.get("vendor", self.vendor)
+        obj_config = self._get_object_config(message.item)
         self._apply_caps_to_tabs(obj_vendor, obj_config)
 
         # Update breadcrumb
@@ -1036,7 +1037,6 @@ class SingularityApp(App):
 
         # Show detail view with remembered tab (falls back to details)
         detail_view = self.query_one(DetailView)
-        obj_config = self._get_object_config(message.item)
         detail_view.update_object(message.item, obj_config)
         self.query_one("#detail-container").add_class("visible")
 
