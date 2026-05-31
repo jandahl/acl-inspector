@@ -1415,8 +1415,6 @@ class SingularityApp(App):
         from rich.panel import Panel
         from rich.text import Text
 
-        from parsers.suggest import as_str_list
-
         suggestion = result.get("suggestion") or {}
         if not suggestion.get("needed"):
             return []

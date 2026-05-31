@@ -20,6 +20,7 @@ _SCRIPT = project_root() / 'aclinspector.py'
 class TestAsStrList(unittest.TestCase):
     def test_none_and_str_and_list(self):
         self.assertEqual(as_str_list(None), [])
+        self.assertEqual(as_str_list([]), [])
         self.assertEqual(as_str_list("a"), ["a"])
         self.assertEqual(as_str_list(["a", "b"]), ["a", "b"])
 
