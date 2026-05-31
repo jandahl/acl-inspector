@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.command // \"\"' | grep -q 'git push' && printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"PUSH WORKFLOW: You just pushed. You MUST now post a PR comment on the relevant PR containing (1) triage status of outstanding review items, (2) a summary of the changes just pushed, (3) your signature, and (4) the line: /gemini review\"}}' || true"
+          }
+        ]
+      }
+    ]
+  }
+}
