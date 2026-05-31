@@ -53,15 +53,17 @@ __all__ = ["suggest_corrections", "SCHEMA_VERSION", "as_str_list"]
 #   1.2: `note` (str) -> `notes` (List[str]) so callers can act on each caveat
 SCHEMA_VERSION = "1.2"
 
+
 def as_str_list(value: Any) -> List[str]:
     """Coerce a suggestion field (commands/notes) to a list of strings; tolerates bare str, None, and non-iterables."""
     if value is None:
         return []
     if isinstance(value, str):
         return [value]
-    if isinstance(value, (list, tuple, set)):
+    # Ordered sequences only; sets aren't part of the List[str] contract.
+    if isinstance(value, (list, tuple)):
         return [str(item) for item in value]
-    # Mappings (keys-only), bytes (ints), and scalars become a single item.
+    # dicts (would yield keys), bytes (would yield ints), and scalars: coerce whole.
     return [str(value)]
 
 
