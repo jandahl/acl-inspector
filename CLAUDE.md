@@ -321,7 +321,7 @@ Understanding the planned evolution helps maintain architecture alignment:
 - **tmpfs `/tmp`**: 64 MiB size cap (via long-form compose volumes entry), mode 1777 (default)
 - **Process limit**: `pids_limit: 50` — prevents accidental resource exhaustion
 - **Graceful stop**: `stop_grace_period: 5s` — SIGTERM window before SIGKILL
-- **Python flags**: `PYTHONDONTWRITEBYTECODE=1` (no runtime `.pyc` writes on read-only rootfs); `PYTHONUNBUFFERED=1` (immediate log flushing)
+- **Python flags & HOME**: `HOME=/tmp` (redirects home-dir writes for arbitrary UID support); `PYTHONDONTWRITEBYTECODE=1` (no runtime `.pyc` writes on read-only rootfs); `PYTHONUNBUFFERED=1` (immediate log flushing)
 - **Healthcheck**: `GET /healthz` → 200 OK, interval 30 s, start grace 60 s
 - **OCI labels**: `org.opencontainers.image.*` metadata; inject via `--build-arg VERSION=... VCS_REF=... BUILD_DATE=...`; defaults work for local builds
 - **Optional `.env`**: Place in `Dockersetup/` (copy from `.env.example`) for variable expansion; absence is safe

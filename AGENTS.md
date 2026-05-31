@@ -108,7 +108,7 @@ Docker notes
   - `tmpfs` mount on `/tmp` — 64 MiB size cap (provided via long-form volumes entry), mode 1777 (default)
   - `pids_limit: 50` — caps process count; prevents resource exhaustion
   - `stop_grace_period: 5s` — SIGTERM window before SIGKILL
-- **Dockerfile ENV**: `PYTHONDONTWRITEBYTECODE=1` suppresses runtime `.pyc` write attempts (bytecode pre-compiled at build time); `PYTHONUNBUFFERED=1` flushes stdout/stderr immediately.
+- **Dockerfile ENV**: `HOME=/tmp` redirects home-dir writes to `/tmp` for arbitrary UID support; `PYTHONDONTWRITEBYTECODE=1` suppresses runtime `.pyc` write attempts (bytecode pre-compiled at build time); `PYTHONUNBUFFERED=1` flushes stdout/stderr immediately.
 - **Healthcheck**: `GET /healthz` → 200 OK, interval 30 s, start grace 60 s, 5 s timeout, 3 retries.
 - **OCI labels**: image carries `org.opencontainers.image.*` metadata. Inject at build time with `--build-arg VERSION=... VCS_REF=... BUILD_DATE=...`; defaults are sensible for local builds.
 - **Cache volume**: named volume `aclinspector_cache` mounted at `/app/cache`; set `ACLINSPECTOR_CACHE_DIR=/app/cache` (the compose default).
