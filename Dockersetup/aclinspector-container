@@ -57,6 +57,8 @@ exec "$RUNTIME" run \
     --network none \
     --security-opt no-new-privileges \
     --cap-drop ALL \
+    --read-only \
+    --tmpfs /tmp \
     --user "$(id -u):$(id -g)" \
     --env HOME=/tmp \
     --volume "$(pwd):/data:ro" \

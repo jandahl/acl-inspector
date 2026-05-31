@@ -29,6 +29,7 @@ COPY . /app
 # dirs) never hits a PermissionError at runtime.
 # Also ensure the cache dir is writable and home writes go to /tmp.
 RUN python -m compileall -q /app && \
+    find /app -name __pycache__ -exec chown -R appuser:appuser {} + && \
     mkdir -p /app/cache && \
     # group 0 + 775: OpenShift/K8s arbitrary-UID pattern (random UID, GID 0)
     chown -R appuser:0 /app/cache && chmod 775 /app/cache
