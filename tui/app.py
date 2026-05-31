@@ -29,6 +29,7 @@ from .widgets.detail_view import DetailView
 from .widgets.action_tabs import ActionTabs
 from common.vendor_caps import get_caps, VendorCaps
 from analysis_core import path_check_supported
+from parsers.suggest import as_str_list
 
 
 # Set up file logging
