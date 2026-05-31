@@ -58,7 +58,7 @@ The container is hardened by default — no configuration needed:
 | Egress network | Blocked (`internal: true` bridge) |
 | Read-only rootfs | `read_only: true` — only cache volume and `/tmp` are writable |
 | `/tmp` tmpfs | 64 MiB cap, mode 1777 |
-| Process limit | `pids_limit: 50` |
+| Process limit | `pids_limit: 50` — sufficient for a single-process threaded Python server |
 | Graceful stop | `stop_grace_period: 5s` — SIGTERM window before SIGKILL |
 | Health check | `GET /healthz` every 30 s |
 
