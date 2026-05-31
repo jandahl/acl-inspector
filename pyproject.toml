@@ -27,6 +27,8 @@ test = [
     # Browser binary must match the package version; re-run
     # `playwright install chromium` after upgrading.
     "playwright>=1.40",
+    "textual>=0.60",
+    "rich>=13.0",
 ]
 
 [project.urls]
