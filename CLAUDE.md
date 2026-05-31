@@ -318,8 +318,8 @@ Understanding the planned evolution helps maintain architecture alignment:
 - **Privilege escalation**: blocked via `security_opt: no-new-privileges:true`
 - **Egress**: blocked via `internal: true` bridge network (port publishing NAT is on the host, unaffected)
 - **Read-only rootfs**: `read_only: true` — container filesystem is immutable; only the cache volume and `/tmp` are writable
-- **tmpfs `/tmp`**: 64 MiB size cap (via long-form compose volumes entry), mode 1777 (default)
-- **Process limit**: `pids_limit: 50` — prevents accidental resource exhaustion
+- **tmpfs `/tmp`**: 64 MiB size cap (long-form compose `volumes` entry — see `Dockersetup/podman-compose.yaml`), mode 1777 (default)
+- **Process limit**: `pids_limit: 50` — sufficient for a single-process threaded Python web server
 - **Graceful stop**: `stop_grace_period: 5s` — SIGTERM window before SIGKILL
 - **Python flags & HOME**: `HOME=/tmp` (redirects home-dir writes for arbitrary UID support); `PYTHONDONTWRITEBYTECODE=1` (no runtime `.pyc` writes on read-only rootfs); `PYTHONUNBUFFERED=1` (immediate log flushing)
 - **Healthcheck**: `GET /healthz` → 200 OK, interval 30 s, start grace 60 s

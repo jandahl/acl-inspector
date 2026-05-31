@@ -105,8 +105,8 @@ Docker notes
   - `networks: internal: true` — egress-blocked bridge; no outbound internet from the container
   - `../configs:/app/configs:ro` — config volume is read-only
   - `read_only: true` — rootfs is immutable at runtime; only `/app/cache` (named volume) and `/tmp` (tmpfs) are writable
-  - `tmpfs` mount on `/tmp` — 64 MiB size cap (provided via long-form volumes entry), mode 1777 (default)
-  - `pids_limit: 50` — caps process count; prevents resource exhaustion
+  - `tmpfs` mount on `/tmp` — 64 MiB size cap (long-form compose `volumes` entry — see `Dockersetup/podman-compose.yaml`), mode 1777 (default)
+  - `pids_limit: 50` — caps process count; sufficient for a single-process threaded Python web server
   - `stop_grace_period: 5s` — SIGTERM window before SIGKILL
 - **Dockerfile ENV**: `HOME=/tmp` redirects home-dir writes to `/tmp` for arbitrary UID support; `PYTHONDONTWRITEBYTECODE=1` suppresses runtime `.pyc` write attempts (bytecode pre-compiled at build time); `PYTHONUNBUFFERED=1` flushes stdout/stderr immediately.
 - **Healthcheck**: `GET /healthz` → 200 OK, interval 30 s, start grace 60 s, 5 s timeout, 3 retries.
