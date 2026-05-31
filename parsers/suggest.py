@@ -62,7 +62,7 @@ def as_str_list(value: Any) -> List[str]:
         return [value]
     # Ordered sequences only; sets aren't part of the List[str] contract.
     if isinstance(value, (list, tuple)):
-        return [str(item) for item in value]
+        return [str(item) for item in value if item is not None]
     # dicts (would yield keys), bytes (would yield ints), and scalars: coerce whole.
     return [str(value)]
 
