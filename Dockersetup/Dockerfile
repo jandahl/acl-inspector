@@ -36,7 +36,12 @@ RUN python -m compileall -q /app && \
 
 # Redirect home-dir writes (e.g. library caches) to world-writable /tmp so
 # the container works correctly when run with an arbitrary host uid/gid.
-ENV HOME=/tmp
+# PYTHONDONTWRITEBYTECODE: bytecode was pre-compiled above; suppress runtime
+# write attempts (which would fail on the read-only rootfs).
+# PYTHONUNBUFFERED: flush stdout/stderr immediately so `docker logs` is current.
+ENV HOME=/tmp \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
 USER appuser
 

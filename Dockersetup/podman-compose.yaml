@@ -34,6 +34,10 @@ services:
     # Restart on crash but not on explicit stop/down.
     # Note: silently ignored by rootless Podman (lifecycle managed by systemd/user).
     restart: on-failure
+    # Give the server 5 s to flush in-flight responses on SIGTERM before SIGKILL.
+    stop_grace_period: 5s
+    # Limit process count — a Python HTTP server has no reason to fork heavily.
+    pids_limit: 50
     # Mount the rootfs read-only; /tmp is a tmpfs (in-memory, lost on restart).
     # The cache volume at /app/cache remains writable.
     read_only: true
