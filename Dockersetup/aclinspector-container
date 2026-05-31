@@ -50,6 +50,8 @@ if [ -t 0 ] && [ -t 1 ]; then
     TTY_FLAG=("-t")
 fi
 
+# pids_limit is intentionally omitted: this is a one-shot CLI container, not a
+# long-running server, so fork depth is naturally bounded by the subcommand.
 exec "$RUNTIME" run \
     --rm \
     -i \
@@ -58,7 +60,8 @@ exec "$RUNTIME" run \
     --security-opt no-new-privileges \
     --cap-drop ALL \
     --read-only \
-    --tmpfs /tmp \
+    --tmpfs /tmp:size=64m,mode=1777 \
+    --tmpfs /app/cache:size=128m \
     --user "$(id -u):$(id -g)" \
     --env HOME=/tmp \
     --volume "$(pwd):/data:ro" \
