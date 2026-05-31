@@ -105,7 +105,7 @@ Docker notes
   - `networks: internal: true` — egress-blocked bridge; no outbound internet from the container
   - `../configs:/app/configs:ro` — config volume is read-only
   - `read_only: true` — rootfs is immutable at runtime; only `/app/cache` (named volume) and `/tmp` (tmpfs) are writable
-  - `tmpfs: /tmp` — 64 MiB size cap, mode 1777; provided via long-form volumes entry
+  - `tmpfs` mount on `/tmp` — 64 MiB size cap (provided via long-form volumes entry), mode 1777 (default)
   - `pids_limit: 50` — caps process count; prevents resource exhaustion
   - `stop_grace_period: 5s` — SIGTERM window before SIGKILL
 - **Dockerfile ENV**: `PYTHONDONTWRITEBYTECODE=1` suppresses runtime `.pyc` write attempts (bytecode pre-compiled at build time); `PYTHONUNBUFFERED=1` flushes stdout/stderr immediately.
