@@ -40,3 +40,7 @@ fonts/downloaded/
 config.local.json
 settings.local.json
 .env
+
+# Developer-private config stashes (never commit real device configs)
+idz-inf-ctx
+configs/cisco/idz-inf-ctx
