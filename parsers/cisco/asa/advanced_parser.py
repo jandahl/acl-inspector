@@ -81,8 +81,14 @@ class AdvancedASAConfig:
         self,
         token: Union[str, ipaddress.IPv4Address, ipaddress.IPv4Network],
         visited: Optional[Set[str]] = None,
+        incomplete: Optional[Set[str]] = None,
     ) -> Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]]:
-        visited = set() if visited is None else visited
+        if visited is None:
+            visited = set()
+        if incomplete is None:
+            incomplete = set()
+        is_top_level = len(visited) == 0
+
         if isinstance(token, (ipaddress.IPv4Address, ipaddress.IPv4Network)):
             return {token}
         if isinstance(token, str):
@@ -108,6 +114,7 @@ class AdvancedASAConfig:
                 return nets
             if token in self.network_object_groups:
                 if token in visited:
+                    incomplete.update(visited)
                     cached_cycle = self._network_cache.get(cache_key)
                     return set(cached_cycle) if cached_cycle is not None else set()
                 visited.add(token)
@@ -115,11 +122,24 @@ class AdvancedASAConfig:
                 self._network_cache[cache_key] = resolved
                 for m in self.network_object_groups[token]:
                     if isinstance(m, dict):
-                        if 'group-object' in m: resolved.update(self.resolve_network(m['group-object'], visited))
-                        elif 'object' in m: resolved.update(self.resolve_network(m['object'], visited))
+                        if 'group-object' in m:
+                            dep = m['group-object']
+                            resolved.update(self.resolve_network(dep, visited, incomplete))
+                            if dep in incomplete:
+                                incomplete.add(token)
+                        elif 'object' in m:
+                            dep = m['object']
+                            resolved.update(self.resolve_network(dep, visited, incomplete))
+                            if dep in incomplete:
+                                incomplete.add(token)
                     elif isinstance(m, (ipaddress.IPv4Address, ipaddress.IPv4Network)):
                         resolved.add(m)
                 visited.discard(token)
+
+                if is_top_level:
+                    for key in incomplete:
+                        self._network_cache.pop(key, None)
+
                 return set(resolved)
             try: 
                 result = {to_ip_network(token)}

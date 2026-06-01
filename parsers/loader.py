@@ -62,7 +62,6 @@ def load_config(
         >>> cfg, vendor, score = load_config("mystery.conf", strict=True, min_confidence=80)
     """
     # Read config text
-
     if source == "-":
         text = sys.stdin.read()
         filename = "stdin"
@@ -105,8 +104,8 @@ def load_config(
                 return cfg, vendor, confidence
             except ImportError as e:
                 raise ConfigLoadError(f"External engine error: {e}. Try: pip install .[external]")
-            except NotImplementedError:
-                raise
+            except NotImplementedError as e:
+                raise ConfigLoadError(str(e))
             except Exception as e:
                 raise ConfigLoadError(f"Failed to parse ASA config with advanced engine: {e}")
 
@@ -125,8 +124,8 @@ def load_config(
                 return cfg, vendor, confidence
             except ImportError as e:
                 raise ConfigLoadError(f"External engine error: {e}. Try: pip install .[external]")
-            except NotImplementedError:
-                raise
+            except NotImplementedError as e:
+                raise ConfigLoadError(str(e))
             except Exception as e:
                 raise ConfigLoadError(f"Failed to parse FortiGate config with advanced engine: {e}")
 
