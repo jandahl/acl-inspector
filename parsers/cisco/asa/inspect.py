@@ -70,7 +70,12 @@ def compare_old_new(
     """
     if use_external_engines:
         from .advanced_parser import AdvancedASAConfig
-        cfg = AdvancedASAConfig(cfg_text)
+        try:
+            cfg = AdvancedASAConfig(cfg_text)
+        except NotImplementedError:
+            import sys
+            print("Warning: Advanced ASA engine not yet implemented. Falling back to legacy.", file=sys.stderr)
+            cfg = ASAConfig(cfg_text)
     else:
         cfg = ASAConfig(cfg_text)
 
@@ -102,6 +107,7 @@ def inspect_host(
     target: str,
     service_filter: Optional[dict] = None,
     include_any: bool = False,
+    use_external_engines: bool = False,
 ) -> dict:
     """Collect flattened ACL entries affecting ``target``.
     
@@ -110,11 +116,21 @@ def inspect_host(
         target: Network object or IP address to inspect.
         service_filter: Optional dict to constrain matches.
         include_any: When True, do not drop rules with ``any`` in src/dst.
+        use_external_engines: If True, use parallel advanced parsing engines.
 
     Returns:
         dict containing ``hits`` (list of flattened rules), ``target_nets``, and ``aliases``.
     """
-    cfg = ASAConfig(cfg_text)
+    if use_external_engines:
+        from .advanced_parser import AdvancedASAConfig
+        try:
+            cfg = AdvancedASAConfig(cfg_text)
+        except NotImplementedError:
+            import sys
+            print("Warning: Advanced ASA engine not yet implemented. Falling back to legacy.", file=sys.stderr)
+            cfg = ASAConfig(cfg_text)
+    else:
+        cfg = ASAConfig(cfg_text)
 
     target_nets = cfg.resolve_network(target)
     entries = cfg.flatten_acl()

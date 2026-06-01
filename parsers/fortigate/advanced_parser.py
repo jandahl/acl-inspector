@@ -27,7 +27,7 @@ class AdvancedFTGConfig:
         
         # Use legacy VDOM selection for now to ensure we work with the same line subset
         from .config import FTGConfig
-        self.lines, self.vdom = FTGConfig._select_vdom_lines([l.rstrip() for l in text.splitlines()], vdom)
+        self.lines, self.vdom = FTGConfig._select_vdom_lines([line.rstrip() for line in text.splitlines()], vdom)
         
         # Core data structures matching legacy FTGConfig
         self.addresses: Dict[str, Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]]] = {}
@@ -48,14 +48,15 @@ class AdvancedFTGConfig:
         self.ip_to_objects: Dict[Union[ipaddress.IPv4Address, ipaddress.IPv4Network], Set[str]] = {}
 
         # Implementation placeholder
-        self._parse_with_external()
-        self._build_reverse_indexes()
+        # self._parse_with_external()
+        # self._build_reverse_indexes()
+        raise NotImplementedError(
+            "Advanced FortiGate engine is not yet implemented."
+        )
 
     def _parse_with_external(self):
         """Placeholder for actual fortios-xutils implementation."""
-        raise NotImplementedError(
-            "Advanced FortiGate engine is not yet implemented. Remove --use-external-engines."
-        )
+        pass
 
     def _build_reverse_indexes(self) -> None:
         ip_to_objects: Dict[Union[ipaddress.IPv4Address, ipaddress.IPv4Network], Set[str]] = defaultdict(set)
@@ -76,14 +77,8 @@ class AdvancedFTGConfig:
             return {ipaddress.ip_network('0.0.0.0/0')}
         if token in self.addresses:
             return self.addresses[token]
-        if token in self.vips:
-            # VIP resolution logic...
-            return set() 
-        if token in self.addrgrps:
-            # Group resolution logic...
-            return set()
-        return set()
+        # VIP and addrgrp resolution not yet implemented
+        raise NotImplementedError("resolve_addr_token not fully implemented for advanced engine")
 
     def resolve_service_names(self, names: List[str]) -> dict:
-        # Service resolution logic...
-        return {"dst_ports": [], "dst_service_groups": set()}
+        raise NotImplementedError("resolve_service_names not yet implemented for advanced engine")

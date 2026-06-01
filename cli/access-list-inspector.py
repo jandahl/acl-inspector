@@ -210,6 +210,7 @@ def main() -> None:
     parser.add_argument('--packet-src', dest='packet_src', help='Source IP/object for --packet evaluation')
     parser.add_argument('--packet-dst', dest='packet_dst', help='Destination IP/object for --packet evaluation')
     parser.add_argument('--verify', action='store_true', help='Show live-verification commands (packet-tracer/iprope) for path suggestions')
+    parser.add_argument('--use-external-engines', action='store_true', help='Use parallel advanced parsing engines (ciscoconfparse/fortios-xutils) [EXPERIMENTAL]')
     parser.add_argument('--singularitty', action='store_true', help='Launch the Singularity TUI interface (alias for the TUI)')
 
     args = parser.parse_args()
@@ -564,7 +565,8 @@ def main() -> None:
                     print(f"  {addr}: {', '.join(sorted(names))}")
         else:
             diff = fortigate_parser.compare_old_new(
-                cfg_text, args.old, args.new, service_filter=svc_filter, vdom=args.vdom
+                cfg_text, args.old, args.new, service_filter=svc_filter, vdom=args.vdom, 
+                use_external_engines=args.use_external_engines
             )
             if args.format == 'json':
                 print(json.dumps(_serialize_diff(diff), indent=2))
@@ -590,6 +592,4 @@ def main() -> None:
 
 
 if __name__ == '__main__':
-    main()
-n__':
     main()

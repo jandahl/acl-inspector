@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Optional, Tuple, Union, TYPE_CHECKING, Any
+from typing import Optional, Tuple, Union, TYPE_CHECKING
 
 from parsers.detector import detect_vendor
 
@@ -34,7 +34,7 @@ def load_config(
     min_confidence: int = 60,
     strict: bool = False,
     use_external_engines: bool = False
-) -> Tuple[Union["ASAConfig", "FTGConfig", Any], str, int]:
+) -> Tuple[Union["ASAConfig", "FTGConfig", object], str, int]:
     """Load firewall config with automatic vendor detection.
 
     Args:

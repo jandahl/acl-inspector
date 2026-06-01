@@ -46,8 +46,11 @@ class AdvancedASAConfig:
         self._service_group_cache: Dict[str, Tuple[dict, ...]] = {}
 
         # Implementation placeholder
-        self._parse_with_external()
-        self._build_reverse_indexes()
+        # self._parse_with_external()
+        # self._build_reverse_indexes()
+        raise NotImplementedError(
+            "Advanced ASA engine is not yet implemented."
+        )
 
     def _parse_with_external(self):
         """Placeholder for actual ciscoconfparse implementation.
@@ -59,9 +62,7 @@ class AdvancedASAConfig:
         # for obj in self.raw_tree.find_objects(r'^object network'):
         #     name = obj.re_match_field(r'^object network\s+(\S+)')
         #     ...
-        raise NotImplementedError(
-            "Advanced ASA engine is not yet implemented. Remove --use-external-engines."
-        )
+        pass
 
     def _build_reverse_indexes(self):
         """Build reverse lookup index: IP -> set of object names."""
@@ -75,7 +76,7 @@ class AdvancedASAConfig:
         """Map to common IR using ir_export."""
         return ir_export.to_ir(self, device_name)
 
-    # Resolution methods (copied/adapted from legacy ASAConfig to maintain API parity)
+    # Resolution methods (API parity with legacy ASAConfig)
     
     def resolve_network(
         self,
@@ -83,71 +84,7 @@ class AdvancedASAConfig:
         visited: Optional[Set[str]] = None,
         incomplete: Optional[Set[str]] = None,
     ) -> Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]]:
-        if visited is None:
-            visited = set()
-        if incomplete is None:
-            incomplete = set()
-        is_top_level = len(visited) == 0
-
-        if isinstance(token, (ipaddress.IPv4Address, ipaddress.IPv4Network)):
-            return {token}
-        if isinstance(token, str):
-            cache_key = token
-            cached = self._network_cache.get(cache_key)
-            if cached is not None:
-                return set(cached)
-            token_lower = token.lower()
-            if token_lower in ('any', 'any4', 'any-ipv4'):
-                result = {ipaddress.ip_network('0.0.0.0/0')}
-                self._network_cache[cache_key] = set(result)
-                return result
-            if token_lower in ('any6', 'any-ipv6'):
-                try: 
-                    result = {ipaddress.ip_network('::/0')}
-                except (ValueError, TypeError): 
-                    result = set()
-                self._network_cache[cache_key] = set(result)
-                return result
-            if token in self.network_objects:
-                nets = set(self.network_objects[token])
-                self._network_cache[cache_key] = set(nets)
-                return nets
-            if token in self.network_object_groups:
-                if token in visited:
-                    incomplete.update(visited)
-                    cached_cycle = self._network_cache.get(cache_key)
-                    return set(cached_cycle) if cached_cycle is not None else set()
-                visited.add(token)
-                resolved: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]] = set()
-                self._network_cache[cache_key] = resolved
-                for m in self.network_object_groups[token]:
-                    if isinstance(m, dict):
-                        if 'group-object' in m:
-                            dep = m['group-object']
-                            resolved.update(self.resolve_network(dep, visited, incomplete))
-                            if dep in incomplete:
-                                incomplete.add(token)
-                        elif 'object' in m:
-                            dep = m['object']
-                            resolved.update(self.resolve_network(dep, visited, incomplete))
-                            if dep in incomplete:
-                                incomplete.add(token)
-                    elif isinstance(m, (ipaddress.IPv4Address, ipaddress.IPv4Network)):
-                        resolved.add(m)
-                visited.discard(token)
-
-                if is_top_level:
-                    for key in incomplete:
-                        self._network_cache.pop(key, None)
-
-                return set(resolved)
-            try: 
-                result = {to_ip_network(token)}
-            except (ValueError, TypeError): 
-                result = set()
-            self._network_cache[cache_key] = set(result)
-            return result
-        return set()
+        raise NotImplementedError("resolve_network not yet implemented for advanced engine")
 
     def _clone_service_members(self, members: Iterable[dict]) -> List[dict]:
         return [dict(m) for m in members]
@@ -158,36 +95,4 @@ class AdvancedASAConfig:
         visited: Optional[Set[str]] = None,
         incomplete: Optional[Set[str]] = None,
     ) -> List[dict]:
-        if visited is None:
-            visited = set()
-        if incomplete is None:
-            incomplete = set()
-        is_top_level = len(visited) == 0
-
-        cache_key = name
-        cached = self._service_group_cache.get(cache_key)
-        if cached is not None:
-            return self._clone_service_members(cached)
-        if name in visited:
-            incomplete.update(visited)
-            return []
-        visited.add(name)
-        out: List[dict] = []
-        for m in self.service_object_groups.get(name, []):
-            if isinstance(m, dict) and 'group-object' in m:
-                dep = m['group-object']
-                out.extend(self.resolve_service_group(dep, visited, incomplete))
-                if dep in incomplete:
-                    incomplete.add(name)
-            else:
-                out.append(m)
-        visited.discard(name)
-
-        cached_members = tuple(self._clone_service_members(out))
-        self._service_group_cache[cache_key] = cached_members
-
-        if is_top_level:
-            for key in incomplete:
-                self._service_group_cache.pop(key, None)
-
-        return self._clone_service_members(cached_members)
+        raise NotImplementedError("resolve_service_group not yet implemented for advanced engine")

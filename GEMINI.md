@@ -261,6 +261,7 @@ python3 -m py_compile cli/access-list-inspector.py parsers/cisco/asa/parser.py p
 make lint   # Runs ruff and flake8 if available
 ```
 
+<!-- agent instructions
 ## Git behaviour
 ### Branching
 Prefer a fresh branch off of origin master unless otherwise instructed.
@@ -273,6 +274,7 @@ If pushing to a branch that already has a PR, the push(es) must be followed by a
 - A request for a new review from Gemini Code assist - `/gemini review`
 
 All of the above in one comment. 
+-->
 
 ## Roadmap Context
 

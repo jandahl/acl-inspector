@@ -29,22 +29,23 @@ class TestExternalEngines(unittest.TestCase):
 
     def test_asa_advanced_parser_scaffolding(self):
         """Test that AdvancedASAConfig scaffolding raises NotImplementedError."""
-        mock_parse = MagicMock()
-        # Mocking the module itself to avoid import error during patch setup
-        with patch.dict(sys.modules, {'ciscoconfparse': MagicMock()}):
-            import parsers.cisco.asa.advanced_parser as adv_parser
-            importlib.reload(adv_parser)
-            with patch('ciscoconfparse.CiscoConfParse', return_value=mock_parse):
-                with self.assertRaises(NotImplementedError):
-                    cfg = adv_parser.AdvancedASAConfig("object network OBJ1\n host 1.1.1.1")
+        # Setup mock module and class
+        mock_module = MagicMock()
+        mock_cls = MagicMock()
+        mock_module.CiscoConfParse = mock_cls
+        
+        with patch.dict(sys.modules, {'ciscoconfparse': mock_module}):
+            from parsers.cisco.asa.advanced_parser import AdvancedASAConfig
+            with self.assertRaises(NotImplementedError):
+                AdvancedASAConfig("object network OBJ1\n host 1.1.1.1")
 
     def test_fortigate_advanced_parser_scaffolding(self):
         """Test that AdvancedFTGConfig scaffolding raises NotImplementedError."""
+        # Patch the import check in AdvancedFTGConfig.__init__
+        from parsers.fortigate.advanced_parser import AdvancedFTGConfig
         with patch.dict(sys.modules, {'fortios_xutils': MagicMock()}):
-            import parsers.fortigate.advanced_parser as adv_ftg_parser
-            importlib.reload(adv_ftg_parser)
             with self.assertRaises(NotImplementedError):
-                cfg = adv_ftg_parser.AdvancedFTGConfig("config firewall address\n edit ADDR1\n end")
+                AdvancedFTGConfig("config firewall address\n edit ADDR1\n end")
 
 if __name__ == '__main__':
     unittest.main()
