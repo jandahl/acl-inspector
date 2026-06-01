@@ -78,6 +78,8 @@ def path_check(
     dports: Optional[Set[int]] = None,
     include_any: bool = True,
     guess_interface_pairs: bool = True,
+    use_external_engines: bool = False,
+    cfg: Optional[Union[ASAConfig, Any]] = None,
 ) -> dict:
     """Evaluate NAT + ACL outcome for a single flow.
 
@@ -88,20 +90,17 @@ def path_check(
         proto: Optional protocol token (``tcp``, ``udp``, ``icmp``, ``ip``).
         dports: Optional set of destination port integers.
         include_any: Whether to include ``any`` endpoints when walking ACLs.
-
-    Returns:
-        dict containing:
-            ``input``: Normalised input parameters.
-            ``resolved``: Pre- and post-NAT resolved addresses.
-            ``nat``: Information on the first matching NAT rule (if any).
-            ``acl``: Decision and up to 10 flattened ACL matches (each carries
-                ``raw`` + summary data).
-            ``allowed``: Boolean permit/deny verdict.
-            ``context``: Interface/direction hints used for matching.
-        The result is JSON-serialisable so the web UI/CLI can render it directly.
+        guess_interface_pairs: Whether to infer counterpart ACL matches.
+        use_external_engines: If True, use parallel advanced parsing engines.
+        cfg: Optional pre-parsed configuration object.
     """
 
-    cfg = ASAConfig(cfg_text)
+    if cfg is None:
+        if use_external_engines:
+            from .advanced_parser import AdvancedASAConfig
+            cfg = AdvancedASAConfig(cfg_text)
+        else:
+            cfg = ASAConfig(cfg_text)
     if not src or not dst:
         raise ValueError("source and destination are required for path evaluation")
 

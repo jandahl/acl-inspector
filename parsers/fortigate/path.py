@@ -21,9 +21,17 @@ def path_check(
     dports: Optional[Set[int]] = None,
     include_any: bool = True,
     vdom: Optional[str] = None,
+    use_external_engines: bool = False,
+    cfg: Optional[Union[FTGConfig, Any]] = None,
 ) -> dict:
     """Evaluate FortiGate policy/NAT outcome for a single flow."""
-    cfg = FTGConfig(cfg_text, vdom=vdom)
+    if cfg is None:
+        if use_external_engines:
+            from .advanced_parser import AdvancedFTGConfig
+            cfg = AdvancedFTGConfig(cfg_text, vdom=vdom)
+        else:
+            cfg = FTGConfig(cfg_text, vdom=vdom)
+
     src_ip, src_set = _resolve_endpoint(cfg, src)
     dst_ip, dst_set = _resolve_endpoint(cfg, dst)
     if src_ip is None or dst_ip is None:

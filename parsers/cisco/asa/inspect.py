@@ -46,28 +46,17 @@ def compare_old_new(
     new_target: str,
     service_filter: Optional[dict] = None,
     include_any: bool = False,
+    use_external_engines: bool = False,
+    cfg: Optional[Union[ASAConfig, Any]] = None,
 ) -> dict:
-    """Compare ACL impact for two network targets within the same config.
+    """Compare ACL impact for two network targets within the same config."""
+    if cfg is None:
+        if use_external_engines:
+            from .advanced_parser import AdvancedASAConfig
+            cfg = AdvancedASAConfig(cfg_text)
+        else:
+            cfg = ASAConfig(cfg_text)
 
-    Args:
-        cfg_text: Raw ASA configuration text.
-        old_target: Network object/IP to treat as the “original” reference.
-        new_target: Network object/IP replacing the original reference.
-        service_filter: Optional dict with keys ``proto`` and ``dports`` (set[int])
-            to constrain matches to a protocol/port set.
-        include_any: When True, do not drop rules with ``any`` in src/dst.
-
-    Returns:
-        dict with keys:
-            ``old_hits``: flattened entries affecting ``old_target``.
-            ``new_hits``: flattened entries affecting ``new_target``.
-            ``added_to_new``: entries unique to the new target.
-            ``removed_from_old``: entries unique to the old target.
-        Each flattened entry retains the original ACL line under ``raw`` so UIs
-        can reference back to the source configuration.
-    """
-
-    cfg = ASAConfig(cfg_text)
     old_nets = cfg.resolve_network(old_target)
     new_nets = cfg.resolve_network(new_target)
     entries = cfg.flatten_acl()
@@ -96,10 +85,17 @@ def inspect_host(
     target: str,
     service_filter: Optional[dict] = None,
     include_any: bool = False,
+    use_external_engines: bool = False,
+    cfg: Optional[Union[ASAConfig, Any]] = None,
 ) -> dict:
     """Collect flattened ACL entries affecting ``target``."""
+    if cfg is None:
+        if use_external_engines:
+            from .advanced_parser import AdvancedASAConfig
+            cfg = AdvancedASAConfig(cfg_text)
+        else:
+            cfg = ASAConfig(cfg_text)
 
-    cfg = ASAConfig(cfg_text)
     target_nets = cfg.resolve_network(target)
     entries = cfg.flatten_acl()
     hits = evaluate_acl(entries, target_nets, cfg, service_filter=service_filter, ignore_any=(not include_any))

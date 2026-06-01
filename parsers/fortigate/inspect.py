@@ -34,10 +34,17 @@ def compare_old_new(
     new_target: str,
     service_filter: Optional[dict] = None,
     vdom: Optional[str] = None,
+    use_external_engines: bool = False,
+    cfg: Optional[Union[FTGConfig, Any]] = None,
 ) -> dict:
     """Compare policy impact for two targets within the same FortiGate config."""
+    if cfg is None:
+        if use_external_engines:
+            from .advanced_parser import AdvancedFTGConfig
+            cfg = AdvancedFTGConfig(cfg_text, vdom=vdom)
+        else:
+            cfg = FTGConfig(cfg_text, vdom=vdom)
 
-    cfg = FTGConfig(cfg_text, vdom=vdom)
     old_nets = cfg.resolve_addr_token(old_target)
     new_nets = cfg.resolve_addr_token(new_target)
     entries = cfg.flatten_policies()
@@ -66,10 +73,17 @@ def inspect_host(
     target: str,
     service_filter: Optional[dict] = None,
     vdom: Optional[str] = None,
+    use_external_engines: bool = False,
+    cfg: Optional[Union[FTGConfig, Any]] = None,
 ) -> dict:
     """Resolve policies impacting ``target`` within an optional VDOM."""
+    if cfg is None:
+        if use_external_engines:
+            from .advanced_parser import AdvancedFTGConfig
+            cfg = AdvancedFTGConfig(cfg_text, vdom=vdom)
+        else:
+            cfg = FTGConfig(cfg_text, vdom=vdom)
 
-    cfg = FTGConfig(cfg_text, vdom=vdom)
     target_nets = cfg.resolve_addr_token(target)
     entries = cfg.flatten_policies()
     hits = evaluate(entries, target_nets, service_filter)
