@@ -132,20 +132,42 @@ class AdvancedASAConfig:
     def _clone_service_members(self, members: Iterable[dict]) -> List[dict]:
         return [dict(m) for m in members]
 
-    def resolve_service_group(self, name: str, visited: Optional[Set[str]] = None) -> List[dict]:
-        if visited is None: visited = set()
+    def resolve_service_group(
+        self,
+        name: str,
+        visited: Optional[Set[str]] = None,
+        incomplete: Optional[Set[str]] = None,
+    ) -> List[dict]:
+        if visited is None:
+            visited = set()
+        if incomplete is None:
+            incomplete = set()
+        is_top_level = len(visited) == 0
+
         cache_key = name
         cached = self._service_group_cache.get(cache_key)
-        if cached is not None: return self._clone_service_members(cached)
-        if name in visited: return []
+        if cached is not None:
+            return self._clone_service_members(cached)
+        if name in visited:
+            incomplete.update(visited)
+            return []
         visited.add(name)
         out: List[dict] = []
         for m in self.service_object_groups.get(name, []):
             if isinstance(m, dict) and 'group-object' in m:
-                out.extend(self.resolve_service_group(m['group-object'], visited))
+                dep = m['group-object']
+                out.extend(self.resolve_service_group(dep, visited, incomplete))
+                if dep in incomplete:
+                    incomplete.add(name)
             else:
                 out.append(m)
         visited.discard(name)
+
         cached_members = tuple(self._clone_service_members(out))
         self._service_group_cache[cache_key] = cached_members
+
+        if is_top_level:
+            for key in incomplete:
+                self._service_group_cache.pop(key, None)
+
         return self._clone_service_members(cached_members)
