@@ -22,13 +22,19 @@ Coding conventions
 
 Parsing rules
 -------------
-- Legacy engine: custom line-by-line parsing in `parsers/cisco/asa/parser.py` and `parsers/fortigate/config.py`.
+### Legacy Engine (Standard Library)
+- Custom line-by-line parsing in `parsers/cisco/asa/parser.py` and `parsers/fortigate/config.py`.
 - Parse ASA `object network` and `object-group network`
 - Record network-objects as exact IPv4Address or IPv4Network
 - For ACL lines, extract protocol/service token and parse exactly two endpoints (src, dst), then parse trailing service/port tokens
 - Recognize ASA tokens `any`, `any4`, `any6`
 - Parse basic service-groups: `service-object tcp|udp` with `eq/lt/gt/neq/range`, and nested `group-object`
 - Time-range and service-objects referenced by name are not resolved yet
+
+### Advanced Engine (AST-based)
+- Scaffolding in `parsers/cisco/asa/advanced_parser.py` and `parsers/fortigate/advanced_parser.py` using `ciscoconfparse` and `fortios-xutils`.
+- The advanced engine is enabled via `--use-external-engines` and requires `pip install .[external]`.
+- Both engines must target the same Intermediate Representation (IR) in `parsers/model.py`.
 
 External Engine Implementation Roadmap
 --------------------------------------

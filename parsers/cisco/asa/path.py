@@ -106,12 +106,7 @@ def path_check(
 
     if use_external_engines:
         from .advanced_parser import AdvancedASAConfig
-        try:
-            cfg = AdvancedASAConfig(cfg_text)
-        except NotImplementedError:
-            import sys
-            print("Warning: Advanced ASA engine not yet implemented. Falling back to legacy.", file=sys.stderr)
-            cfg = ASAConfig(cfg_text)
+        cfg = AdvancedASAConfig(cfg_text)
     else:
         cfg = ASAConfig(cfg_text)
     if not src or not dst:

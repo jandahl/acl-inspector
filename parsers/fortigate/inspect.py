@@ -39,12 +39,7 @@ def compare_old_new(
     """Compare policy impact for two targets within the same FortiGate config."""
     if use_external_engines:
         from .advanced_parser import AdvancedFTGConfig
-        try:
-            cfg = AdvancedFTGConfig(cfg_text, vdom=vdom)
-        except NotImplementedError:
-            import sys
-            print("Warning: Advanced FortiGate engine not yet implemented. Falling back to legacy.", file=sys.stderr)
-            cfg = FTGConfig(cfg_text, vdom=vdom)
+        cfg = AdvancedFTGConfig(cfg_text, vdom=vdom)
     else:
         cfg = FTGConfig(cfg_text, vdom=vdom)
 
@@ -81,12 +76,7 @@ def inspect_host(
     """Resolve policies impacting ``target`` within an optional VDOM."""
     if use_external_engines:
         from .advanced_parser import AdvancedFTGConfig
-        try:
-            cfg = AdvancedFTGConfig(cfg_text, vdom=vdom)
-        except NotImplementedError:
-            import sys
-            print("Warning: Advanced FortiGate engine not yet implemented. Falling back to legacy.", file=sys.stderr)
-            cfg = FTGConfig(cfg_text, vdom=vdom)
+        cfg = AdvancedFTGConfig(cfg_text, vdom=vdom)
     else:
         cfg = FTGConfig(cfg_text, vdom=vdom)
 

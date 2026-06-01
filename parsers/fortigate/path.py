@@ -26,12 +26,7 @@ def path_check(
     """Evaluate FortiGate policy/NAT outcome for a single flow."""
     if use_external_engines:
         from .advanced_parser import AdvancedFTGConfig
-        try:
-            cfg = AdvancedFTGConfig(cfg_text, vdom=vdom)
-        except NotImplementedError:
-            import sys
-            print("Warning: Advanced FortiGate engine not yet implemented. Falling back to legacy.", file=sys.stderr)
-            cfg = FTGConfig(cfg_text, vdom=vdom)
+        cfg = AdvancedFTGConfig(cfg_text, vdom=vdom)
     else:
         cfg = FTGConfig(cfg_text, vdom=vdom)
 
