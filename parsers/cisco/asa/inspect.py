@@ -86,15 +86,24 @@ def inspect_host(
     service_filter: Optional[dict] = None,
     include_any: bool = False,
     use_external_engines: bool = False,
-    cfg: Optional[Union[ASAConfig, Any]] = None,
 ) -> dict:
-    """Collect flattened ACL entries affecting ``target``."""
-    if cfg is None:
-        if use_external_engines:
-            from .advanced_parser import AdvancedASAConfig
-            cfg = AdvancedASAConfig(cfg_text)
-        else:
-            cfg = ASAConfig(cfg_text)
+    """Collect flattened ACL entries affecting ``target``.
+    
+    Args:
+        cfg_text: Raw ASA configuration text.
+        target: Network object or IP address to inspect.
+        service_filter: Optional dict to constrain matches.
+        include_any: When True, do not drop rules with ``any`` in src/dst.
+        use_external_engines: If True, use parallel advanced parsing engines.
+
+    Returns:
+        dict containing ``hits`` (list of flattened rules), ``target_nets``, and ``aliases``.
+    """
+    if use_external_engines:
+        from .advanced_parser import AdvancedASAConfig
+        cfg = AdvancedASAConfig(cfg_text)
+    else:
+        cfg = ASAConfig(cfg_text)
 
     target_nets = cfg.resolve_network(target)
     entries = cfg.flatten_acl()

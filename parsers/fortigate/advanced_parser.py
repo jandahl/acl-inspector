@@ -8,7 +8,6 @@ the fortios-xutils library for robust parent/child relationship handling.
 
 from __future__ import annotations
 import ipaddress
-import socket
 from collections import defaultdict
 from typing import Dict, List, Optional, Set, Tuple, Union, Any
 
@@ -19,7 +18,7 @@ class AdvancedFTGConfig:
         try:
             # Note: The actual library might be named slightly differently 
             # or used via specific modules. This is a placeholder for the engine.
-            import fortios_xutils
+            import fortios_xutils as _fortios_xutils  # noqa: F401
         except ImportError:
             raise ImportError("fortios-xutils is required for the external engine. Install with: pip install .[external]")
 
@@ -54,7 +53,9 @@ class AdvancedFTGConfig:
 
     def _parse_with_external(self):
         """Placeholder for actual fortios-xutils implementation."""
-        pass
+        raise NotImplementedError(
+            "Advanced FortiGate engine is not yet implemented. Remove --use-external-engines."
+        )
 
     def _build_reverse_indexes(self) -> None:
         ip_to_objects: Dict[Union[ipaddress.IPv4Address, ipaddress.IPv4Network], Set[str]] = defaultdict(set)

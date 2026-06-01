@@ -8,7 +8,6 @@ the ciscoconfparse library for robust parent/child relationship handling.
 
 from __future__ import annotations
 import ipaddress
-import socket
 from collections import defaultdict
 from typing import Dict, List, Optional, Set, Tuple, Union, Any, Iterable
 
@@ -60,7 +59,9 @@ class AdvancedASAConfig:
         # for obj in self.raw_tree.find_objects(r'^object network'):
         #     name = obj.re_match_field(r'^object network\s+(\S+)')
         #     ...
-        pass
+        raise NotImplementedError(
+            "Advanced ASA engine is not yet implemented. Remove --use-external-engines."
+        )
 
     def _build_reverse_indexes(self):
         """Build reverse lookup index: IP -> set of object names."""
@@ -118,8 +119,10 @@ class AdvancedASAConfig:
                         resolved.add(m)
                 visited.discard(token)
                 return set(resolved)
-            try: result = {to_ip_network(token)}
-            except: result = set()
+            try: 
+                result = {to_ip_network(token)}
+            except (ValueError, TypeError): 
+                result = set()
             self._network_cache[cache_key] = set(result)
             return result
         return set()
