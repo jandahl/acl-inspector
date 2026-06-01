@@ -37,11 +37,8 @@ def compare_old_new(
     use_external_engines: bool = False,
 ) -> dict:
     """Compare policy impact for two targets within the same FortiGate config."""
-    if use_external_engines:
-        from .advanced_parser import AdvancedFTGConfig
-        cfg = AdvancedFTGConfig(cfg_text, vdom=vdom)
-    else:
-        cfg = FTGConfig(cfg_text, vdom=vdom)
+    from parsers.loader import _get_engine
+    cfg = _get_engine('fortigate', cfg_text, use_external_engines=use_external_engines, vdom=vdom)
 
     old_nets = cfg.resolve_addr_token(old_target)
     new_nets = cfg.resolve_addr_token(new_target)
@@ -74,11 +71,8 @@ def inspect_host(
     use_external_engines: bool = False,
 ) -> dict:
     """Resolve policies impacting ``target`` within an optional VDOM."""
-    if use_external_engines:
-        from .advanced_parser import AdvancedFTGConfig
-        cfg = AdvancedFTGConfig(cfg_text, vdom=vdom)
-    else:
-        cfg = FTGConfig(cfg_text, vdom=vdom)
+    from parsers.loader import _get_engine
+    cfg = _get_engine('fortigate', cfg_text, use_external_engines=use_external_engines, vdom=vdom)
 
     target_nets = cfg.resolve_addr_token(target)
     entries = cfg.flatten_policies()

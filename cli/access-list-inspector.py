@@ -273,7 +273,11 @@ def main() -> None:
             try:
                 text = read_config_text(source_path)
                 if args.vendor == 'asa':
-                    cfg = cisco_asa.ASAConfig(text)
+                    if args.use_external_engines:
+                        from parsers.cisco.asa.advanced_parser import AdvancedASAConfig
+                        cfg = AdvancedASAConfig(text)
+                    else:
+                        cfg = cisco_asa.ASAConfig(text)
                     objects = []
                     literals = []
                     q = args.find_host

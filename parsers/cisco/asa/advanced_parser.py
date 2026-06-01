@@ -1,18 +1,9 @@
 # SPDX-License-Identifier: MPL-2.0
 # Copyright (c) 2024-2026 Jan Gronemann
-"""Parallel ASA parser powered by ciscoconfparse.
-
-This module provides a scaffolding for advanced Cisco ASA parsing using
-the ciscoconfparse library for robust parent/child relationship handling.
-"""
+"""Parallel ASA parser powered by ciscoconfparse (Scaffolding)."""
 
 from __future__ import annotations
-import ipaddress
-from collections import defaultdict
-from typing import Dict, List, Optional, Set, Tuple, Union, Any
-
-from .utils import to_ip_network
-from . import ir_export
+from typing import Optional, Set, Union
 
 
 class AdvancedASAConfig:
@@ -29,7 +20,7 @@ class AdvancedASAConfig:
 
         # Scaffolding is not yet implemented end-to-end.
         raise NotImplementedError(
-            "Advanced ASA engine is not yet implemented."
+            "Advanced ASA engine is not yet implemented. Remove --use-external-engines to continue."
         )
 
     def resolve_network(self, *args, **kwargs):
@@ -40,4 +31,5 @@ class AdvancedASAConfig:
 
     def to_ir(self, device_name: Optional[str] = None):
         """Map to common IR using ir_export."""
+        from . import ir_export
         return ir_export.to_ir(self, device_name)

@@ -55,7 +55,6 @@ def _get_engine(
             except ImportError as e:
                 raise ConfigLoadError(f"External engine error: {e}. Try: pip install .[external]")
             except NotImplementedError as e:
-                # Wrap NotImplementedError for consistent API
                 raise ConfigLoadError(str(e))
             except Exception as e:
                 raise ConfigLoadError(f"Failed to parse ASA config with advanced engine: {e}")
@@ -84,6 +83,9 @@ def _get_engine(
             return FTGConfig(text, vdom=vdom)
         except Exception as e:
             raise ConfigLoadError(f"Failed to parse FortiGate config: {e}")
+
+    elif vendor in ('ios', 'ios-xe', 'ios-xr'):
+        raise ConfigLoadError(f"Vendor {vendor} detected but parser not yet implemented")
 
     raise ConfigLoadError(f"Unsupported vendor: {vendor}")
 

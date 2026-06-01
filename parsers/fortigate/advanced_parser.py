@@ -1,15 +1,9 @@
 # SPDX-License-Identifier: MPL-2.0
 # Copyright (c) 2024-2026 Jan Gronemann
-"""Parallel FortiGate parser powered by fortios-xutils.
-
-This module provides a scaffolding for advanced FortiGate parsing using
-the fortios-xutils library for robust parent/child relationship handling.
-"""
+"""Parallel FortiGate parser powered by fortios-xutils (Scaffolding)."""
 
 from __future__ import annotations
-import ipaddress
-from collections import defaultdict
-from typing import Dict, List, Optional, Set, Tuple, Union, Any
+from typing import Optional, Set, Union
 
 
 class AdvancedFTGConfig:
@@ -26,7 +20,7 @@ class AdvancedFTGConfig:
 
         # Scaffolding is not yet implemented end-to-end.
         raise NotImplementedError(
-            "Advanced FortiGate engine is not yet implemented."
+            "Advanced FortiGate engine is not yet implemented. Remove --use-external-engines to continue."
         )
 
     def resolve_addr_token(self, *args, **kwargs):

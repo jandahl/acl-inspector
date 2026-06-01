@@ -104,11 +104,8 @@ def path_check(
         The result is JSON-serialisable so the web UI/CLI can render it directly.
     """
 
-    if use_external_engines:
-        from .advanced_parser import AdvancedASAConfig
-        cfg = AdvancedASAConfig(cfg_text)
-    else:
-        cfg = ASAConfig(cfg_text)
+    from parsers.loader import _get_engine
+    cfg = _get_engine('asa', cfg_text, use_external_engines=use_external_engines)
     if not src or not dst:
         raise ValueError("source and destination are required for path evaluation")
 
