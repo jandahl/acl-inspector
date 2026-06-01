@@ -96,8 +96,10 @@ class AdvancedASAConfig:
                 self._network_cache[cache_key] = set(result)
                 return result
             if token_lower in ('any6', 'any-ipv6'):
-                try: result = {ipaddress.ip_network('::/0')}
-                except: result = set()
+                try: 
+                    result = {ipaddress.ip_network('::/0')}
+                except (ValueError, TypeError): 
+                    result = set()
                 self._network_cache[cache_key] = set(result)
                 return result
             if token in self.network_objects:
@@ -143,6 +145,7 @@ class AdvancedASAConfig:
                 out.extend(self.resolve_service_group(m['group-object'], visited))
             else:
                 out.append(m)
+        visited.discard(name)
         cached_members = tuple(self._clone_service_members(out))
         self._service_group_cache[cache_key] = cached_members
         return self._clone_service_members(cached_members)
