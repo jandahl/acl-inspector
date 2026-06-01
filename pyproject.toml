@@ -18,7 +18,7 @@ tui = [
     "textual>=0.60",
 ]
 external = [
-    "ciscoconfparse>=1.9.0",
+    "ciscoconfparse>=1.9.0,<3",
     "fortios-xutils>=0.0.1",
 ]
 dev = [

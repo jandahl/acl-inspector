@@ -105,6 +105,8 @@ def load_config(
                 return cfg, vendor, confidence
             except ImportError as e:
                 raise ConfigLoadError(f"External engine error: {e}. Try: pip install .[external]")
+            except NotImplementedError:
+                raise
             except Exception as e:
                 raise ConfigLoadError(f"Failed to parse ASA config with advanced engine: {e}")
 
@@ -123,6 +125,8 @@ def load_config(
                 return cfg, vendor, confidence
             except ImportError as e:
                 raise ConfigLoadError(f"External engine error: {e}. Try: pip install .[external]")
+            except NotImplementedError:
+                raise
             except Exception as e:
                 raise ConfigLoadError(f"Failed to parse FortiGate config with advanced engine: {e}")
 
