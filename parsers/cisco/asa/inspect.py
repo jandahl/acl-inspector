@@ -68,8 +68,8 @@ def compare_old_new(
         Each flattened entry retains the original ACL line under ``raw`` so UIs
         can reference back to the source configuration.
     """
-    from parsers.loader import _get_engine
-    cfg = _get_engine('asa', cfg_text, use_external_engines=use_external_engines)
+    from parsers.loader import get_engine
+    cfg = get_engine('asa', cfg_text, use_external_engines=use_external_engines)
 
     old_nets = cfg.resolve_network(old_target)
     new_nets = cfg.resolve_network(new_target)
@@ -113,8 +113,8 @@ def inspect_host(
     Returns:
         dict containing ``hits`` (list of flattened rules), ``target_nets``, and ``aliases``.
     """
-    from parsers.loader import _get_engine
-    cfg = _get_engine('asa', cfg_text, use_external_engines=use_external_engines)
+    from parsers.loader import get_engine
+    cfg = get_engine('asa', cfg_text, use_external_engines=use_external_engines)
 
     target_nets = cfg.resolve_network(target)
     entries = cfg.flatten_acl()

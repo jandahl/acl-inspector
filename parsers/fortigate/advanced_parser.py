@@ -3,7 +3,7 @@
 """Parallel FortiGate parser powered by fortios-xutils (Scaffolding)."""
 
 from __future__ import annotations
-from typing import Optional, Set, Union
+from typing import Optional
 
 
 class AdvancedFTGConfig:
@@ -11,7 +11,7 @@ class AdvancedFTGConfig:
 
     def __init__(self, text: str, vdom: Optional[str] = None) -> None:
         try:
-            import fortios_xutils as _fortios_xutils  # noqa: F401
+            import fortios_xutils  # noqa: F401
         except ImportError:
             raise ImportError(
                 "fortios-xutils is required for the external engine. "
@@ -23,6 +23,7 @@ class AdvancedFTGConfig:
             "Advanced FortiGate engine is not yet implemented. Remove --use-external-engines to continue."
         )
 
+    # Future AST-based interface
     def resolve_addr_token(self, *args, **kwargs):
         raise NotImplementedError()
 

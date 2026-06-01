@@ -3,7 +3,7 @@
 """Parallel ASA parser powered by ciscoconfparse (Scaffolding)."""
 
 from __future__ import annotations
-from typing import Optional, Set, Union
+from typing import Optional
 
 
 class AdvancedASAConfig:
@@ -11,7 +11,7 @@ class AdvancedASAConfig:
 
     def __init__(self, text: str) -> None:
         try:
-            from ciscoconfparse import CiscoConfParse  # noqa: F401
+            import ciscoconfparse  # noqa: F401
         except ImportError:
             raise ImportError(
                 "ciscoconfparse is required for the external engine. "
@@ -23,6 +23,7 @@ class AdvancedASAConfig:
             "Advanced ASA engine is not yet implemented. Remove --use-external-engines to continue."
         )
 
+    # Future AST-based interface
     def resolve_network(self, *args, **kwargs):
         raise NotImplementedError()
 

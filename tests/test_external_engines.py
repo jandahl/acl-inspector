@@ -3,8 +3,12 @@
 import unittest
 import sys
 import io
+from pathlib import Path
 from unittest.mock import patch, MagicMock
 from parsers.loader import load_config, ConfigLoadError
+
+# Compute project root to reliably find configs/fixtures regardless of CWD
+PROJECT_ROOT = Path(__file__).parent.parent
 
 
 class TestExternalEngines(unittest.TestCase):
@@ -15,6 +19,7 @@ class TestExternalEngines(unittest.TestCase):
         with patch.dict(sys.modules, {'ciscoconfparse': None}):
             with patch('sys.stdin', new=io.StringIO("!")):
                 with self.assertRaises(ConfigLoadError) as cm:
+                    # We use vendor='asa' to bypass detection and go straight to engine loading
                     load_config("-", vendor='asa', use_external_engines=True)
                 self.assertIn("pip install .[external]", str(cm.exception))
 
@@ -38,8 +43,9 @@ class TestExternalEngines(unittest.TestCase):
 
     def test_fortigate_advanced_parser_scaffolding(self):
         """Test that AdvancedFTGConfig scaffolding raises NotImplementedError."""
+        # Note: Class import is outside patch because the library import is deferred inside __init__
+        from parsers.fortigate.advanced_parser import AdvancedFTGConfig
         with patch.dict(sys.modules, {'fortios_xutils': MagicMock()}):
-            from parsers.fortigate.advanced_parser import AdvancedFTGConfig
             with self.assertRaises(NotImplementedError) as cm:
                 AdvancedFTGConfig("!")
             self.assertIn("not yet implemented", str(cm.exception))

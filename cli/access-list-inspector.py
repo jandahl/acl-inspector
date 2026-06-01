@@ -273,11 +273,8 @@ def main() -> None:
             try:
                 text = read_config_text(source_path)
                 if args.vendor == 'asa':
-                    if args.use_external_engines:
-                        from parsers.cisco.asa.advanced_parser import AdvancedASAConfig
-                        cfg = AdvancedASAConfig(text)
-                    else:
-                        cfg = cisco_asa.ASAConfig(text)
+                    from parsers.loader import get_engine
+                    cfg = get_engine('asa', text, use_external_engines=args.use_external_engines)
                     objects = []
                     literals = []
                     q = args.find_host
@@ -339,12 +336,13 @@ def main() -> None:
 
         # Parse source config and convert to IR
         if args.vendor == 'asa':
-            cfg = cisco_asa.ASAConfig(cfg_text)
+            from parsers.loader import get_engine
+            cfg = get_engine('asa', cfg_text, use_external_engines=args.use_external_engines)
             from parsers.cisco.asa import ir_export
             ir_device = ir_export.to_ir(cfg, device_name=args.device_name)
         elif args.vendor == 'fortigate':
-            from parsers.fortigate.config import FTGConfig
-            cfg = FTGConfig(cfg_text, vdom=args.vdom)
+            from parsers.loader import get_engine
+            cfg = get_engine('fortigate', cfg_text, use_external_engines=args.use_external_engines, vdom=args.vdom)
             from parsers.fortigate import ir_export
             ir_device = ir_export.to_ir(cfg, device_name=args.device_name)
         else:
@@ -498,7 +496,7 @@ def main() -> None:
     if args.vendor == 'asa':
         if args.inspect:
             report = cisco_asa.inspect_host(
-                cfg_text, args.inspect, service_filter=svc_filter, 
+                cfg_text, args.inspect, service_filter=svc_filter,
                 include_any=args.include_any, use_external_engines=args.use_external_engines
             )
             if args.format == 'json':
@@ -520,7 +518,7 @@ def main() -> None:
                     print(f"  {addr}: {', '.join(sorted(names))}")
         else:
             diff = cisco_asa.compare_old_new(
-                cfg_text, args.old, args.new, service_filter=svc_filter, 
+                cfg_text, args.old, args.new, service_filter=svc_filter,
                 include_any=args.include_any, use_external_engines=args.use_external_engines
             )
             if args.format == 'json':
@@ -547,7 +545,7 @@ def main() -> None:
     elif args.vendor == 'fortigate':
         if args.inspect:
             report = fortigate_parser.inspect_host(
-                cfg_text, args.inspect, service_filter=svc_filter, vdom=args.vdom, 
+                cfg_text, args.inspect, service_filter=svc_filter, vdom=args.vdom,
                 use_external_engines=args.use_external_engines
             )
             if args.format == 'json':
@@ -569,7 +567,7 @@ def main() -> None:
                     print(f"  {addr}: {', '.join(sorted(names))}")
         else:
             diff = fortigate_parser.compare_old_new(
-                cfg_text, args.old, args.new, service_filter=svc_filter, vdom=args.vdom, 
+                cfg_text, args.old, args.new, service_filter=svc_filter, vdom=args.vdom,
                 use_external_engines=args.use_external_engines
             )
             if args.format == 'json':

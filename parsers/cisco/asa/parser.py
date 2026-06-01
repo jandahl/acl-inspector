@@ -1251,11 +1251,11 @@ class ASAConfig:
     ) -> List[dict]:
         if not hasattr(self, 'service_object_groups'):
             return []
+        is_top_level = visited is None
         if visited is None:
             visited = set()
         if incomplete is None:
             incomplete = set()
-        is_top_level = len(visited) == 0
 
         cache_key = name
         cached = self._service_group_cache.get(cache_key)
@@ -1293,11 +1293,11 @@ class ASAConfig:
         visited: Optional[Set[str]] = None,
         incomplete: Optional[Set[str]] = None,
     ) -> Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]]:
+        is_top_level = visited is None
         if visited is None:
             visited = set()
         if incomplete is None:
             incomplete = set()
-        is_top_level = len(visited) == 0
 
         if isinstance(token, (ipaddress.IPv4Address, ipaddress.IPv4Network)):
             return {token}
