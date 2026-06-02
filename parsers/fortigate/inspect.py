@@ -22,7 +22,7 @@ def evaluate(
     out: List[dict] = []
     for entry in entries:
         if nets_overlap(entry["src"], target_nets) or nets_overlap(entry["dst"], target_nets):
-            if not _service_matches(entry, service_filter):
+            if service_filter and not _service_matches(entry, service_filter):
                 continue
             out.append(entry)
     return out
@@ -34,18 +34,20 @@ def compare_old_new(
     new_target: str,
     service_filter: Optional[dict] = None,
     vdom: Optional[str] = None,
+    use_external_engines: bool = False,
 ) -> dict:
     """Compare policy impact for two targets within the same FortiGate config."""
+    from parsers.loader import get_engine
+    cfg = get_engine('fortigate', cfg_text, use_external_engines=use_external_engines, vdom=vdom)
 
-    cfg = FTGConfig(cfg_text, vdom=vdom)
     old_nets = cfg.resolve_addr_token(old_target)
     new_nets = cfg.resolve_addr_token(new_target)
     entries = cfg.flatten_policies()
     old_hits = evaluate(entries, old_nets, service_filter)
     new_hits = evaluate(entries, new_nets, service_filter)
 
-    def rule_id(entry: dict) -> str:
-        return entry["raw"]
+    def rule_id(e):
+        return (e.get("policyid"), e["raw"], tuple(sorted([str(s) for s in e["src"]])), tuple(sorted([str(d) for d in e["dst"]])))
 
     old_ids = {rule_id(e) for e in old_hits}
     new_ids = {rule_id(e) for e in new_hits}
@@ -66,10 +68,12 @@ def inspect_host(
     target: str,
     service_filter: Optional[dict] = None,
     vdom: Optional[str] = None,
+    use_external_engines: bool = False,
 ) -> dict:
     """Resolve policies impacting ``target`` within an optional VDOM."""
+    from parsers.loader import get_engine
+    cfg = get_engine('fortigate', cfg_text, use_external_engines=use_external_engines, vdom=vdom)
 
-    cfg = FTGConfig(cfg_text, vdom=vdom)
     target_nets = cfg.resolve_addr_token(target)
     entries = cfg.flatten_policies()
     hits = evaluate(entries, target_nets, service_filter)

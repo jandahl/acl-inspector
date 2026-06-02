@@ -73,13 +73,21 @@ make themes
 
 # Download libre fonts for web UI
 make fonts
+
+# Install optional external parsing engines (advanced AST handling)
+pip install .[external]
 ```
 
 ## Architecture
 
 ### Multi-Vendor Parser Design
 
-The codebase is structured around a **pluggable parser architecture** that normalizes vendor-specific configs into shared data models:
+The codebase is structured around a **pluggable parser architecture** that normalizes vendor-specific configs into shared data models. A parallel "advanced" engine powered by external libraries is available for testing:
+
+**Parsing Engines:**
+- **Legacy (Default)**: Custom line-by-line state machine (standard library only).
+- **Advanced (`--use-external-engines`)**: Uses `ciscoconfparse` (ASA) and `fortios-xutils` (FortiGate).
+  - **Vision**: Enabling this engine will automatically enrich CLI output with "parent-child" context (e.g., showing the full object-group hierarchy or nested policy blocks containing a matched rule).
 
 **Parsing Flow:**
 ```

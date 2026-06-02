@@ -337,3 +337,4 @@ Understanding the planned evolution helps maintain architecture alignment:
 - **docs/ABOUT.md**: Project context and motivation
 - Unit testing is important
 - This is not in production yet so "backwards compatibility" doesn't matter yet
+

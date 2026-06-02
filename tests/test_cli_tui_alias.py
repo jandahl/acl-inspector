@@ -35,7 +35,7 @@ class SingularityAliasTest(unittest.TestCase):
     def test_singularitty_invokes_tui_with_custom_args(self):
         module = load_cli_module()
         tui_args = ["--vendor", "fortigate", "--config", "configs/sample.conf", "--vdom", "root"]
-        argv = ["cli/access-list-inspector.py", "--singularitty"] + tui_args
+        argv = ["cli/access-list-inspector.py", "--singularity"] + tui_args
         with mock.patch("tui.app.main") as tui_main:
             with mock.patch.object(sys, "argv", argv):
                 module.main()
@@ -43,7 +43,7 @@ class SingularityAliasTest(unittest.TestCase):
 
     def test_singularitty_defaults_to_tui_from_cli(self):
         module = load_cli_module()
-        argv = ["cli/access-list-inspector.py", "--singularitty"]
+        argv = ["cli/access-list-inspector.py", "--singularity"]
         with mock.patch("tui.app.main") as tui_main:
             with mock.patch.object(sys, "argv", argv):
                 module.main()

@@ -14,17 +14,67 @@ from typing import Optional, Tuple, Union, TYPE_CHECKING
 
 from parsers.detector import detect_vendor
 
+__all__ = ["ConfigLoadError", "load_config", "load_config_to_ir", "get_engine"]
+
 # Import types for type checking
 if TYPE_CHECKING:
     from parsers.cisco.asa.parser import ASAConfig
     from parsers.fortigate.config import FTGConfig
 
-__all__ = ["load_config", "load_config_to_ir", "ConfigLoadError"]
-
 
 class ConfigLoadError(Exception):
-    """Raised when config loading fails."""
+    """Raised when configuration loading or parsing fails."""
     pass
+
+
+def get_engine(
+    vendor: str,
+    text: str,
+    use_external_engines: bool = False,
+    vdom: Optional[str] = None
+) -> Union[ASAConfig, FTGConfig]:
+    """Internal helper to instantiate the requested parsing engine.
+
+    Args:
+        vendor: 'asa' or 'fortigate'
+        text: Raw configuration text
+        use_external_engines: If True, use the AST-based engine.
+        vdom: Optional FortiGate VDOM
+
+    Returns:
+        Config object (ASAConfig, FTGConfig, etc.)
+
+    Raises:
+        ConfigLoadError: If engine fails to load due to missing dependencies or 
+            unimplemented features.
+    """
+    vendor = vendor.lower()
+    if vendor == 'asa':
+        if use_external_engines:
+            from parsers.cisco.asa.advanced_parser import AdvancedASAConfig
+            try:
+                return AdvancedASAConfig(text)
+            except (ImportError, NotImplementedError) as e:
+                raise ConfigLoadError(f"External engine error: {e}") from e
+
+        from parsers.cisco.asa.parser import ASAConfig
+        return ASAConfig(text)
+
+    elif vendor == 'fortigate':
+        if use_external_engines:
+            from parsers.fortigate.advanced_parser import AdvancedFTGConfig
+            try:
+                return AdvancedFTGConfig(text, vdom=vdom)
+            except (ImportError, NotImplementedError) as e:
+                raise ConfigLoadError(f"External engine error: {e}") from e
+
+        from parsers.fortigate.config import FTGConfig
+        return FTGConfig(text, vdom=vdom)
+
+    elif vendor in ('ios', 'ios-xe', 'ios-xr'):
+        raise ConfigLoadError(f"Vendor {vendor} detected but parser not yet implemented")
+
+    raise ConfigLoadError(f"Unsupported vendor: {vendor}")
 
 
 def load_config(
@@ -32,8 +82,9 @@ def load_config(
     vendor: Optional[str] = None,
     vdom: str = "",
     min_confidence: int = 60,
-    strict: bool = False
-) -> Tuple[Union["ASAConfig", "FTGConfig"], str, int]:
+    strict: bool = False,
+    use_external_engines: bool = False
+) -> Tuple[Union[ASAConfig, FTGConfig], str, int]:
     """Load firewall config with automatic vendor detection.
 
     Args:
@@ -42,6 +93,7 @@ def load_config(
         vdom: FortiGate VDOM name (only used if vendor is fortigate)
         min_confidence: Minimum confidence score for auto-detection (0-100)
         strict: If True, raise error on low confidence. If False, use best guess.
+        use_external_engines: If True, use parallel advanced parsing engines.
 
     Returns:
         Tuple of (config_object, detected_vendor, confidence_score)
@@ -93,28 +145,16 @@ def load_config(
         confidence = 100  # User-specified, assume 100% confidence
         reason = "user_specified"
 
-    # Parse config based on vendor
-    if vendor == 'asa':
-        from parsers.cisco.asa.parser import ASAConfig
-        try:
-            cfg = ASAConfig(text)
-            return cfg, vendor, confidence
-        except Exception as e:
-            raise ConfigLoadError(f"Failed to parse ASA config: {e}")
-
-    elif vendor == 'fortigate':
-        from parsers.fortigate.config import FTGConfig
-        try:
-            cfg = FTGConfig(text, vdom=vdom)
-            return cfg, vendor, confidence
-        except Exception as e:
-            raise ConfigLoadError(f"Failed to parse FortiGate config: {e}")
-
-    elif vendor in ('ios', 'ios-xe', 'ios-xr'):
-        raise ConfigLoadError(f"Vendor {vendor} detected but parser not yet implemented")
-
-    else:
-        raise ConfigLoadError(f"Unsupported vendor: {vendor}")
+    # Parse config using requested engine
+    try:
+        cfg = get_engine(
+            vendor, text, use_external_engines=use_external_engines, vdom=vdom
+        )
+        return cfg, vendor, confidence
+    except ConfigLoadError:
+        raise
+    except Exception as e:
+        raise ConfigLoadError(f"Failed to parse {vendor} config: {e}") from e
 
 
 def load_config_to_ir(
@@ -122,6 +162,7 @@ def load_config_to_ir(
     vendor: Optional[str] = None,
     device_name: Optional[str] = None,
     vdom: str = "",
+    use_external_engines: bool = False,
     **kwargs
 ):
     """Load config and immediately convert to IR.
@@ -133,6 +174,7 @@ def load_config_to_ir(
         vendor: Optional vendor override
         device_name: Device name for IR (defaults to filename)
         vdom: FortiGate VDOM
+        use_external_engines: If True, use parallel advanced parsing engines.
         **kwargs: Additional args passed to load_config()
 
     Returns:
@@ -143,7 +185,10 @@ def load_config_to_ir(
         >>> device = load_config_to_ir("firewall.conf")
         >>> print(f"{device.vendor} v{device.version}: {len(device.acls)} ACLs")
     """
-    cfg, detected_vendor, _ = load_config(source, vendor=vendor, vdom=vdom, **kwargs)
+    cfg, detected_vendor, _ = load_config(
+        source, vendor=vendor, vdom=vdom,
+        use_external_engines=use_external_engines, **kwargs
+    )
 
     # Determine device name
     if device_name is None:

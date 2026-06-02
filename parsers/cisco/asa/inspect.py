@@ -19,25 +19,22 @@ __all__ = ["evaluate_acl", "compare_old_new", "inspect_host"]
 
 def evaluate_acl(
     entries: List[dict],
-    target_nets: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network, str]],
-    cfg: Optional[ASAConfig] = None,
+    target_nets: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]],
+    cfg: ASAConfig,
     service_filter: Optional[dict] = None,
     ignore_any: bool = True,
 ) -> List[dict]:
-    """Filter flattened ACL entries that affect ``target_nets``."""
+    """Filter flattened ASA ACL entries affecting the target."""
 
-    affected: List[dict] = []
+    out: List[dict] = []
     for entry in entries:
         if ignore_any and _has_any_endpoint(entry):
             continue
         if nets_overlap(entry["src"], target_nets) or nets_overlap(entry["dst"], target_nets):
-            if service_filter:
-                if cfg is None:
-                    continue
-                if not _service_matches(cfg, entry, service_filter):
-                    continue
-            affected.append(entry)
-    return affected
+            if service_filter and not _service_matches(cfg, entry, service_filter):
+                continue
+            out.append(entry)
+    return out
 
 
 def compare_old_new(
@@ -46,6 +43,7 @@ def compare_old_new(
     new_target: str,
     service_filter: Optional[dict] = None,
     include_any: bool = False,
+    use_external_engines: bool = False,
 ) -> dict:
     """Compare ACL impact for two network targets within the same config.
 
@@ -56,6 +54,7 @@ def compare_old_new(
         service_filter: Optional dict with keys ``proto`` and ``dports`` (set[int])
             to constrain matches to a protocol/port set.
         include_any: When True, do not drop rules with ``any`` in src/dst.
+        use_external_engines: If True, use parallel advanced parsing engines.
 
     Returns:
         dict with keys:
@@ -66,16 +65,17 @@ def compare_old_new(
         Each flattened entry retains the original ACL line under ``raw`` so UIs
         can reference back to the source configuration.
     """
+    from parsers.loader import get_engine
+    cfg = get_engine('asa', cfg_text, use_external_engines=use_external_engines)
 
-    cfg = ASAConfig(cfg_text)
     old_nets = cfg.resolve_network(old_target)
     new_nets = cfg.resolve_network(new_target)
     entries = cfg.flatten_acl()
     old_hits = evaluate_acl(entries, old_nets, cfg, service_filter=service_filter, ignore_any=(not include_any))
     new_hits = evaluate_acl(entries, new_nets, cfg, service_filter=service_filter, ignore_any=(not include_any))
 
-    def rule_id(entry: dict) -> str:
-        return entry["raw"]
+    def rule_id(e):
+        return (e.get("acl"), e["raw"], tuple(sorted([str(s) for s in e["src"]])), tuple(sorted([str(d) for d in e["dst"]])))
 
     old_ids = {rule_id(e) for e in old_hits}
     new_ids = {rule_id(e) for e in new_hits}
@@ -96,10 +96,23 @@ def inspect_host(
     target: str,
     service_filter: Optional[dict] = None,
     include_any: bool = False,
+    use_external_engines: bool = False,
 ) -> dict:
-    """Collect flattened ACL entries affecting ``target``."""
+    """Collect flattened ACL entries affecting ``target``.
+    
+    Args:
+        cfg_text: Raw ASA configuration text.
+        target: Network object or IP address to inspect.
+        service_filter: Optional dict to constrain matches.
+        include_any: When True, do not drop rules with ``any`` in src/dst.
+        use_external_engines: If True, use parallel advanced parsing engines.
 
-    cfg = ASAConfig(cfg_text)
+    Returns:
+        dict containing ``hits`` (list of flattened rules), ``target_nets``, and ``aliases``.
+    """
+    from parsers.loader import get_engine
+    cfg = get_engine('asa', cfg_text, use_external_engines=use_external_engines)
+
     target_nets = cfg.resolve_network(target)
     entries = cfg.flatten_acl()
     hits = evaluate_acl(entries, target_nets, cfg, service_filter=service_filter, ignore_any=(not include_any))

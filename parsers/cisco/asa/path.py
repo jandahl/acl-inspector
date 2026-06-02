@@ -8,7 +8,6 @@ import ipaddress
 from collections import defaultdict
 from typing import Dict, List, Optional, Set, Tuple, Union
 
-from ...suggest import suggest_corrections
 from .parser import (
     ASAConfig,
     _pick_preferred_address,
@@ -30,14 +29,17 @@ def _build_packet_tracer_commands(
     dports: Set[int],
     candidates: List[Dict[str, Union[str, None]]],
 ) -> List[dict]:
-    commands: List[dict] = []
-    if not candidates:
-        return commands
-
-    proto_token = (proto or "ip").lower()
-    if proto_token not in {"tcp", "udp"}:
-        command_proto = "ip"
+    """Build ASA packet-tracer commands for candidates."""
+    commands = []
+    proto_token = (proto or 'ip').lower()
+    if proto_token == 'ip':
+        # Use 'rawip' for generic IP evaluation in ASA packet-tracer
+        command_proto = 'rawip'
         src_port = 0
+        dst_port = 0
+    elif proto_token == 'icmp':
+        command_proto = 'icmp'
+        src_port = 8  # ICMP type 8 = echo request
         dst_port = 0
     else:
         command_proto = proto_token
@@ -48,17 +50,17 @@ def _build_packet_tracer_commands(
     dst_str = str(dst_ip)
 
     for cand in candidates:
-        iface = cand.get("display_interface") or cand.get("interface")
+        iface = cand.get('display_interface') or cand.get('interface')
         if not iface or iface.lower() == "global":
             continue
-        direction = cand.get("display_direction") or cand.get("direction")
-        command = "packet-tracer input {iface} {proto} {src} {sport} {dst} {dport}".format(
+        direction = cand.get('display_direction') or cand.get('direction')
+        command = "packet-tracer input {iface} {proto} {src} {src_port} {dst} {dst_port}".format(
             iface=iface,
             proto=command_proto,
             src=src_str,
-            sport=src_port,
+            src_port=src_port,
             dst=dst_str,
-            dport=dst_port,
+            dst_port=dst_port,
         )
         commands.append(
             {
@@ -78,6 +80,7 @@ def path_check(
     dports: Optional[Set[int]] = None,
     include_any: bool = True,
     guess_interface_pairs: bool = True,
+    use_external_engines: bool = False,
 ) -> dict:
     """Evaluate NAT + ACL outcome for a single flow.
 
@@ -88,6 +91,8 @@ def path_check(
         proto: Optional protocol token (``tcp``, ``udp``, ``icmp``, ``ip``).
         dports: Optional set of destination port integers.
         include_any: Whether to include ``any`` endpoints when walking ACLs.
+        guess_interface_pairs: Whether to infer counterpart ACL matches.
+        use_external_engines: If True, use parallel advanced parsing engines.
 
     Returns:
         dict containing:
@@ -100,8 +105,9 @@ def path_check(
             ``context``: Interface/direction hints used for matching.
         The result is JSON-serialisable so the web UI/CLI can render it directly.
     """
+    from parsers.loader import get_engine
+    cfg = get_engine('asa', cfg_text, use_external_engines=use_external_engines)
 
-    cfg = ASAConfig(cfg_text)
     if not src or not dst:
         raise ValueError("source and destination are required for path evaluation")
 
@@ -202,7 +208,6 @@ def path_check(
     )
     acl_info = _evaluate_acl_flow(cfg, src_after, dst_after, svc_filter, include_any, acl_context)
     matches = acl_info.get("matches") or []
-    warnings: List[str] = []
     if guess_interface_pairs and matches:
         extras, inferred_warnings = _augment_acl_matches(
             cfg, matches, src_after, dst_after, svc_filter, include_any
@@ -211,7 +216,7 @@ def path_check(
             matches.extend(extras)
             acl_info["matches"] = matches
         if inferred_warnings:
-            warnings.extend(inferred_warnings)
+            acl_info.setdefault("warnings", []).extend(inferred_warnings)
 
     context_walks: List[dict] = []
     for candidate in candidates:
@@ -245,8 +250,6 @@ def path_check(
         )
     allowed = acl_info.get("decision") == "permit"
     packet_tracer_cmds = _build_packet_tracer_commands(src_ip, dst_ip, proto, dports, candidates)
-    if warnings:
-        acl_info.setdefault("warnings", []).extend(warnings)
 
     context = {
         "src_interface": src_iface,
@@ -284,6 +287,7 @@ def path_check(
         "context": context,
         "packet_tracer": packet_tracer_cmds,
     }
+    from ...suggest import suggest_corrections
     result["suggestion"] = suggest_corrections(result, "asa")
     return result
 

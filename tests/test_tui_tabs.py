@@ -602,11 +602,20 @@ class TestOnItemSelected(unittest.TestCase):
                 self.last_item = item
                 self.last_config = config
 
+        class _ActionTabs:
+            def focus(self):
+                pass
+            def clear_tabs(self):
+                pass
+            def add_tab(self, label, view_id):
+                pass
+
         detail_view = _DetailView()
 
         _widgets = {
             SuggestionList: _SuggestionList(),
             DetailView: detail_view,
+            ActionTabs: _ActionTabs(),
             "#breadcrumb": _Breadcrumb(),
             "#breadcrumb-container": _Container(),
             "#actions-container": _Container(),

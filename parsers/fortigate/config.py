@@ -697,7 +697,7 @@ class FTGConfig:
                         break
                     except Exception:
                         continue
-        return {"dst_ports": dst_ports, "dst_service_groups": groups, "proto": None}
+        return {"dst_ports": dst_ports, "dst_service_groups": sorted(list(groups)), "proto": None}
 
     # ---------- Flattening and evaluation ----------
     def flatten_policies(self) -> List[dict]:

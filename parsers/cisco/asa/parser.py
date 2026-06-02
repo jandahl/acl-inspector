@@ -1243,36 +1243,62 @@ class ASAConfig:
     def _clone_service_members(self, members: Iterable[dict]) -> List[dict]:
         return [dict(m) for m in members]
 
-    def resolve_service_group(self, name: str, visited: Optional[Set[str]] = None) -> List[dict]:
+    def resolve_service_group(
+        self,
+        name: str,
+        visited: Optional[Set[str]] = None,
+        incomplete: Optional[Set[str]] = None,
+    ) -> List[dict]:
         if not hasattr(self, 'service_object_groups'):
             return []
+        is_top_level = visited is None
         if visited is None:
             visited = set()
+        if incomplete is None:
+            incomplete = set()
+
         cache_key = name
         cached = self._service_group_cache.get(cache_key)
         if cached is not None:
             return self._clone_service_members(cached)
         if name in visited:
+            incomplete.update(visited)
             return []
         visited.add(name)
         out: List[dict] = []
         for m in self.service_object_groups.get(name, []):
             if isinstance(m, dict) and 'group-object' in m:
-                out.extend(self.resolve_service_group(m['group-object'], visited))
+                dep = m['group-object']
+                out.extend(self.resolve_service_group(dep, visited, incomplete))
+                if dep in incomplete:
+                    incomplete.add(name)
             elif isinstance(m, dict) and 'proto' in m:
                 out.append(m)
             elif isinstance(m, dict) and 'object' in m:
                 out.append(m)
+        visited.discard(name)
+
         cached_members = tuple(self._clone_service_members(out))
         self._service_group_cache[cache_key] = cached_members
+
+        if is_top_level:
+            for key in incomplete:
+                self._service_group_cache.pop(key, None)
+
         return self._clone_service_members(cached_members)
 
     def resolve_network(
         self,
         token: Union[str, ipaddress.IPv4Address, ipaddress.IPv4Network],
         visited: Optional[Set[str]] = None,
+        incomplete: Optional[Set[str]] = None,
     ) -> Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]]:
-        visited = set() if visited is None else visited
+        is_top_level = visited is None
+        if visited is None:
+            visited = set()
+        if incomplete is None:
+            incomplete = set()
+
         if isinstance(token, (ipaddress.IPv4Address, ipaddress.IPv4Network)):
             return {token}
         if isinstance(token, str):
@@ -1288,7 +1314,7 @@ class ASAConfig:
             if token_lower in ('any6', 'any-ipv6'):
                 try:
                     result = {ipaddress.ip_network('::/0')}
-                except Exception:
+                except (ValueError, TypeError):
                     result = set()
                 self._network_cache[cache_key] = set(result)
                 return result
@@ -1298,6 +1324,7 @@ class ASAConfig:
                 return nets
             if token in self.network_object_groups:
                 if token in visited:
+                    incomplete.update(visited)
                     cached_cycle = self._network_cache.get(cache_key)
                     return set(cached_cycle) if cached_cycle is not None else set()
                 visited.add(token)
@@ -1306,22 +1333,35 @@ class ASAConfig:
                 for m in self.network_object_groups[token]:
                     if isinstance(m, dict):
                         if 'group-object' in m:
-                            resolved.update(self.resolve_network(m['group-object'], visited))
+                            dep = m['group-object']
+                            resolved.update(self.resolve_network(dep, visited, incomplete))
+                            if dep in incomplete:
+                                incomplete.add(token)
                         elif 'object' in m:
-                            resolved.update(self.resolve_network(m['object'], visited))
+                            dep = m['object']
+                            resolved.update(self.resolve_network(dep, visited, incomplete))
+                            if dep in incomplete:
+                                incomplete.add(token)
                     elif isinstance(m, (ipaddress.IPv4Address, ipaddress.IPv4Network)):
                         resolved.add(m)
+
+                self._network_cache[cache_key] = set(resolved)
                 visited.discard(token)
+
+                if is_top_level:
+                    for key in incomplete:
+                        self._network_cache.pop(key, None)
+
                 return set(resolved)
             try:
                 result = {to_ip_network(token)}
-            except Exception:
+            except (ValueError, TypeError):
                 result = set()
             self._network_cache[cache_key] = set(result)
             return result
         try:
             return {to_ip_network(token)}
-        except Exception:
+        except (ValueError, TypeError):
             return set()
 
     def find_alias_objects(self, target: Union[str, ipaddress.IPv4Address, ipaddress.IPv4Network], target_nets: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]]) -> Dict[Union[ipaddress.IPv4Address, ipaddress.IPv4Network], Set[str]]:
