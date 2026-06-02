@@ -18,9 +18,9 @@ tui = [
     "textual>=0.60",
 ]
 external = [
-    # v2+ required; see issue #61 for migration notes when implementing AdvancedASAConfig.
-    # Upper-bounded at <3 to guard against future breaking changes (same reason v1 was pinned).
-    "ciscoconfparse>=2.0,<3",
+    # ciscoconfparse2 is the v2 successor package (separate from ciscoconfparse 1.x).
+    # See issue #62 for implementation notes.
+    "ciscoconfparse2",
     # fortios-xutils is pre-stable; re-evaluate this pin when implementing AdvancedFTGConfig (#63).
     "fortios-xutils==0.4.2",
 ]
