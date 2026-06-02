@@ -57,28 +57,35 @@ access-list SHARED extended permit ip host 2.2.2.2 host 3.3.3.3
         self.assertEqual(diff['removed_from_old'][0]['src'], {ipaddress.ip_address("1.1.1.1")})
 
 class TestTranslateStdinFix(unittest.TestCase):
-    def test_translate_uses_preloaded_text_not_args_config(self):
-        """translate mode must pass cfg_text to get_engine, not re-read args.config.
+    def test_translate_stdin_produces_output_from_piped_config(self):
+        """CLI translate mode uses the config piped via stdin, not a second stdin read.
 
-        load_config("-") re-reads stdin; if stdin was already consumed by the
-        initial config read, it returns empty and produces an empty config.
-        get_engine('asa', cfg_text) uses the already-loaded string instead.
+        The fix changed the translate block to call get_engine(vendor, cfg_text)
+        instead of load_config(args.config). If the old bug were reintroduced,
+        load_config('-') would re-read the already-consumed stdin and return an
+        empty config, producing empty or minimal output. This test pipes a real
+        config and verifies the output reflects the piped content.
         """
-        from unittest.mock import patch
-        from parsers.loader import get_engine, load_config
+        import subprocess
+        import sys
+        import pathlib
 
-        cfg_text = "access-list TEST extended permit tcp any host 1.1.1.1 eq 443"
-
-        # Demonstrate the bug scenario: load_config("-") with consumed stdin gives empty config
-        with patch('sys.stdin', new=io.StringIO("")):
-            cfg_empty, _, _ = load_config("-", vendor='asa')
-            self.assertNotIn('TEST', cfg_empty.acls)
-
-        # The fix: get_engine with pre-loaded text ignores stdin entirely
-        with patch('sys.stdin', new=io.StringIO("")):
-            cfg = get_engine('asa', cfg_text)
-            self.assertIsInstance(cfg, ASAConfig)
-            self.assertIn('TEST', cfg.acls)
+        project_root = pathlib.Path(__file__).parent.parent
+        cli = project_root / "aclinspector.py"
+        cfg_text = "object network WEBSERVER\n host 10.0.0.1\n"
+        result = subprocess.run(
+            [sys.executable, str(cli),
+             "inspect", "--vendor", "asa", "--config", "-",
+             "--translate", "--target-vendor", "fortigate"],
+            input=cfg_text,
+            capture_output=True,
+            text=True,
+            cwd=project_root,
+        )
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        # Output must contain the translated object — only possible if the
+        # config was parsed from the piped text, not from an empty second read.
+        self.assertIn("WEBSERVER", result.stdout)
 
 
 class TestFortiGateRuleIdKey(unittest.TestCase):
