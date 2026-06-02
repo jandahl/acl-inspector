@@ -31,7 +31,7 @@ def evaluate_acl(
         if ignore_any and _has_any_endpoint(entry):
             continue
         if nets_overlap(entry["src"], target_nets) or nets_overlap(entry["dst"], target_nets):
-            if not _service_matches(cfg, entry, service_filter):
+            if service_filter and not _service_matches(cfg, entry, service_filter):
                 continue
             out.append(entry)
     return out

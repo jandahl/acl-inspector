@@ -22,7 +22,7 @@ def evaluate(
     out: List[dict] = []
     for entry in entries:
         if nets_overlap(entry["src"], target_nets) or nets_overlap(entry["dst"], target_nets):
-            if not _service_matches(entry, service_filter):
+            if service_filter and not _service_matches(entry, service_filter):
                 continue
             out.append(entry)
     return out

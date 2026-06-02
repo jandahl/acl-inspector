@@ -33,21 +33,21 @@ class TestExternalEngines(unittest.TestCase):
                 self.assertIn("pip install .[external]", str(cm.exception))
 
     def test_asa_advanced_parser_scaffolding(self):
-        """Test that AdvancedASAConfig scaffolding raises NotImplementedError."""
-        from parsers.cisco.asa.advanced_parser import AdvancedASAConfig
+        """Test that AdvancedASAConfig scaffolding raises ConfigLoadError via loader."""
         # We mock the library existence so we get past the ImportError
         with patch.dict(sys.modules, {'ciscoconfparse': MagicMock()}):
-            with self.assertRaises(NotImplementedError) as cm:
-                AdvancedASAConfig("!")
-            self.assertIn("not yet implemented", str(cm.exception))
+            with patch('sys.stdin', new=io.StringIO("!")):
+                with self.assertRaises(ConfigLoadError) as cm:
+                    load_config("-", vendor='asa', use_external_engines=True)
+                self.assertIn("not yet implemented", str(cm.exception))
 
     def test_fortigate_advanced_parser_scaffolding(self):
-        """Test that AdvancedFTGConfig scaffolding raises NotImplementedError."""
-        from parsers.fortigate.advanced_parser import AdvancedFTGConfig
+        """Test that AdvancedFTGConfig scaffolding raises ConfigLoadError via loader."""
         with patch.dict(sys.modules, {'fortios_xutils': MagicMock()}):
-            with self.assertRaises(NotImplementedError) as cm:
-                AdvancedFTGConfig("!")
-            self.assertIn("not yet implemented", str(cm.exception))
+            with patch('sys.stdin', new=io.StringIO("!")):
+                with self.assertRaises(ConfigLoadError) as cm:
+                    load_config("-", vendor='fortigate', use_external_engines=True)
+                self.assertIn("not yet implemented", str(cm.exception))
 
     def test_default_engine_regression(self):
         """Test that loading with use_external_engines=False (default) still returns legacy parser."""

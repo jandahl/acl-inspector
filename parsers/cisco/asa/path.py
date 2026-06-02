@@ -39,7 +39,7 @@ def _build_packet_tracer_commands(
         dst_port = 0
     elif proto_token == 'icmp':
         command_proto = 'icmp'
-        src_port = 8  # echo
+        src_port = 8  # ICMP type 8 = echo request
         dst_port = 0
     else:
         command_proto = proto_token
