@@ -18,11 +18,9 @@ tui = [
     "textual>=0.60",
 ]
 external = [
-    # ciscoconfparse 2.x has breaking API changes; pin to v1 until migration.
-    # TODO: Migrate to v2.x to avoid dependency on unmaintained v1 series.
-    "ciscoconfparse>=1.9.0,<2",
-    # fortios-xutils is pre-stable; pin to verified version.
-    # TODO: Re-evaluate this pin when implementation begins.
+    # v2+ required; see issue #61 for migration notes when implementing AdvancedASAConfig.
+    "ciscoconfparse>=2.0",
+    # fortios-xutils is pre-stable; re-evaluate this pin when implementing AdvancedFTGConfig (#63).
     "fortios-xutils==0.4.2",
 ]
 dev = [

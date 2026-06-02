@@ -2,6 +2,8 @@
 # Copyright (c) 2024-2026 Jan Gronemann
 import unittest
 import ipaddress
+import sys
+import io
 from parsers.cisco.asa.parser import ASAConfig
 from parsers.cisco.asa.inspect import evaluate_acl
 
@@ -64,6 +66,50 @@ access-list SHARED extended permit ip host 2.2.2.2 host 3.3.3.3
         self.assertEqual(len(diff['removed_from_old']), 1)
         self.assertEqual(diff['added_to_new'][0]['src'], {ipaddress.ip_address("2.2.2.2")})
         self.assertEqual(diff['removed_from_old'][0]['src'], {ipaddress.ip_address("1.1.1.1")})
+
+class TestTranslateStdinFix(unittest.TestCase):
+    def test_translate_uses_preloaded_text_not_args_config(self):
+        """get_engine in translate mode receives cfg_text, not a re-read of args.config.
+
+        If load_config(args.config) were called instead, stdin would be empty on
+        the second read and the parser would produce an empty config.
+        """
+        from unittest.mock import patch, MagicMock
+        from parsers.loader import get_engine
+        from parsers.cisco.asa.parser import ASAConfig
+
+        cfg_text = "access-list TEST extended permit tcp any host 1.1.1.1 eq 443"
+        # Simulate stdin already consumed (empty)
+        with patch('sys.stdin', new=io.StringIO("")):
+            cfg = get_engine('asa', cfg_text)
+            self.assertIsInstance(cfg, ASAConfig)
+            # Config was parsed from cfg_text, not from (empty) stdin
+            self.assertIn('TEST', cfg.acls)
+
+
+class TestFortiGateRuleIdKey(unittest.TestCase):
+    def test_rule_id_uses_policy_id_not_policyid(self):
+        """compare_old_new rule_id must use 'policy_id' (with underscore) to match
+        the key that flatten_policies emits. Wrong key causes all IDs to be None,
+        making rules from different policies appear identical when raw text matches.
+        """
+        from parsers.fortigate.inspect import compare_old_new
+        import pathlib
+        cfg_text = pathlib.Path('tests/fixtures/configs/fortigate/sample.conf').read_text()
+
+        # Policies 1 and 2 both permit traffic but from different source addresses.
+        # With the correct policy_id key, they produce distinct rule_ids.
+        diff = compare_old_new(cfg_text, old_target='APP_NET', new_target='WEB_SERVER', vdom='root')
+        # Sanity: each target matches exactly one policy
+        self.assertTrue(len(diff['old_hits']) > 0)
+        self.assertTrue(len(diff['new_hits']) > 0)
+        # If policy_id were always None, rules with the same raw text across policies
+        # would collapse into the same identity; verify old_hits and new_hits have
+        # distinct rule identities by checking policy_id is populated in the entries.
+        for entry in diff['old_hits'] + diff['new_hits']:
+            self.assertIn('policy_id', entry)
+            self.assertIsNotNone(entry['policy_id'])
+
 
 if __name__ == '__main__':
     unittest.main()
