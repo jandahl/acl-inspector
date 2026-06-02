@@ -31,8 +31,9 @@ def get_engine(
     vendor: str,
     text: str,
     use_external_engines: bool = False,
-    vdom: Optional[str] = None
-) -> Any:
+    vdom: Optional[str] = None,
+    **_ignored
+) -> Union[ASAConfig, FTGConfig]:
     """Internal helper to instantiate the requested parsing engine.
 
     Args:
@@ -41,6 +42,7 @@ def get_engine(
         use_external_engines: If True, try the AST-based engine. 
             Falls back to legacy if not yet implemented.
         vdom: Optional FortiGate VDOM
+        **_ignored: Swallows extra parameters (e.g. vdom passed to ASA)
 
     Returns:
         Config object (ASAConfig, FTGConfig, etc.)
@@ -48,6 +50,7 @@ def get_engine(
     Raises:
         ConfigLoadError: If engine fails to load due to missing dependencies.
     """
+    vendor = vendor.lower()
     if vendor == 'asa':
         if use_external_engines:
             from parsers.cisco.asa.advanced_parser import AdvancedASAConfig
@@ -89,7 +92,7 @@ def load_config(
     min_confidence: int = 60,
     strict: bool = False,
     use_external_engines: bool = False
-) -> Tuple[Any, str, int]:
+) -> Tuple[Union[ASAConfig, FTGConfig], str, int]:
     """Load firewall config with automatic vendor detection.
 
     Args:
@@ -151,15 +154,10 @@ def load_config(
         reason = "user_specified"
 
     # Parse config using requested engine
-    try:
-        cfg = get_engine(
-            vendor, text, use_external_engines=use_external_engines, vdom=vdom
-        )
-        return cfg, vendor, confidence
-    except ConfigLoadError:
-        raise
-    except Exception as e:
-        raise ConfigLoadError(f"Failed to parse {vendor} config: {e}") from e
+    cfg = get_engine(
+        vendor, text, use_external_engines=use_external_engines, vdom=vdom
+    )
+    return cfg, vendor, confidence
 
 
 def load_config_to_ir(

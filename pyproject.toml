@@ -18,9 +18,11 @@ tui = [
     "textual>=0.60",
 ]
 external = [
-    # ciscoconfparse 2.x has breaking API changes; pin to v1 until migration
+    # ciscoconfparse 2.x has breaking API changes; pin to v1 until migration.
+    # TODO: Migrate to v2.x to avoid dependency on unmaintained v1 series.
     "ciscoconfparse>=1.9.0,<2",
-    # fortios-xutils is pre-stable; pin to verified version
+    # fortios-xutils is pre-stable; pin to verified version.
+    # TODO: Re-evaluate this pin when implementation begins.
     "fortios-xutils==0.4.2",
 ]
 dev = [
