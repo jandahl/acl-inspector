@@ -1,9 +1,13 @@
 # SPDX-License-Identifier: MPL-2.0
 # Copyright (c) 2024-2026 Jan Gronemann
+import subprocess
+import sys
+import pathlib
 import unittest
 import ipaddress
 from parsers.cisco.asa.parser import ASAConfig
 from parsers.cisco.asa.inspect import evaluate_acl
+from common.project_paths import ensure_pythonpath_env, project_root
 
 class TestASAInspectHelpers(unittest.TestCase):
     def test_evaluate_acl_no_filter(self):
@@ -65,12 +69,7 @@ class TestTranslateStdinFix(unittest.TestCase):
         empty config, producing empty or minimal output. This test pipes a real
         config and verifies the output reflects the piped content.
         """
-        import subprocess
-        import sys
-        import pathlib
-
-        project_root = pathlib.Path(__file__).parent.parent
-        cli = project_root / "aclinspector.py"
+        cli = project_root() / "aclinspector.py"
         cfg_text = "object network WEBSERVER\n host 10.0.0.1\n"
         result = subprocess.run(
             [sys.executable, str(cli),
@@ -79,7 +78,8 @@ class TestTranslateStdinFix(unittest.TestCase):
             input=cfg_text,
             capture_output=True,
             text=True,
-            cwd=project_root,
+            cwd=project_root(),
+            env=ensure_pythonpath_env(),
         )
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         # Output must contain the translated object — only possible if the
@@ -94,8 +94,7 @@ class TestFortiGateRuleIdKey(unittest.TestCase):
         making rules from different policies appear identical when raw text matches.
         """
         from parsers.fortigate.inspect import compare_old_new
-        import pathlib
-        cfg_text = pathlib.Path('tests/fixtures/configs/fortigate/sample.conf').read_text()
+        cfg_text = (project_root() / 'tests/fixtures/configs/fortigate/sample.conf').read_text()
 
         # Policies 1 and 2 both permit traffic but from different source addresses.
         # With the correct policy_id key, they produce distinct rule_ids.
