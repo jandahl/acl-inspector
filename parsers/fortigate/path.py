@@ -26,6 +26,7 @@ def path_check(
     """Evaluate FortiGate policy/NAT outcome for a single flow."""
     from parsers.loader import get_engine
     cfg = get_engine('fortigate', cfg_text, use_external_engines=use_external_engines, vdom=vdom)
+
     src_ip, src_set = _resolve_endpoint(cfg, src)
     dst_ip, dst_set = _resolve_endpoint(cfg, dst)
     if src_ip is None or dst_ip is None:

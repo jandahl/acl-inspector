@@ -41,14 +41,13 @@ def compare_old_new(
     cfg = get_engine('fortigate', cfg_text, use_external_engines=use_external_engines, vdom=vdom)
 
     old_nets = cfg.resolve_addr_token(old_target)
-
     new_nets = cfg.resolve_addr_token(new_target)
     entries = cfg.flatten_policies()
     old_hits = evaluate(entries, old_nets, service_filter)
     new_hits = evaluate(entries, new_nets, service_filter)
 
-    def rule_id(entry: dict) -> str:
-        return entry["raw"]
+    def rule_id(e):
+        return (e.get("policyid"), e["raw"], tuple(sorted([str(s) for s in e["src"]])), tuple(sorted([str(d) for d in e["dst"]])))
 
     old_ids = {rule_id(e) for e in old_hits}
     new_ids = {rule_id(e) for e in new_hits}
@@ -76,7 +75,6 @@ def inspect_host(
     cfg = get_engine('fortigate', cfg_text, use_external_engines=use_external_engines, vdom=vdom)
 
     target_nets = cfg.resolve_addr_token(target)
-
     entries = cfg.flatten_policies()
     hits = evaluate(entries, target_nets, service_filter)
     aliases: Dict[Union[ipaddress.IPv4Address, ipaddress.IPv4Network], Set[str]] = {}

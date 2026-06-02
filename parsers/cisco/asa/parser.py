@@ -1344,6 +1344,8 @@ class ASAConfig:
                                 incomplete.add(token)
                     elif isinstance(m, (ipaddress.IPv4Address, ipaddress.IPv4Network)):
                         resolved.add(m)
+
+                self._network_cache[cache_key] = set(resolved)
                 visited.discard(token)
 
                 if is_top_level:

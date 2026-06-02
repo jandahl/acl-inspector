@@ -8,7 +8,6 @@ import ipaddress
 from collections import defaultdict
 from typing import Dict, List, Optional, Set, Tuple, Union
 
-from ...suggest import suggest_corrections
 from .parser import (
     ASAConfig,
     _pick_preferred_address,
@@ -30,14 +29,16 @@ def _build_packet_tracer_commands(
     dports: Set[int],
     candidates: List[Dict[str, Union[str, None]]],
 ) -> List[dict]:
-    commands: List[dict] = []
-    if not candidates:
-        return commands
-
-    proto_token = (proto or "ip").lower()
-    if proto_token not in {"tcp", "udp"}:
-        command_proto = "ip"
+    """Build ASA packet-tracer commands for candidates."""
+    commands = []
+    proto_token = (proto or 'ip').lower()
+    if proto_token == 'ip':
+        command_proto = 'rawip'
         src_port = 0
+        dst_port = 0
+    elif proto_token == 'icmp':
+        command_proto = 'icmp'
+        src_port = 8  # echo
         dst_port = 0
     else:
         command_proto = proto_token
@@ -48,17 +49,17 @@ def _build_packet_tracer_commands(
     dst_str = str(dst_ip)
 
     for cand in candidates:
-        iface = cand.get("display_interface") or cand.get("interface")
+        iface = cand.get('display_interface') or cand.get('interface')
         if not iface or iface.lower() == "global":
             continue
-        direction = cand.get("display_direction") or cand.get("direction")
-        command = "packet-tracer input {iface} {proto} {src} {sport} {dst} {dport}".format(
+        direction = cand.get('display_direction') or cand.get('direction')
+        command = "packet-tracer input {iface} {proto} {src} {src_port} {dst} {dst_port}".format(
             iface=iface,
             proto=command_proto,
             src=src_str,
-            sport=src_port,
+            src_port=src_port,
             dst=dst_str,
-            dport=dst_port,
+            dst_port=dst_port,
         )
         commands.append(
             {
@@ -216,6 +217,7 @@ def path_check(
             acl_info["matches"] = matches
         if inferred_warnings:
             warnings.extend(inferred_warnings)
+            acl_info["warnings"] = warnings
 
     context_walks: List[dict] = []
     for candidate in candidates:
@@ -249,8 +251,6 @@ def path_check(
         )
     allowed = acl_info.get("decision") == "permit"
     packet_tracer_cmds = _build_packet_tracer_commands(src_ip, dst_ip, proto, dports, candidates)
-    if warnings:
-        acl_info.setdefault("warnings", []).extend(warnings)
 
     context = {
         "src_interface": src_iface,
@@ -288,6 +288,7 @@ def path_check(
         "context": context,
         "packet_tracer": packet_tracer_cmds,
     }
+    from ...suggest import suggest_corrections
     result["suggestion"] = suggest_corrections(result, "asa")
     return result
 

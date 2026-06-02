@@ -19,25 +19,22 @@ __all__ = ["evaluate_acl", "compare_old_new", "inspect_host"]
 
 def evaluate_acl(
     entries: List[dict],
-    target_nets: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network, str]],
-    cfg: Optional[ASAConfig] = None,
+    target_nets: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]],
+    cfg: ASAConfig,
     service_filter: Optional[dict] = None,
     ignore_any: bool = True,
 ) -> List[dict]:
-    """Filter flattened ACL entries that affect ``target_nets``."""
+    """Filter flattened ASA ACL entries affecting the target."""
 
-    affected: List[dict] = []
+    out: List[dict] = []
     for entry in entries:
         if ignore_any and _has_any_endpoint(entry):
             continue
         if nets_overlap(entry["src"], target_nets) or nets_overlap(entry["dst"], target_nets):
-            if service_filter:
-                if cfg is None:
-                    continue
-                if not _service_matches(cfg, entry, service_filter):
-                    continue
-            affected.append(entry)
-    return affected
+            if not _service_matches(cfg, entry, service_filter):
+                continue
+            out.append(entry)
+    return out
 
 
 def compare_old_new(
@@ -48,26 +45,7 @@ def compare_old_new(
     include_any: bool = False,
     use_external_engines: bool = False,
 ) -> dict:
-    """Compare ACL impact for two network targets within the same config.
-
-    Args:
-        cfg_text: Raw ASA configuration text.
-        old_target: Network object/IP to treat as the “original” reference.
-        new_target: Network object/IP replacing the original reference.
-        service_filter: Optional dict with keys ``proto`` and ``dports`` (set[int])
-            to constrain matches to a protocol/port set.
-        include_any: When True, do not drop rules with ``any`` in src/dst.
-        use_external_engines: If True, use parallel advanced parsing engines.
-
-    Returns:
-        dict with keys:
-            ``old_hits``: flattened entries affecting ``old_target``.
-            ``new_hits``: flattened entries affecting ``new_target``.
-            ``added_to_new``: entries unique to the new target.
-            ``removed_from_old``: entries unique to the old target.
-        Each flattened entry retains the original ACL line under ``raw`` so UIs
-        can reference back to the source configuration.
-    """
+    """Compare ACL impact for two network targets within the same config."""
     from parsers.loader import get_engine
     cfg = get_engine('asa', cfg_text, use_external_engines=use_external_engines)
 
@@ -77,8 +55,8 @@ def compare_old_new(
     old_hits = evaluate_acl(entries, old_nets, cfg, service_filter=service_filter, ignore_any=(not include_any))
     new_hits = evaluate_acl(entries, new_nets, cfg, service_filter=service_filter, ignore_any=(not include_any))
 
-    def rule_id(entry: dict) -> str:
-        return entry["raw"]
+    def rule_id(e):
+        return (e["acl"], e["raw"], tuple(sorted([str(s) for s in e["src"]])), tuple(sorted([str(d) for d in e["dst"]])))
 
     old_ids = {rule_id(e) for e in old_hits}
     new_ids = {rule_id(e) for e in new_hits}

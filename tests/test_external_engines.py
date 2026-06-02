@@ -3,6 +3,7 @@
 import unittest
 import sys
 import io
+import ipaddress
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 from parsers.loader import load_config, ConfigLoadError
@@ -54,12 +55,17 @@ class TestExternalEngines(unittest.TestCase):
 
     def test_default_engine_regression(self):
         """Test that loading with use_external_engines=False (default) still returns legacy parser."""
-        with patch('sys.stdin', new=io.StringIO("access-list test permit ip any any")):
+        cfg_text = "access-list test permit ip host 1.1.1.1 any"
+        with patch('sys.stdin', new=io.StringIO(cfg_text)):
             # Basic sanity check that we get a working ASAConfig back for ASA-like text
             cfg, vendor, confidence = load_config("-", vendor='asa', use_external_engines=False)
             self.assertEqual(vendor, 'asa')
             from parsers.cisco.asa.parser import ASAConfig
             self.assertIsInstance(cfg, ASAConfig)
+            
+            # Functional round-trip: resolve a network
+            resolved = cfg.resolve_network("1.1.1.1")
+            self.assertEqual(resolved, {ipaddress.ip_address("1.1.1.1")})
 
 if __name__ == '__main__':
     unittest.main()

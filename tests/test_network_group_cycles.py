@@ -78,12 +78,13 @@ object-group service S_B tcp
         cfg = ASAConfig(cfg_text)
         resolved = cfg.resolve_service_group('S_A')
         # S_A should have 80 and 443 (from B)
-        # Note: resolve_service_group returns List[dict]
+        # Handle both string and integer port representations
         ports = set()
         for m in resolved:
             if m.get('op') == 'eq':
-                ports.add(m['v1'])
+                ports.add(str(m['v1']))
         self.assertEqual(ports, {'80', '443'})
+        self.assertEqual(len(resolved), 2)
 
 
 if __name__ == '__main__':

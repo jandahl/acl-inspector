@@ -20,8 +20,8 @@ tui = [
 external = [
     # ciscoconfparse 2.x has breaking API changes; pin to v1 until migration
     "ciscoconfparse>=1.9.0,<2",
-    # fortios-xutils is pre-stable; pin to <1 until API stabilizes
-    "fortios-xutils>=0.0.1,<1",
+    # fortios-xutils is pre-stable; pin to verified version
+    "fortios-xutils==0.4.2",
 ]
 dev = [
     # Both linters are run by `make lint`; ruff is primary, flake8 catches
