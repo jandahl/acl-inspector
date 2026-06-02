@@ -272,9 +272,9 @@ def main() -> None:
         for display_name, source_path in sources:
             try:
                 text = read_config_text(source_path)
-                from parsers.loader import get_engine
-                cfg = get_engine(args.vendor, text, use_external_engines=args.use_external_engines)
                 if args.vendor == 'asa':
+                    from parsers.loader import get_engine
+                    cfg = get_engine(args.vendor, text, use_external_engines=args.use_external_engines)
                     objects = []
                     literals = []
                     q = args.find_host
