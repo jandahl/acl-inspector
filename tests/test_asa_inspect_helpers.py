@@ -2,7 +2,6 @@
 # Copyright (c) 2024-2026 Jan Gronemann
 import unittest
 import ipaddress
-import io
 from parsers.cisco.asa.parser import ASAConfig
 from parsers.cisco.asa.inspect import evaluate_acl
 
@@ -111,6 +110,10 @@ class TestFortiGateRuleIdKey(unittest.TestCase):
             self.assertIsNotNone(entry['policy_id'])
         # Verify the diff correctly identifies rules unique to each target.
         # WEB_SERVER-only rules appear in added_to_new; APP_NET-only in removed_from_old.
+        # Guard against vacuous pass: assertNotIn(None, empty_set) always passes.
+        # The fixture has policy 2 (WEB_SERVER-only), so added_to_new is non-empty.
+        self.assertTrue(len(diff['added_to_new']) + len(diff['removed_from_old']) > 0,
+            "fixture must produce at least one rule unique to one of the two targets")
         all_new_only_ids = {e.get("policy_id") for e in diff["added_to_new"]}
         all_old_only_ids = {e.get("policy_id") for e in diff["removed_from_old"]}
         # None must not appear: that would mean policy_id lookup failed
