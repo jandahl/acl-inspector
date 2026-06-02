@@ -335,15 +335,15 @@ def main() -> None:
             print(f"Error: Source and target vendors are the same ({args.vendor})", file=sys.stderr)
             sys.exit(1)
 
-        # Map to IR
+        # Map to IR (use pre-loaded cfg_text — load_config would re-read stdin)
         if args.vendor == 'asa':
-            from parsers.loader import load_config
-            cfg, _, _ = load_config(args.config, vendor='asa', use_external_engines=args.use_external_engines)
+            from parsers.loader import get_engine
+            cfg = get_engine('asa', cfg_text, use_external_engines=args.use_external_engines)
             from parsers.cisco.asa import ir_export
             ir_device = ir_export.to_ir(cfg, device_name=args.device_name)
         elif args.vendor == 'fortigate':
-            from parsers.loader import load_config
-            cfg, _, _ = load_config(args.config, vendor='fortigate', vdom=args.vdom, use_external_engines=args.use_external_engines)
+            from parsers.loader import get_engine
+            cfg = get_engine('fortigate', cfg_text, use_external_engines=args.use_external_engines, vdom=args.vdom)
             from parsers.fortigate import ir_export
             ir_device = ir_export.to_ir(cfg, device_name=args.device_name)
         else:
