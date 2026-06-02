@@ -33,6 +33,7 @@ def _build_packet_tracer_commands(
     commands = []
     proto_token = (proto or 'ip').lower()
     if proto_token == 'ip':
+        # Use 'rawip' for generic IP evaluation in ASA packet-tracer
         command_proto = 'rawip'
         src_port = 0
         dst_port = 0
@@ -207,7 +208,6 @@ def path_check(
     )
     acl_info = _evaluate_acl_flow(cfg, src_after, dst_after, svc_filter, include_any, acl_context)
     matches = acl_info.get("matches") or []
-    warnings: List[str] = []
     if guess_interface_pairs and matches:
         extras, inferred_warnings = _augment_acl_matches(
             cfg, matches, src_after, dst_after, svc_filter, include_any
