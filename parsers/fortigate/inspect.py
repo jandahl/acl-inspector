@@ -47,7 +47,7 @@ def compare_old_new(
     new_hits = evaluate(entries, new_nets, service_filter)
 
     def rule_id(e):
-        return (e.get("policyid"), e["raw"], tuple(sorted([str(s) for s in e["src"]])), tuple(sorted([str(d) for d in e["dst"]])))
+        return (e.get("policy_id"), e["raw"], tuple(sorted([str(s) for s in e["src"]])), tuple(sorted([str(d) for d in e["dst"]])))
 
     old_ids = {rule_id(e) for e in old_hits}
     new_ids = {rule_id(e) for e in new_hits}
