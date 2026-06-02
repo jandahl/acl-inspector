@@ -78,6 +78,7 @@ def path_check(
     dports: Optional[Set[int]] = None,
     include_any: bool = True,
     guess_interface_pairs: bool = True,
+    use_external_engines: bool = False,
 ) -> dict:
     """Evaluate NAT + ACL outcome for a single flow.
 
@@ -89,6 +90,7 @@ def path_check(
         dports: Optional set of destination port integers.
         include_any: Whether to include ``any`` endpoints when walking ACLs.
         guess_interface_pairs: Whether to infer counterpart ACL matches.
+        use_external_engines: If True, use parallel advanced parsing engines.
 
     Returns:
         dict containing:
@@ -101,8 +103,9 @@ def path_check(
             ``context``: Interface/direction hints used for matching.
         The result is JSON-serialisable so the web UI/CLI can render it directly.
     """
+    from parsers.loader import get_engine
+    cfg = get_engine('asa', cfg_text, use_external_engines=use_external_engines)
 
-    cfg = ASAConfig(cfg_text)
     if not src or not dst:
         raise ValueError("source and destination are required for path evaluation")
 

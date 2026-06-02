@@ -211,11 +211,11 @@ def main() -> None:
     parser.add_argument('--packet-dst', dest='packet_dst', help='Destination IP/object for --packet evaluation')
     parser.add_argument('--verify', action='store_true', help='Show live-verification commands (packet-tracer/iprope) for path suggestions')
     parser.add_argument('--use-external-engines', action='store_true', help='Use parallel advanced parsing engines (ciscoconfparse/fortios-xutils) [EXPERIMENTAL]')
-    parser.add_argument('--singularity', '--singularitty', action='store_true', help='Launch the Singularity TUI interface (alias for the TUI)')
+    parser.add_argument('--singularitty', '--singularity', action='store_true', help='Launch the Singularity TUI interface (intentional play on TTY)')
 
     args = parser.parse_args()
 
-    if args.singularity:
+    if args.singularitty:
         from tui.app import main as tui_main
 
         tui_args = []
@@ -253,6 +253,7 @@ def main() -> None:
 
     if not args.config:
         parser.error('--config is required')
+
     # Special mode: find-host
     if args.find_host:
         path = args.config
@@ -273,8 +274,7 @@ def main() -> None:
             try:
                 text = read_config_text(source_path)
                 if args.vendor == 'asa':
-                    from parsers.loader import get_engine
-                    cfg = get_engine(args.vendor, text, use_external_engines=args.use_external_engines)
+                    cfg = cisco_asa.ASAConfig(text)
                     objects = []
                     literals = []
                     q = args.find_host
@@ -334,15 +334,15 @@ def main() -> None:
             print(f"Error: Source and target vendors are the same ({args.vendor})", file=sys.stderr)
             sys.exit(1)
 
-        # Parse source config and convert to IR
+        # Map to IR
         if args.vendor == 'asa':
-            from parsers.loader import get_engine
-            cfg = get_engine('asa', cfg_text, use_external_engines=args.use_external_engines)
+            from parsers.loader import load_config
+            cfg, _, _ = load_config(args.config, vendor='asa', use_external_engines=args.use_external_engines)
             from parsers.cisco.asa import ir_export
             ir_device = ir_export.to_ir(cfg, device_name=args.device_name)
         elif args.vendor == 'fortigate':
-            from parsers.loader import get_engine
-            cfg = get_engine('fortigate', cfg_text, use_external_engines=args.use_external_engines, vdom=args.vdom)
+            from parsers.loader import load_config
+            cfg, _, _ = load_config(args.config, vendor='fortigate', vdom=args.vdom, use_external_engines=args.use_external_engines)
             from parsers.fortigate import ir_export
             ir_device = ir_export.to_ir(cfg, device_name=args.device_name)
         else:
@@ -361,12 +361,9 @@ def main() -> None:
             print(f"Error: Unsupported target vendor: {args.target_vendor}", file=sys.stderr)
             sys.exit(1)
 
-        # Output translated config
         if args.format == 'json':
-            # Output IR as JSON for inspection
             print(json.dumps(ir_device.to_dict(), indent=2))
         else:
-            # Output translated config
             print(output)
         return
 
@@ -387,9 +384,6 @@ def main() -> None:
     def bold(s: str) -> str:
         return _c(s, '1', use_color)
 
-    if args.use_external_engines:
-        print("WARNING: --use-external-engines is [RESERVED] and not yet functional. Using legacy engine.", file=sys.stderr)
-
     if args.packet:
         dports = set(args.dport or [])
         if args.vendor == 'asa':
@@ -400,6 +394,7 @@ def main() -> None:
                 proto=args.proto,
                 dports=dports,
                 include_any=args.include_any,
+                use_external_engines=args.use_external_engines,
             )
         elif args.vendor == 'fortigate':
             from parsers.fortigate import path_check as fortigate_path_check
@@ -412,6 +407,7 @@ def main() -> None:
                 dports=dports,
                 include_any=args.include_any,
                 vdom=args.vdom,
+                use_external_engines=args.use_external_engines,
             )
         else:
             parser.error(f"Packet path check not supported for vendor {args.vendor}")
@@ -498,7 +494,7 @@ def main() -> None:
         if args.inspect:
             report = cisco_asa.inspect_host(
                 cfg_text, args.inspect, service_filter=svc_filter,
-                include_any=args.include_any
+                include_any=args.include_any, use_external_engines=args.use_external_engines
             )
             if args.format == 'json':
                 print(json.dumps(_serialize_report(report), indent=2))
@@ -520,7 +516,7 @@ def main() -> None:
         else:
             diff = cisco_asa.compare_old_new(
                 cfg_text, args.old, args.new, service_filter=svc_filter,
-                include_any=args.include_any
+                include_any=args.include_any, use_external_engines=args.use_external_engines
             )
             if args.format == 'json':
                 print(json.dumps(_serialize_diff(diff), indent=2))
@@ -546,7 +542,8 @@ def main() -> None:
     elif args.vendor == 'fortigate':
         if args.inspect:
             report = fortigate_parser.inspect_host(
-                cfg_text, args.inspect, service_filter=svc_filter, vdom=args.vdom
+                cfg_text, args.inspect, service_filter=svc_filter, vdom=args.vdom,
+                use_external_engines=args.use_external_engines
             )
             if args.format == 'json':
                 print(json.dumps(_serialize_report(report), indent=2))
@@ -567,7 +564,8 @@ def main() -> None:
                     print(f"  {addr}: {', '.join(sorted(names))}")
         else:
             diff = fortigate_parser.compare_old_new(
-                cfg_text, args.old, args.new, service_filter=svc_filter, vdom=args.vdom
+                cfg_text, args.old, args.new, service_filter=svc_filter, vdom=args.vdom,
+                use_external_engines=args.use_external_engines
             )
             if args.format == 'json':
                 print(json.dumps(_serialize_diff(diff), indent=2))

@@ -175,8 +175,7 @@ class FTGConfig:
             i += 1
         return names
 
-    @staticmethod
-    def _select_vdom_lines(lines: List[str], want_vdom: Optional[str]) -> Tuple[List[str], Optional[str]]:
+    def _select_vdom_lines(self, lines: List[str], want_vdom: Optional[str]) -> Tuple[List[str], Optional[str]]:
         """Return lines belonging to the specified VDOM sub-block if present.
 
         If 'config vdom' is found, choose the 'edit <name>' block matching

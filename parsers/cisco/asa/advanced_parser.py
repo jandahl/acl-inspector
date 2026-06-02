@@ -19,5 +19,5 @@ class AdvancedASAConfig:
 
         # Scaffolding is not yet implemented end-to-end.
         raise NotImplementedError(
-            "Advanced ASA engine is not yet implemented."
+            "Advanced ASA engine is not yet implemented. Remove --use-external-engines."
         )

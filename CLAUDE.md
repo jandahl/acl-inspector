@@ -338,13 +338,3 @@ Understanding the planned evolution helps maintain architecture alignment:
 - Unit testing is important
 - This is not in production yet so "backwards compatibility" doesn't matter yet
 
-## Git behaviour
-### Branching
-Prefer a fresh branch off of origin master unless otherwise instructed.
-
-### Existing Pull Request
-If pushing to a branch that already has a PR, the push(es) must be followed by a PR comment that includes:
-- A summary of the review triage (fix/defer (and issue created)/denied)
-- Agent signature - `-- Google Gemini`
-- A request for a new review from Gemini Code assist - `/gemini review`
-All of the above in one comment.

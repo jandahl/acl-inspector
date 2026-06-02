@@ -34,11 +34,14 @@ def compare_old_new(
     new_target: str,
     service_filter: Optional[dict] = None,
     vdom: Optional[str] = None,
+    use_external_engines: bool = False,
 ) -> dict:
     """Compare policy impact for two targets within the same FortiGate config."""
-    cfg = FTGConfig(cfg_text, vdom=vdom)
+    from parsers.loader import get_engine
+    cfg = get_engine('fortigate', cfg_text, use_external_engines=use_external_engines, vdom=vdom)
 
     old_nets = cfg.resolve_addr_token(old_target)
+
     new_nets = cfg.resolve_addr_token(new_target)
     entries = cfg.flatten_policies()
     old_hits = evaluate(entries, old_nets, service_filter)
@@ -66,11 +69,14 @@ def inspect_host(
     target: str,
     service_filter: Optional[dict] = None,
     vdom: Optional[str] = None,
+    use_external_engines: bool = False,
 ) -> dict:
     """Resolve policies impacting ``target`` within an optional VDOM."""
-    cfg = FTGConfig(cfg_text, vdom=vdom)
+    from parsers.loader import get_engine
+    cfg = get_engine('fortigate', cfg_text, use_external_engines=use_external_engines, vdom=vdom)
 
     target_nets = cfg.resolve_addr_token(target)
+
     entries = cfg.flatten_policies()
     hits = evaluate(entries, target_nets, service_filter)
     aliases: Dict[Union[ipaddress.IPv4Address, ipaddress.IPv4Network], Set[str]] = {}

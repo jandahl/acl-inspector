@@ -20,5 +20,5 @@ class AdvancedFTGConfig:
 
         # Scaffolding is not yet implemented end-to-end.
         raise NotImplementedError(
-            "Advanced FortiGate engine is not yet implemented."
+            "Advanced FortiGate engine is not yet implemented. Remove --use-external-engines."
         )

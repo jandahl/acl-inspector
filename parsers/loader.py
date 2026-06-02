@@ -31,7 +31,7 @@ def get_engine(
     vendor: str,
     text: str,
     use_external_engines: bool = False,
-    **kwargs
+    vdom: Optional[str] = None
 ) -> Any:
     """Internal helper to instantiate the requested parsing engine.
 
@@ -39,15 +39,14 @@ def get_engine(
         vendor: 'asa' or 'fortigate'
         text: Raw configuration text
         use_external_engines: If True, try the AST-based engine. 
-            Falls back to legacy with a warning if not yet implemented.
-        **kwargs: Additional args like 'vdom'
+            Falls back to legacy if not yet implemented.
+        vdom: Optional FortiGate VDOM
 
     Returns:
         Config object (ASAConfig, FTGConfig, etc.)
 
     Raises:
-        ConfigLoadError: If engine fails to load due to missing dependencies
-            or critical parsing errors.
+        ConfigLoadError: If engine fails to load due to missing dependencies.
     """
     if vendor == 'asa':
         if use_external_engines:
@@ -57,14 +56,18 @@ def get_engine(
             except ImportError as e:
                 raise ConfigLoadError(f"External engine error: {e}. Try: pip install .[external]") from e
             except NotImplementedError:
+                # Claude suggested reworking so the flag falls back gracefully instead of erroring
+                import sys
                 print("WARNING: Advanced ASA engine not yet implemented; falling back to legacy.", file=sys.stderr)
                 # Fall through to legacy
 
         from parsers.cisco.asa.parser import ASAConfig
-        return ASAConfig(text)
+        try:
+            return ASAConfig(text)
+        except Exception as e:
+            raise ConfigLoadError(f"Failed to parse ASA config: {e}") from e
 
     elif vendor == 'fortigate':
-        vdom = kwargs.get('vdom')
         if use_external_engines:
             from parsers.fortigate.advanced_parser import AdvancedFTGConfig
             try:
@@ -72,11 +75,15 @@ def get_engine(
             except ImportError as e:
                 raise ConfigLoadError(f"External engine error: {e}. Try: pip install .[external]") from e
             except NotImplementedError:
+                import sys
                 print("WARNING: Advanced FortiGate engine not yet implemented; falling back to legacy.", file=sys.stderr)
                 # Fall through to legacy
 
         from parsers.fortigate.config import FTGConfig
-        return FTGConfig(text, vdom=vdom)
+        try:
+            return FTGConfig(text, vdom=vdom)
+        except Exception as e:
+            raise ConfigLoadError(f"Failed to parse FortiGate config: {e}") from e
 
     elif vendor in ('ios', 'ios-xe', 'ios-xr'):
         raise ConfigLoadError(f"Vendor {vendor} detected but parser not yet implemented")
@@ -103,8 +110,7 @@ def load_config(
         use_external_engines: If True, use parallel advanced parsing engines.
 
     Returns:
-        Tuple of (config_object, detected_vendor, confidence_score).
-        The config_object is typed as Any to accommodate future AST-based engines.
+        Tuple of (config_object, detected_vendor, confidence_score)
 
     Raises:
         ConfigLoadError: If loading fails or confidence too low
@@ -154,10 +160,15 @@ def load_config(
         reason = "user_specified"
 
     # Parse config using requested engine
-    cfg = get_engine(
-        vendor, text, use_external_engines=use_external_engines, vdom=vdom
-    )
-    return cfg, vendor, confidence
+    try:
+        cfg = get_engine(
+            vendor, text, use_external_engines=use_external_engines, vdom=vdom
+        )
+        return cfg, vendor, confidence
+    except ConfigLoadError:
+        raise
+    except Exception as e:
+        raise ConfigLoadError(f"Failed to parse {vendor} config: {e}") from e
 
 
 def load_config_to_ir(
@@ -170,8 +181,6 @@ def load_config_to_ir(
 ):
     """Load config and immediately convert to IR.
 
-    This is a convenience function that combines load_config() with IR export.
-
     Args:
         source: Path to config file or "-" for stdin
         vendor: Optional vendor override
@@ -182,11 +191,6 @@ def load_config_to_ir(
 
     Returns:
         IR Device object
-
-    Example:
-        >>> from parsers.loader import load_config_to_ir
-        >>> device = load_config_to_ir("firewall.conf")
-        >>> print(f"{device.vendor} v{device.version}: {len(device.acls)} ACLs")
     """
     cfg, detected_vendor, _ = load_config(
         source, vendor=vendor, vdom=vdom,
