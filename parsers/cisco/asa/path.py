@@ -216,8 +216,7 @@ def path_check(
             matches.extend(extras)
             acl_info["matches"] = matches
         if inferred_warnings:
-            warnings.extend(inferred_warnings)
-            acl_info["warnings"] = warnings
+            acl_info.setdefault("warnings", []).extend(inferred_warnings)
 
     context_walks: List[dict] = []
     for candidate in candidates:

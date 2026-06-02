@@ -45,7 +45,26 @@ def compare_old_new(
     include_any: bool = False,
     use_external_engines: bool = False,
 ) -> dict:
-    """Compare ACL impact for two network targets within the same config."""
+    """Compare ACL impact for two network targets within the same config.
+
+    Args:
+        cfg_text: Raw ASA configuration text.
+        old_target: Network object/IP to treat as the “original” reference.
+        new_target: Network object/IP replacing the original reference.
+        service_filter: Optional dict with keys ``proto`` and ``dports`` (set[int])
+            to constrain matches to a protocol/port set.
+        include_any: When True, do not drop rules with ``any`` in src/dst.
+        use_external_engines: If True, use parallel advanced parsing engines.
+
+    Returns:
+        dict with keys:
+            ``old_hits``: flattened entries affecting ``old_target``.
+            ``new_hits``: flattened entries affecting ``new_target``.
+            ``added_to_new``: entries unique to the new target.
+            ``removed_from_old``: entries unique to the old target.
+        Each flattened entry retains the original ACL line under ``raw`` so UIs
+        can reference back to the source configuration.
+    """
     from parsers.loader import get_engine
     cfg = get_engine('asa', cfg_text, use_external_engines=use_external_engines)
 
@@ -56,7 +75,7 @@ def compare_old_new(
     new_hits = evaluate_acl(entries, new_nets, cfg, service_filter=service_filter, ignore_any=(not include_any))
 
     def rule_id(e):
-        return (e["acl"], e["raw"], tuple(sorted([str(s) for s in e["src"]])), tuple(sorted([str(d) for d in e["dst"]])))
+        return (e.get("acl"), e["raw"], tuple(sorted([str(s) for s in e["src"]])), tuple(sorted([str(d) for d in e["dst"]])))
 
     old_ids = {rule_id(e) for e in old_hits}
     new_ids = {rule_id(e) for e in new_hits}
