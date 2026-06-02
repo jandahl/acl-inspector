@@ -3,7 +3,6 @@
 """Parallel ASA parser powered by ciscoconfparse (Scaffolding)."""
 
 from __future__ import annotations
-from typing import Optional
 
 
 class AdvancedASAConfig:
@@ -20,17 +19,5 @@ class AdvancedASAConfig:
 
         # Scaffolding is not yet implemented end-to-end.
         raise NotImplementedError(
-            "Advanced ASA engine is not yet implemented. Remove --use-external-engines to continue."
+            "Advanced ASA engine is not yet implemented."
         )
-
-    # Future AST-based interface
-    def resolve_network(self, *args, **kwargs):
-        raise NotImplementedError()
-
-    def resolve_service_group(self, *args, **kwargs):
-        raise NotImplementedError()
-
-    def to_ir(self, device_name: Optional[str] = None):
-        """Map to common IR using ir_export."""
-        from . import ir_export
-        return ir_export.to_ir(self, device_name)

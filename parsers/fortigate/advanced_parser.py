@@ -20,16 +20,5 @@ class AdvancedFTGConfig:
 
         # Scaffolding is not yet implemented end-to-end.
         raise NotImplementedError(
-            "Advanced FortiGate engine is not yet implemented. Remove --use-external-engines to continue."
+            "Advanced FortiGate engine is not yet implemented."
         )
-
-    # Future AST-based interface
-    def resolve_addr_token(self, *args, **kwargs):
-        raise NotImplementedError()
-
-    def resolve_service_names(self, *args, **kwargs):
-        raise NotImplementedError()
-
-    def to_ir(self, device_name: Optional[str] = None):
-        from . import ir_export
-        return ir_export.to_ir(self, device_name)
