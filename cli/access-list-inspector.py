@@ -314,7 +314,7 @@ def main() -> None:
                                 if isinstance(n, _ip.IPv4Network) and n.num_addresses == 1:
                                     keys.add(n.network_address)
                                 elif isinstance(n, _ip.IPv4Address):
-                                    keys.add(_ip.ip_network(str(n)))
+                                    keys.add(_ip.ip_network(n))
                                 for k in keys:
                                     objects.extend(ip_to_objects.get(k, set()))
                     except Exception:
