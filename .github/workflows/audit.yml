@@ -50,5 +50,5 @@ jobs:
 
       - name: Smoke-test external engine import
         run: |
-          python3 -c "import ciscoconfparse2; print('ciscoconfparse2 ok:', ciscoconfparse2.__version__)"
+          python3 -c "import importlib.metadata, ciscoconfparse2; print('ciscoconfparse2 ok:', importlib.metadata.version('ciscoconfparse2'))"
           python3 -c "import fortios_xutils; print('fortios_xutils ok')"
