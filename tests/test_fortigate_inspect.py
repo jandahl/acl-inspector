@@ -73,6 +73,23 @@ class TestFortiGateFindHost(unittest.TestCase):
         self.assertIn('VIP_WEB', r['objects'])
         self.assertIn('203.0.113.1', r['literals'])
 
+    def test_find_host_vip_crosslinked(self):
+        """VIP resolution discovers address objects that share the external IP.
+
+        resolve_addr_token('VIP_WEB') returns IPv4Address('203.0.113.1'). The
+        resolution loop must then also find EXTERNAL_IP_OBJ (an address-object
+        whose subnet is the same IP) via the ip_to_objects reverse lookup. This
+        specifically exercises the IPv4Address → ip_network conversion path; a
+        bug there (TypeError or wrong key type) would silently miss EXTERNAL_IP_OBJ.
+        """
+        result = self._run_find_host("VIP_WEB")
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        data = json.loads(result.stdout)
+        r = data['results'][0]
+        self.assertIn('VIP_WEB', r['objects'])
+        self.assertIn('EXTERNAL_IP_OBJ', r['objects'],
+                      msg="ip_to_objects lookup via IPv4Address key must find cross-linked address object")
+
     def test_find_host_cidr(self):
         """--find-host 192.168.10.0/24 resolves via ip_to_objects CIDR lookup."""
         result = self._run_find_host("192.168.10.0/24")
