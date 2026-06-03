@@ -140,6 +140,17 @@ class TestExternalEngines(unittest.TestCase):
         self.assertEqual(r['track'], 5)
         self.assertTrue(r['tunneled'])
 
+    def test_advanced_engine_static_route_bad_mask_fallback(self):
+        """Malformed mask stores raw 'ip/mask' string instead of silently dropping.
+
+        Legacy ASAConfig falls back to f'{dest_ip}/{mask}' on to_ip_network
+        failure; AdvancedASAConfig must do the same so callers see the route.
+        """
+        cfg_text = "route inside 10.0.0.0 notamask 10.0.0.1\n"
+        cfg = get_engine('asa', cfg_text, use_external_engines=True)
+        self.assertEqual(len(cfg.static_routes), 1)
+        self.assertEqual(cfg.static_routes[0]['destination'], '10.0.0.0/notamask')
+
     def test_advanced_engine_static_route_dhcp_nexthop(self):
         """Route with 'dhcp' gateway stores next_hop=None, not the string 'dhcp'."""
         cfg_text = "route outside 0.0.0.0 0.0.0.0 dhcp\n"

@@ -285,7 +285,11 @@ class AdvancedASAConfig(ASAConfig):
             if len(parts) < 5:
                 continue
             try:
-                net = to_ip_network(parts[2], parts[3])
+                dest_ip, mask = parts[2], parts[3]
+                try:
+                    dest_cidr = str(to_ip_network(dest_ip, mask))
+                except Exception:
+                    dest_cidr = f"{dest_ip}/{mask}"
                 rest_tokens = parts[5:]
                 distance = None
                 track = None
@@ -302,7 +306,7 @@ class AdvancedASAConfig(ASAConfig):
                         except ValueError:
                             pass
                 self.static_routes.append({
-                    'destination': str(net),
+                    'destination': dest_cidr,
                     'next_hop': parts[4] if parts[4].lower() != 'dhcp' else None,
                     'interface': parts[1],
                     'distance': distance,
