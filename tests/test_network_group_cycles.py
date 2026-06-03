@@ -77,14 +77,32 @@ object-group service S_B tcp
 """
         cfg = ASAConfig(cfg_text)
         resolved = cfg.resolve_service_group('S_A')
-        # S_A should have 80 and 443 (from B)
-        # Handle both string and integer port representations
-        ports = set()
-        for m in resolved:
-            if m.get('op') == 'eq':
-                ports.add(str(m['v1']))
+        ports = {str(m['v1']) for m in resolved if m.get('op') == 'eq'}
         self.assertEqual(ports, {'80', '443'})
         self.assertEqual(len(resolved), 2)
+
+    def test_service_group_cycle_port_before_group_object(self):
+        """Port accumulated before recursive group-object call must not be duplicated.
+
+        Regression for issue #64: pre-caching the mutable accumulator lets
+        cycle re-entry return partial members, so both groups resolve fully
+        without the incomplete-eviction mechanism discarding correct results.
+        """
+        cfg_text = """
+object-group service S_A tcp
+ port-object eq 80
+ group-object S_B
+object-group service S_B tcp
+ group-object S_A
+ port-object eq 443
+"""
+        cfg = ASAConfig(cfg_text)
+        for name, expected_ports in [('S_A', {'80', '443'}), ('S_B', {'80', '443'})]:
+            with self.subTest(group=name):
+                resolved = cfg.resolve_service_group(name)
+                ports = {str(m['v1']) for m in resolved if m.get('op') == 'eq'}
+                self.assertEqual(ports, expected_ports)
+                self.assertEqual(len(resolved), 2)
 
 
 if __name__ == '__main__':
