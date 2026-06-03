@@ -293,7 +293,38 @@ def main() -> None:
                     hit = bool(objects or literals or (q in text))
                     if hit:
                         results.append({'file': display_name, 'objects': sorted(set(objects)), 'literals': sorted(set(literals))})
-                # FortiGate: placeholder for future VDOM-aware search
+                elif args.vendor == 'fortigate':
+                    import ipaddress as _ip
+                    from parsers.loader import get_engine
+                    cfg = get_engine('fortigate', text, use_external_engines=args.use_external_engines,
+                                     vdom=args.vdom or '')
+                    objects = []
+                    literals = []
+                    q = args.find_host
+                    for store in (cfg.addresses, cfg.vips, cfg.addrgrps, cfg.vipgrps):
+                        if q in store:
+                            objects.append(q)
+                    try:
+                        nets = cfg.resolve_addr_token(q)
+                        for n in nets:
+                            if isinstance(n, (_ip.IPv4Address, _ip.IPv4Network)):
+                                literals.append(str(n))
+                                for name in cfg.ip_to_objects.get(n, set()):
+                                    objects.append(name)
+                    except Exception:
+                        pass
+                    # bare IP/CIDR query: resolve_addr_token returns the raw string
+                    # for unknown tokens, so look up ip_to_objects directly
+                    try:
+                        q_net = _ip.ip_network(q, strict=False)
+                        for name in cfg.ip_to_objects.get(q_net, set()):
+                            objects.append(name)
+                            literals.append(str(q_net))
+                    except ValueError:
+                        pass
+                    hit = bool(objects or literals or (q in text))
+                    if hit:
+                        results.append({'file': display_name, 'objects': sorted(set(objects)), 'literals': sorted(set(literals))})
             except Exception:
                 continue
         if args.format == 'json':
