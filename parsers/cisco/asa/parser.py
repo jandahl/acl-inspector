@@ -1266,6 +1266,7 @@ class ASAConfig:
             return []
         visited.add(name)
         out: List[dict] = []
+        self._service_group_cache[cache_key] = out  # pre-cache mutable ref so cycle re-entry returns partial members
         for m in self.service_object_groups.get(name, []):
             if isinstance(m, dict) and 'group-object' in m:
                 dep = m['group-object']
@@ -1278,7 +1279,14 @@ class ASAConfig:
                 out.append(m)
         visited.discard(name)
 
-        cached_members = tuple(self._clone_service_members(out))
+        # Deduplicate: cycle re-entry via pre-cache may have returned members
+        # already present in out (e.g. members accumulated before the recursive call).
+        deduped: List[dict] = []
+        for item in out:
+            if item not in deduped:
+                deduped.append(item)
+
+        cached_members = tuple(self._clone_service_members(deduped))
         self._service_group_cache[cache_key] = cached_members
 
         if is_top_level:
