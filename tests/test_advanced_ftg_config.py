@@ -119,6 +119,11 @@ class TestAdvancedFTGBasicInstantiation(unittest.TestCase):
         cfg = AdvancedFTGConfig(text)
         self.assertIsNotNone(cfg)
 
+    def test_empty_config_does_not_crash(self):
+        cfg = AdvancedFTGConfig("")
+        self.assertEqual(cfg.addresses, {})
+        self.assertEqual(cfg.policies, [])
+
 
 @requires_advanced
 class TestAdvancedFTGAdvancedFixture(unittest.TestCase):

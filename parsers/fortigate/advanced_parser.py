@@ -16,6 +16,7 @@ indentation would not parse correctly.
 
 from __future__ import annotations
 
+import textwrap
 from typing import Optional
 
 from parsers.fortigate.config import FTGConfig, to_ip_network
@@ -45,14 +46,20 @@ class AdvancedFTGConfig(FTGConfig):
     def _parse(self) -> None:
         from ciscoconfparse2 import CiscoConfParse
 
+        # _select_vdom_lines preserves original indentation, so VDOM-nested
+        # configs arrive with 8+ leading spaces. Dedent to bring 'config ...'
+        # lines back to column 0 before ciscoconfparse2 builds its hierarchy.
+        dedented = textwrap.dedent('\n'.join(self.lines)).splitlines()
         ccp = CiscoConfParse(
-            self.lines,
+            dedented,
             syntax='ios',
             comment_delimiters=['#'],
             ignore_blank_lines=True,
         )
 
-        for obj in ccp.objs:
+        # find_objects(r'^config ') matches only unindented 'config ...' lines,
+        # skipping all child/grandchild objects in one pass.
+        for obj in ccp.find_objects(r'^config '):
             txt = obj.text.strip()
             # addrgrp before address — avoids the 'address' prefix matching 'addrgrp'
             if txt.startswith('config firewall addrgrp'):
