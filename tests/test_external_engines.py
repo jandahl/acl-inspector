@@ -136,6 +136,7 @@ class TestExternalEngines(unittest.TestCase):
         cfg = get_engine('asa', cfg_text, use_external_engines=True)
         self.assertEqual(len(cfg.static_routes), 1)
         r = cfg.static_routes[0]
+        self.assertEqual(r['distance'], 1)
         self.assertEqual(r['track'], 5)
         self.assertTrue(r['tunneled'])
 
@@ -145,6 +146,7 @@ class TestExternalEngines(unittest.TestCase):
         cfg = get_engine('asa', cfg_text, use_external_engines=True)
         self.assertEqual(len(cfg.static_routes), 1)
         self.assertIsNone(cfg.static_routes[0]['next_hop'])
+        self.assertIsNone(cfg.static_routes[0]['distance'])
 
 
 if __name__ == '__main__':
