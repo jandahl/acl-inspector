@@ -31,19 +31,12 @@ Parsing rules
 - Parse basic service-groups: `service-object tcp|udp` with `eq/lt/gt/neq/range`, and nested `group-object`
 - Time-range and service-objects referenced by name are not resolved yet
 
-### Advanced Engine (AST-based)
-- Scaffolding in `parsers/cisco/asa/advanced_parser.py` and `parsers/fortigate/advanced_parser.py` using `ciscoconfparse` and `fortios-xutils`.
-- The advanced engine is enabled via `--use-external-engines` and requires `pip install .[external]`.
-- Both engines must target the same Intermediate Representation (IR) in `parsers/model.py`.
-
-External Engine Implementation Roadmap
---------------------------------------
-1.  **Skeleton Completion (Current State)**: Parallel CLI flags and `AdvancedConfig` skeletons are in place. Routing is handled in `parsers/loader.py`.
-2.  **ASA Object Mapping**: Implement `_parse_with_external` in `AdvancedASAConfig` to extract network-objects and object-groups using `ciscoconfparse` queries.
-3.  **ASA ACL Mapping**: Map ACL lines to the AST. Crucially, attach the parent configuration block to each `FlatRule` or IR object to enable contextual "parent-child" display.
-4.  **Enriched CLI Output**: Update `format_flat_rule` or add a new formatter that, when the advanced engine is active, prints the parent blocks (e.g., the `object-group` definition) alongside the flattened match.
-5.  **FortiGate Parity**: Repeat the mapping process for FortiGate using `fortios-xutils`.
-6.  **Validation**: Run side-by-side comparisons of IR output from both engines to ensure 100% data parity before deprecating legacy logic.
+### Advanced Engine (ciscoconfparse2-based)
+- `parsers/cisco/asa/advanced_parser.py` — `AdvancedASAConfig` (subclasses `ASAConfig`, shipped)
+- `parsers/fortigate/advanced_parser.py` — `AdvancedFTGConfig` (subclasses `FTGConfig`, shipped)
+- Both use `ciscoconfparse2` (`pip install .[external]`) for structural parsing; all resolution logic is inherited from the legacy classes unchanged.
+- Enabled via `--use-external-engines` on the CLI; dispatched through `parsers/loader.py:get_engine()`.
+- Parity with legacy engines is verified by `tests/test_advanced_ftg_config.py` and `tests/test_external_engines.py`.
 
 New features in this iteration
 ------------------------------
