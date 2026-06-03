@@ -306,28 +306,30 @@ def main() -> None:
                         store = getattr(cfg, attr, None) or {}
                         if q in store:
                             objects.append(q)
-                    def _ito_lookup(n):
-                        names = set(ip_to_objects.get(n, set()))
-                        if isinstance(n, _ip.IPv4Network) and n.prefixlen == 32:
-                            names |= ip_to_objects.get(n.network_address, set())
-                        elif isinstance(n, _ip.IPv4Address):
-                            names |= ip_to_objects.get(_ip.ip_network(n), set())
-                        return names
                     try:
                         nets = cfg.resolve_addr_token(q)
                         for n in nets:
                             if isinstance(n, (_ip.IPv4Address, _ip.IPv4Network)):
                                 literals.append(str(n))
-                                objects.extend(_ito_lookup(n))
+                                keys = {n}
+                                if isinstance(n, _ip.IPv4Network) and n.num_addresses == 1:
+                                    keys.add(n.network_address)
+                                elif isinstance(n, _ip.IPv4Address):
+                                    keys.add(_ip.ip_network(n))
+                                for k in keys:
+                                    objects.extend(ip_to_objects.get(k, set()))
                     except Exception:
                         pass
                     # bare IP/CIDR query: resolve_addr_token returns the raw string
                     # for unknown tokens, so look up ip_to_objects directly
                     try:
                         q_net = _ip.ip_network(q, strict=False)
-                        names = set(ip_to_objects.get(q_net, set()))
-                        if q_net.prefixlen == 32:
-                            names |= ip_to_objects.get(q_net.network_address, set())
+                        keys = {q_net}
+                        if q_net.num_addresses == 1:
+                            keys.add(q_net.network_address)
+                        names = set()
+                        for k in keys:
+                            names |= ip_to_objects.get(k, set())
                         if names:
                             objects.extend(names)
                             literals.append(str(q_net))
