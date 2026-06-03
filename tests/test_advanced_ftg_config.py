@@ -124,6 +124,16 @@ class TestAdvancedFTGBasicInstantiation(unittest.TestCase):
         self.assertEqual(cfg.addresses, {})
         self.assertEqual(cfg.policies, [])
 
+    def test_explicit_vdom_arg_parses_correctly(self):
+        """AdvancedFTGConfig with vdom= exercises the textwrap.dedent path."""
+        from parsers.fortigate.config import FTGConfig
+        text = load_fixture("advanced_policy_nat.conf")
+        base = FTGConfig(text, vdom="root")
+        adv = AdvancedFTGConfig(text, vdom="root")
+        self.assertEqual(adv.vdom, "root")
+        self.assertEqual(adv.addresses, base.addresses)
+        self.assertEqual(adv.policies, base.policies)
+
 
 @requires_advanced
 class TestAdvancedFTGAdvancedFixture(unittest.TestCase):
