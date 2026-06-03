@@ -11,6 +11,8 @@ PYTHON ?= $(VENV_BIN)/python
 else
 PYTHON ?= python3
 endif
+PIP_COMPILE ?= $(if $(wildcard $(VENV_BIN)/pip-compile),$(VENV_BIN)/pip-compile,pip-compile)
+PIP_AUDIT ?= $(if $(wildcard $(VENV_BIN)/pip-audit),$(VENV_BIN)/pip-audit,pip-audit)
 
 .PHONY: help venv lint test unit examples tui web web-watch build clean themes themes-refresh fonts audit lock-external
 
@@ -175,8 +177,10 @@ index:
 	$(PYTHON) scripts/index_repo.py --root $(ROOT) --cache-dir $(CACHE)
 
 lock-external:
-	pip-compile --generate-hashes --no-strip-extras --extra=external \
+	@command -v pip-compile >/dev/null 2>&1 || { echo "pip-compile not found; install pip-tools: pip install pip-tools"; exit 1; }
+	$(PIP_COMPILE) --generate-hashes --no-strip-extras --extra=external \
 		--output-file=requirements-external.lock pyproject.toml
 
 audit:
-	pip-audit -r requirements-external.lock
+	@command -v pip-audit >/dev/null 2>&1 || { echo "pip-audit not found; install it: pip install pip-audit"; exit 1; }
+	$(PIP_AUDIT) -r requirements-external.lock
