@@ -23,8 +23,8 @@ class TestExternalEngines(unittest.TestCase):
                 self.assertIn("ciscoconfparse2", str(cm.exception))
 
     def test_fortigate_external_engine_import_error(self):
-        """ConfigLoadError with install hint when fortios_xutils is missing."""
-        with patch.dict(sys.modules, {'fortios_xutils': None}):
+        """ConfigLoadError with install hint when ciscoconfparse2 is missing."""
+        with patch.dict(sys.modules, {'ciscoconfparse2': None}):
             with patch('sys.stdin', new=io.StringIO("!")):
                 with self.assertRaises(ConfigLoadError) as cm:
                     load_config("-", vendor='fortigate', use_external_engines=True)
@@ -55,13 +55,29 @@ class TestExternalEngines(unittest.TestCase):
         self.assertEqual(entries[0]['action'], 'permit')
         self.assertIn(ipaddress.ip_address('10.0.0.1'), entries[0]['dst'])
 
-    def test_fortigate_advanced_parser_scaffolding(self):
-        """AdvancedFTGConfig scaffolding raises ConfigLoadError (not yet implemented)."""
-        with patch.dict(sys.modules, {'fortios_xutils': MagicMock()}):
-            with patch('sys.stdin', new=io.StringIO("!")):
-                with self.assertRaises(ConfigLoadError) as cm:
-                    load_config("-", vendor='fortigate', use_external_engines=True)
-                self.assertIn("not yet implemented", str(cm.exception))
+    def test_fortigate_advanced_engine_parses_policies(self):
+        """AdvancedFTGConfig successfully parses a FortiGate config end-to-end."""
+        cfg_text = (
+            "config firewall address\n"
+            '    edit "HOST_A"\n'
+            "        set subnet 10.0.0.1 255.255.255.255\n"
+            "    next\n"
+            "end\n"
+            "config firewall policy\n"
+            "    edit 1\n"
+            '        set action accept\n'
+            '        set srcaddr "HOST_A"\n'
+            '        set dstaddr "all"\n'
+            '        set service "ALL"\n'
+            "    next\n"
+            "end\n"
+        )
+        with patch('sys.stdin', new=io.StringIO(cfg_text)):
+            cfg, vendor, _ = load_config("-", vendor='fortigate', use_external_engines=True)
+        from parsers.fortigate.advanced_parser import AdvancedFTGConfig
+        self.assertIsInstance(cfg, AdvancedFTGConfig)
+        self.assertIn('HOST_A', cfg.addresses)
+        self.assertEqual(len(cfg.policies), 1)
 
     def test_default_engine_regression(self):
         """use_external_engines=False (default) still returns the legacy ASAConfig."""
