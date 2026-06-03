@@ -258,6 +258,8 @@ def main() -> None:
     if args.find_host:
         path = args.config
         import os
+        import ipaddress as _ip
+        from parsers.loader import get_engine
 
         sources = []
         if path == '-':
@@ -274,7 +276,6 @@ def main() -> None:
             try:
                 text = read_config_text(source_path)
                 if args.vendor == 'asa':
-                    from parsers.loader import get_engine
                     cfg = get_engine('asa', text, use_external_engines=args.use_external_engines)
                     objects = []
                     literals = []
@@ -293,7 +294,49 @@ def main() -> None:
                     hit = bool(objects or literals or (q in text))
                     if hit:
                         results.append({'file': display_name, 'objects': sorted(set(objects)), 'literals': sorted(set(literals))})
-                # FortiGate: placeholder for future VDOM-aware search
+                elif args.vendor == 'fortigate':
+                    cfg = get_engine('fortigate', text, use_external_engines=args.use_external_engines,
+                                     vdom=args.vdom)
+                    objects = []
+                    literals = []
+                    q = args.find_host
+                    ip_to_objects = getattr(cfg, 'ip_to_objects', None) or {}
+                    for attr in ('addresses', 'vips', 'addrgrps', 'vipgrps'):
+                        store = getattr(cfg, attr, None) or {}
+                        if q in store:
+                            objects.append(q)
+                    try:
+                        nets = cfg.resolve_addr_token(q)
+                        for n in nets:
+                            if isinstance(n, (_ip.IPv4Address, _ip.IPv4Network)):
+                                literals.append(str(n))
+                                keys = {n}
+                                if isinstance(n, _ip.IPv4Network) and n.num_addresses == 1:
+                                    keys.add(n.network_address)
+                                elif isinstance(n, _ip.IPv4Address):
+                                    keys.add(_ip.ip_network(n))
+                                for k in keys:
+                                    objects.extend(ip_to_objects.get(k, set()))
+                    except Exception:
+                        pass
+                    # bare IP/CIDR query: resolve_addr_token returns the raw string
+                    # for unknown tokens, so look up ip_to_objects directly
+                    try:
+                        q_net = _ip.ip_network(q, strict=False)
+                        keys = {q_net}
+                        if q_net.num_addresses == 1:
+                            keys.add(q_net.network_address)
+                        names = set()
+                        for k in keys:
+                            names.update(ip_to_objects.get(k, set()))
+                        if names:
+                            objects.extend(names)
+                            literals.append(str(q_net))
+                    except ValueError:
+                        pass
+                    hit = bool(objects or literals or (q in text))
+                    if hit:
+                        results.append({'file': display_name, 'objects': sorted(set(objects)), 'literals': sorted(set(literals))})
             except Exception:
                 continue
         if args.format == 'json':

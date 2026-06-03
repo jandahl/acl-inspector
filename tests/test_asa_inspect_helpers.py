@@ -2,7 +2,6 @@
 # Copyright (c) 2024-2026 Jan Gronemann
 import subprocess
 import sys
-import pathlib
 import unittest
 import ipaddress
 from parsers.cisco.asa.parser import ASAConfig
