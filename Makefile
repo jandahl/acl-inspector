@@ -11,8 +11,10 @@ PYTHON ?= $(VENV_BIN)/python
 else
 PYTHON ?= python3
 endif
+PIP_COMPILE ?= $(if $(wildcard $(VENV_BIN)/pip-compile),$(VENV_BIN)/pip-compile,pip-compile)
+PIP_AUDIT ?= $(if $(wildcard $(VENV_BIN)/pip-audit),$(VENV_BIN)/pip-audit,pip-audit)
 
-.PHONY: help venv lint test unit examples tui web web-watch build clean themes themes-refresh fonts
+.PHONY: help venv lint test unit examples tui web web-watch build clean themes themes-refresh fonts audit lock-external
 
 help:
 	@echo "Targets:"
@@ -37,6 +39,8 @@ help:
 	@echo "  index     - index a repo root into cache (set ROOT=/path CACHE=./cache)"
 	@echo "  build     - compile key Python modules"
 	@echo "  clean     - remove __pycache__/ and .pyc_cache"
+	@echo "  lock-external - regenerate requirements-external.lock (requires pip-tools)"
+	@echo "  audit     - run pip-audit against requirements-external.lock"
 
 venv:
 	./scripts/setup_venv.sh
@@ -171,3 +175,12 @@ index:
 	@if [ -z "$(ROOT)" ]; then echo "Usage: make index ROOT=/path/to/repo CACHE=./cache"; exit 1; fi
 	@mkdir -p $(CACHE)
 	$(PYTHON) scripts/index_repo.py --root $(ROOT) --cache-dir $(CACHE)
+
+lock-external:
+	@test -x "$(PIP_COMPILE)" 2>/dev/null || command -v "$(PIP_COMPILE)" >/dev/null 2>&1 || { echo "pip-compile not found; install pip-tools: pip install pip-tools"; exit 1; }
+	$(PIP_COMPILE) --generate-hashes --no-strip-extras --extra=external \
+		--output-file=requirements-external.lock pyproject.toml
+
+audit:
+	@test -x "$(PIP_AUDIT)" 2>/dev/null || command -v "$(PIP_AUDIT)" >/dev/null 2>&1 || { echo "pip-audit not found; install it: pip install pip-audit"; exit 1; }
+	$(PIP_AUDIT) -r requirements-external.lock
