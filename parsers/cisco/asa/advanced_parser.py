@@ -202,7 +202,7 @@ class AdvancedASAConfig(ASAConfig):
             }
 
         # ── ACL lines (flat — no parent-child benefit) ────────────────────────
-        for line_obj in ccp.find_objects(re_acl.pattern):
+        for line_obj in ccp.find_objects(re_acl):
             m = re_acl.match(line_obj.text)
             if m:
                 # linenum is 0-based; legacy stores 1-based
@@ -285,11 +285,29 @@ class AdvancedASAConfig(ASAConfig):
             if len(parts) < 5:
                 continue
             try:
+                net = to_ip_network(parts[2], parts[3])
+                rest_tokens = parts[5:]
+                distance = None
+                track = None
+                tunneled = False
+                if rest_tokens and rest_tokens[0].isdigit():
+                    distance = int(rest_tokens[0])
+                    rest_tokens = rest_tokens[1:]
+                if 'tunneled' in [t.lower() for t in rest_tokens]:
+                    tunneled = True
+                for idx, token in enumerate(rest_tokens):
+                    if token.lower() == 'track' and idx + 1 < len(rest_tokens):
+                        try:
+                            track = int(rest_tokens[idx + 1])
+                        except ValueError:
+                            pass
                 self.static_routes.append({
+                    'destination': str(net),
+                    'next_hop': parts[4] if parts[4].lower() != 'dhcp' else None,
                     'interface': parts[1],
-                    'network': to_ip_network(parts[2], parts[3] if len(parts) > 3 else None),
-                    'nexthop': parts[4] if len(parts) > 4 else None,
-                    'metric': int(parts[5]) if len(parts) > 5 and parts[5].isdigit() else 1,
+                    'distance': distance,
+                    'track': track,
+                    'tunneled': tunneled,
                     'raw': rt.text.strip(),
                 })
             except Exception:

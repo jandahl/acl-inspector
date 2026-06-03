@@ -83,6 +83,42 @@ class TestExternalEngines(unittest.TestCase):
                          use_external_engines=True)
         self.assertIsInstance(cfg, ASAConfig)
 
+    def test_advanced_engine_static_route_keys_match_legacy(self):
+        """AdvancedASAConfig static_routes use the same key schema as ASAConfig.
+
+        ir_export.to_ir() and path.py both access 'destination', 'next_hop',
+        and 'distance' — wrong keys produce silent None values in IR output.
+        """
+        from parsers.cisco.asa.parser import ASAConfig
+        cfg_text = (
+            "interface GigabitEthernet0/0\n"
+            " nameif inside\n"
+            " ip address 10.0.0.1 255.255.255.0\n"
+            "route inside 192.168.1.0 255.255.255.0 10.0.0.254 1\n"
+        )
+        legacy = ASAConfig(cfg_text)
+        advanced = get_engine('asa', cfg_text, use_external_engines=True)
+        self.assertEqual(len(advanced.static_routes), 1)
+        self.assertEqual(set(legacy.static_routes[0].keys()),
+                         set(advanced.static_routes[0].keys()))
+        r = advanced.static_routes[0]
+        self.assertEqual(r['destination'], '192.168.1.0/24')
+        self.assertEqual(r['next_hop'], '10.0.0.254')
+        self.assertEqual(r['distance'], 1)
+        self.assertIsNone(r['track'])
+        self.assertFalse(r['tunneled'])
+
+    def test_advanced_engine_acl_ignorecase(self):
+        """AdvancedASAConfig matches ACCESS-LIST lines regardless of case.
+
+        Passing re_acl (compiled Pattern) rather than re_acl.pattern (plain
+        string) to find_objects() is what preserves the IGNORECASE flag.
+        """
+        cfg_text = "ACCESS-LIST OUTSIDE EXTENDED PERMIT TCP ANY HOST 10.0.0.1 EQ 443\n"
+        cfg = get_engine('asa', cfg_text, use_external_engines=True)
+        self.assertIn('OUTSIDE', cfg.acls)
+        self.assertEqual(len(cfg.acls['OUTSIDE']), 1)
+
 
 if __name__ == '__main__':
     unittest.main()
