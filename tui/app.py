@@ -1417,10 +1417,11 @@ class SingularityApp(App):
     def _build_path_suggestion_panels(self, result: dict) -> list:
         """Build Rich panels for the correction suggestion + verification toggle.
 
-        ``suggestion.location`` is intentionally omitted here (matches the web
-        handler in _render_packet_suggestion): the TUI has no hyperlink support.
-        Panel and Text are imported by the calling _render_path_results.
+        ``suggestion.location`` is intentionally omitted: the TUI has no
+        hyperlink support (matches the web handler _render_packet_suggestion).
         """
+        from rich.panel import Panel
+
         suggestion = result.get("suggestion") or {}
         if not suggestion.get("needed"):
             return []
