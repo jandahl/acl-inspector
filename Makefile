@@ -177,10 +177,10 @@ index:
 	$(PYTHON) scripts/index_repo.py --root $(ROOT) --cache-dir $(CACHE)
 
 lock-external:
-	@command -v pip-compile >/dev/null 2>&1 || { echo "pip-compile not found; install pip-tools: pip install pip-tools"; exit 1; }
+	@test -x "$(PIP_COMPILE)" 2>/dev/null || command -v "$(PIP_COMPILE)" >/dev/null 2>&1 || { echo "pip-compile not found; install pip-tools: pip install pip-tools"; exit 1; }
 	$(PIP_COMPILE) --generate-hashes --no-strip-extras --extra=external \
 		--output-file=requirements-external.lock pyproject.toml
 
 audit:
-	@command -v pip-audit >/dev/null 2>&1 || { echo "pip-audit not found; install it: pip install pip-audit"; exit 1; }
+	@test -x "$(PIP_AUDIT)" 2>/dev/null || command -v "$(PIP_AUDIT)" >/dev/null 2>&1 || { echo "pip-audit not found; install it: pip install pip-audit"; exit 1; }
 	$(PIP_AUDIT) -r requirements-external.lock

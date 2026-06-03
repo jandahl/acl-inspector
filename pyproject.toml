@@ -20,9 +20,10 @@ tui = [
 external = [
     # ciscoconfparse2 is the v2 successor package (separate from ciscoconfparse 1.x).
     # See issue #62 for implementation notes.
-    # Hash-pinned transitive closure is tracked in requirements-external.lock.
-    # Regenerate with: make lock-external   Audit with: make audit
-    "ciscoconfparse2",
+    # Hash-pinned transitive closure is tracked in requirements-external.lock (Python 3.11,
+    # Linux x86-64; hashes differ across Python versions/platforms — regenerate with: make lock-external).
+    # Audit with: make audit
+    "ciscoconfparse2>=0.9.18",
     # fortios-xutils is pre-stable; re-evaluate this pin when implementing AdvancedFTGConfig (#63).
     "fortios-xutils==0.4.2",
 ]
