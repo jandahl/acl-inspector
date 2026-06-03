@@ -95,7 +95,7 @@ Raw Config → Vendor Parser → Intermediate Representation (IR) → CLI/Web UI
   - `nat.py`: NAT rule parsing (object/auto NAT, manual NAT sections 1/2/3)
   - `path.py`: Packet path evaluation through NAT + ACL
   - `inspect.py`: Object resolution and inspection logic
-- **`parsers/fortigate/`**: FortiGate parser (basic support, VDOM-aware)
+- **`parsers/fortigate/`**: FortiGate parser (VDOM-aware); `advanced_parser.py` is the `ciscoconfparse2`-backed drop-in (`--use-external-engines`, requires `pip install .[external]`)
 
 **Analysis layer:**
 - **`analysis_core/index.py`**: Manages search indices with in-memory and disk caching
