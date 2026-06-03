@@ -1,0 +1,54 @@
+name: Security audit
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'requirements-external.lock'
+      - 'pyproject.toml'
+      - '.github/workflows/audit.yml'
+  pull_request:
+    paths:
+      - 'requirements-external.lock'
+      - 'pyproject.toml'
+      - '.github/workflows/audit.yml'
+  schedule:
+    # Weekly on Monday at 08:00 UTC — catches newly-published CVEs against
+    # pinned versions even when no code has changed.
+    - cron: '0 8 * * 1'
+  workflow_dispatch:
+
+jobs:
+  audit:
+    name: pip-audit external lockfile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Audit requirements-external.lock
+        run: pip-audit -r requirements-external.lock
+
+  install-verify:
+    name: Hash-verified install of external deps
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install external deps (hash-verified)
+        run: pip install --require-hashes -r requirements-external.lock
+
+      - name: Smoke-test external engine import
+        run: |
+          python3 -c "import ciscoconfparse2; print('ciscoconfparse2 ok:', ciscoconfparse2.__version__)"
+          python3 -c "import fortios_xutils; print('fortios_xutils ok')"

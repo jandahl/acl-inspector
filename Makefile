@@ -12,7 +12,7 @@ else
 PYTHON ?= python3
 endif
 
-.PHONY: help venv lint test unit examples tui web web-watch build clean themes themes-refresh fonts
+.PHONY: help venv lint test unit examples tui web web-watch build clean themes themes-refresh fonts audit lock-external
 
 help:
 	@echo "Targets:"
@@ -37,6 +37,8 @@ help:
 	@echo "  index     - index a repo root into cache (set ROOT=/path CACHE=./cache)"
 	@echo "  build     - compile key Python modules"
 	@echo "  clean     - remove __pycache__/ and .pyc_cache"
+	@echo "  lock-external - regenerate requirements-external.lock (requires pip-tools)"
+	@echo "  audit     - run pip-audit against requirements-external.lock"
 
 venv:
 	./scripts/setup_venv.sh
@@ -171,3 +173,10 @@ index:
 	@if [ -z "$(ROOT)" ]; then echo "Usage: make index ROOT=/path/to/repo CACHE=./cache"; exit 1; fi
 	@mkdir -p $(CACHE)
 	$(PYTHON) scripts/index_repo.py --root $(ROOT) --cache-dir $(CACHE)
+
+lock-external:
+	pip-compile --generate-hashes --no-strip-extras --extra=external \
+		--output-file=requirements-external.lock pyproject.toml
+
+audit:
+	pip-audit -r requirements-external.lock
