@@ -297,28 +297,39 @@ def main() -> None:
                     import ipaddress as _ip
                     from parsers.loader import get_engine
                     cfg = get_engine('fortigate', text, use_external_engines=args.use_external_engines,
-                                     vdom=args.vdom or '')
+                                     vdom=args.vdom)
                     objects = []
                     literals = []
                     q = args.find_host
-                    for store in (cfg.addresses, cfg.vips, cfg.addrgrps, cfg.vipgrps):
+                    ip_to_objects = getattr(cfg, 'ip_to_objects', None) or {}
+                    for attr in ('addresses', 'vips', 'addrgrps', 'vipgrps'):
+                        store = getattr(cfg, attr, None) or {}
                         if q in store:
                             objects.append(q)
+                    def _ito_lookup(n):
+                        names = set(ip_to_objects.get(n, set()))
+                        if isinstance(n, _ip.IPv4Network) and n.prefixlen == 32:
+                            names |= ip_to_objects.get(n.network_address, set())
+                        elif isinstance(n, _ip.IPv4Address):
+                            names |= ip_to_objects.get(_ip.ip_network(n), set())
+                        return names
                     try:
                         nets = cfg.resolve_addr_token(q)
                         for n in nets:
                             if isinstance(n, (_ip.IPv4Address, _ip.IPv4Network)):
                                 literals.append(str(n))
-                                for name in cfg.ip_to_objects.get(n, set()):
-                                    objects.append(name)
+                                objects.extend(_ito_lookup(n))
                     except Exception:
                         pass
                     # bare IP/CIDR query: resolve_addr_token returns the raw string
                     # for unknown tokens, so look up ip_to_objects directly
                     try:
                         q_net = _ip.ip_network(q, strict=False)
-                        for name in cfg.ip_to_objects.get(q_net, set()):
-                            objects.append(name)
+                        names = set(ip_to_objects.get(q_net, set()))
+                        if q_net.prefixlen == 32:
+                            names |= ip_to_objects.get(q_net.network_address, set())
+                        if names:
+                            objects.extend(names)
                             literals.append(str(q_net))
                     except ValueError:
                         pass
