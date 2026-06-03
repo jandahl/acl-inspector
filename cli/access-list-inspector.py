@@ -328,7 +328,7 @@ def main() -> None:
                             keys.add(q_net.network_address)
                         names = set()
                         for k in keys:
-                            names |= ip_to_objects.get(k, set())
+                            names.update(ip_to_objects.get(k, set()))
                         if names:
                             objects.extend(names)
                             literals.append(str(q_net))
