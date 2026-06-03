@@ -1,24 +1,340 @@
 # SPDX-License-Identifier: MPL-2.0
 # Copyright (c) 2024-2026 Jan Gronemann
-"""Parallel FortiGate parser powered by fortios-xutils (Scaffolding)."""
+"""FortiGate parser powered by ciscoconfparse2 (AdvancedFTGConfig).
+
+Drop-in replacement for FTGConfig. Parses the same config blocks using
+ciscoconfparse2 as the structural parser instead of the hand-rolled
+line-iterator in FTGConfig._parse(). All resolution logic (resolve_addr_token,
+flatten_policies, etc.) is inherited unchanged.
+"""
 
 from __future__ import annotations
+
+from collections import defaultdict
 from typing import Optional
 
+from parsers.fortigate.config import FTGConfig, to_ip_network
 
-class AdvancedFTGConfig:
-    """Advanced FortiGate parser using fortios-xutils (Scaffolding)."""
+
+class AdvancedFTGConfig(FTGConfig):
+    """FortiGate parser using ciscoconfparse2 for structural parsing.
+
+    Requires: pip install .[external]
+    """
 
     def __init__(self, text: str, vdom: Optional[str] = None) -> None:
         try:
-            import fortios_xutils  # noqa: F401
+            from ciscoconfparse2 import CiscoConfParse  # noqa: F401
         except ImportError:
             raise ImportError(
-                "fortios-xutils is required for the external engine. "
+                "ciscoconfparse2 is required for the external engine. "
                 "Install with: pip install .[external]"
             )
+        # super().__init__ initialises all attributes then calls self._parse(),
+        # which dispatches to our override below.
+        super().__init__(text, vdom)
 
-        # Scaffolding is not yet implemented end-to-end.
-        raise NotImplementedError(
-            "Advanced FortiGate engine is not yet implemented. Remove --use-external-engines."
+    # ------------------------------------------------------------------
+    # Override: structural parser using ciscoconfparse2
+    # ------------------------------------------------------------------
+    def _parse(self) -> None:
+        from ciscoconfparse2 import CiscoConfParse
+
+        ccp = CiscoConfParse(
+            self.lines,
+            syntax='ios',
+            comment_delimiters=['#'],
+            ignore_blank_lines=True,
         )
+
+        for obj in ccp.objs:
+            txt = obj.text.strip()
+            if txt.startswith('config firewall address') and not txt.startswith('config firewall addrgrp'):
+                self._ccp_parse_addresses(obj)
+            elif txt.startswith('config firewall addrgrp'):
+                self._ccp_parse_addrgrp(obj)
+            elif txt.startswith('config firewall vipgrp'):
+                self._ccp_parse_vipgrp(obj)
+            elif txt.startswith('config firewall vip'):
+                self._ccp_parse_vip(obj)
+            elif txt.startswith('config firewall service custom'):
+                self._ccp_parse_service_custom(obj)
+            elif txt.startswith('config firewall service group'):
+                self._ccp_parse_service_group(obj)
+            elif txt.startswith('config firewall policy'):
+                self._ccp_parse_policy(obj)
+            elif txt.startswith('config firewall ippool'):
+                self._ccp_parse_ippool(obj)
+            elif txt.startswith('config firewall central-snat-map'):
+                self._ccp_parse_central_snat(obj)
+            elif txt.startswith('config system interface'):
+                self._ccp_parse_system_interface(obj)
+            elif txt.startswith('config system zone'):
+                self._ccp_parse_system_zone(obj)
+            elif txt.startswith('config router static'):
+                self._ccp_parse_static_routes(obj)
+
+    # ------------------------------------------------------------------
+    # Block parsers (one method per config section)
+    # ------------------------------------------------------------------
+
+    def _ccp_parse_addresses(self, obj) -> None:
+        for child in obj.children:
+            txt = child.text.strip()
+            if not txt.startswith('edit '):
+                continue
+            name = txt.split('edit', 1)[1].strip().strip('"')
+            subnet_ip = subnet_mask = None
+            for gc in child.children:
+                gs = gc.text.strip()
+                if gs.startswith('set subnet '):
+                    parts = gs.split()
+                    if len(parts) >= 4:
+                        subnet_ip, subnet_mask = parts[2], parts[3]
+            nets = set()
+            if subnet_ip and subnet_mask:
+                nets.add(to_ip_network(subnet_ip, subnet_mask))
+            self.addresses[name] = nets
+
+    def _ccp_parse_addrgrp(self, obj) -> None:
+        for child in obj.children:
+            txt = child.text.strip()
+            if not txt.startswith('edit '):
+                continue
+            name = txt.split('edit', 1)[1].strip().strip('"')
+            members = []
+            for gc in child.children:
+                gs = gc.text.strip()
+                if gs.startswith('set member '):
+                    for m in [x.strip('"') for x in gs.split()[2:]]:
+                        members.append({'object': m})
+            self.addrgrps[name] = members
+
+    def _ccp_parse_vip(self, obj) -> None:
+        for child in obj.children:
+            txt = child.text.strip()
+            if not txt.startswith('edit '):
+                continue
+            name = txt.split('edit', 1)[1].strip().strip('"')
+            current = {}
+            for gc in child.children:
+                gs = gc.text.strip()
+                tokens = self._tokenize(gs)
+                if not tokens or tokens[0].lower() != 'set' or len(tokens) < 3:
+                    continue
+                key = tokens[1].lower()
+                values = [self._strip_quotes(t) for t in tokens[2:]]
+                if key in {'extip', 'mappedip'}:
+                    current[key] = values
+                elif key in {'extintf', 'type'}:
+                    current[key] = values[0]
+                elif key in {'extport', 'mappedport'} and values:
+                    current[key] = values[0]
+                elif key == 'portforward' and values:
+                    current[key] = values[0].lower() == 'enable'
+                else:
+                    current[key] = values if len(values) > 1 else values[0]
+            self.vips[name] = current
+
+    def _ccp_parse_vipgrp(self, obj) -> None:
+        for child in obj.children:
+            txt = child.text.strip()
+            if not txt.startswith('edit '):
+                continue
+            name = txt.split('edit', 1)[1].strip().strip('"')
+            members = []
+            for gc in child.children:
+                gs = gc.text.strip()
+                tokens = self._tokenize(gs)
+                if tokens and tokens[0].lower() == 'set' and len(tokens) >= 3 and tokens[1].lower() == 'member':
+                    members.extend(self._strip_quotes(t) for t in tokens[2:])
+            self.vipgrps[name] = members
+
+    def _ccp_parse_service_custom(self, obj) -> None:
+        for child in obj.children:
+            txt = child.text.strip()
+            if not txt.startswith('edit '):
+                continue
+            name = txt.split('edit', 1)[1].strip().strip('"')
+            spec = {}
+            for gc in child.children:
+                gs = gc.text.strip()
+                if gs.startswith('set tcp-portrange '):
+                    tcp_range = gs.split('set tcp-portrange', 1)[1].strip()
+                    spec.setdefault('tcp', []).extend(self._split_ranges(tcp_range))
+                elif gs.startswith('set udp-portrange '):
+                    udp_range = gs.split('set udp-portrange', 1)[1].strip()
+                    spec.setdefault('udp', []).extend(self._split_ranges(udp_range))
+            self.services[name] = spec
+
+    def _ccp_parse_service_group(self, obj) -> None:
+        for child in obj.children:
+            txt = child.text.strip()
+            if not txt.startswith('edit '):
+                continue
+            name = txt.split('edit', 1)[1].strip().strip('"')
+            members = set()
+            for gc in child.children:
+                gs = gc.text.strip()
+                if gs.startswith('set member '):
+                    members.update(x.strip('"') for x in gs.split()[2:])
+            self.service_groups[name] = members
+
+    def _ccp_parse_policy(self, obj) -> None:
+        for child in obj.children:
+            txt = child.text.strip()
+            if not txt.startswith('edit '):
+                continue
+            policy_id = txt.split('edit', 1)[1].strip().strip('"')
+            cur = {
+                'id': policy_id,
+                'srcaddr': [],
+                'dstaddr': [],
+                'service': [],
+                'srcintf': [],
+                'dstintf': [],
+            }
+            for gc in child.children:
+                gs = gc.text.strip()
+                tokens = self._tokenize(gs)
+                if not tokens or tokens[0].lower() != 'set' or len(tokens) < 3:
+                    continue
+                key = tokens[1].lower()
+                values = [self._strip_quotes(t) for t in tokens[2:]]
+                if key == 'action' and values:
+                    act = values[0].lower()
+                    cur['action'] = 'permit' if act == 'accept' else 'deny'
+                elif key == 'srcaddr':
+                    cur['srcaddr'] = values
+                elif key == 'dstaddr':
+                    cur['dstaddr'] = values
+                elif key == 'service':
+                    cur['service'] = values
+                elif key == 'srcintf':
+                    cur['srcintf'] = values
+                elif key == 'dstintf':
+                    cur['dstintf'] = values
+                elif key == 'schedule' and values:
+                    cur['schedule'] = values[0]
+                elif key == 'name' and values:
+                    cur['name'] = values[0]
+                elif key == 'uuid' and values:
+                    cur['uuid'] = values[0]
+                elif key == 'logtraffic' and values:
+                    cur['logtraffic'] = values[0]
+                elif key == 'nat' and values:
+                    cur['nat'] = values[0].lower() == 'enable'
+                elif key == 'ippool' and values:
+                    cur['ippool'] = values[0].lower() == 'enable'
+                elif key == 'poolname':
+                    cur['poolname'] = values
+                elif key == 'status' and values:
+                    cur['status'] = values[0]
+                elif key == 'comments' and values:
+                    cur['comments'] = ' '.join(values)
+            self.policies.append(cur)
+
+    def _ccp_parse_system_interface(self, obj) -> None:
+        for child in obj.children:
+            txt = child.text.strip()
+            if not txt.startswith('edit '):
+                continue
+            name = txt.split('edit', 1)[1].strip().strip('"')
+            cur_data = {}
+            for gc in child.children:
+                gs = gc.text.strip()
+                tokens = self._tokenize(gs)
+                if not tokens or tokens[0].lower() != 'set' or len(tokens) < 3:
+                    continue
+                key = tokens[1].lower()
+                values = [self._strip_quotes(t) for t in tokens[2:]]
+                if key == 'ip':
+                    cur_data['ip'] = ' '.join(values)
+                elif key == 'allowaccess':
+                    cur_data['allowaccess'] = values
+                elif key == 'alias':
+                    cur_data['alias'] = ' '.join(values)
+                elif key == 'description':
+                    cur_data['description'] = ' '.join(values)
+                else:
+                    cur_data[key] = values if len(values) > 1 else values[0]
+            self.interfaces[name] = cur_data
+
+    def _ccp_parse_system_zone(self, obj) -> None:
+        for child in obj.children:
+            txt = child.text.strip()
+            if not txt.startswith('edit '):
+                continue
+            name = txt.split('edit', 1)[1].strip().strip('"')
+            cur_data = {}
+            for gc in child.children:
+                gs = gc.text.strip()
+                tokens = self._tokenize(gs)
+                if not tokens or tokens[0].lower() != 'set' or len(tokens) < 3:
+                    continue
+                key = tokens[1].lower()
+                values = [self._strip_quotes(t) for t in tokens[2:]]
+                cur_data[key] = values if len(values) > 1 else values
+            self.zones[name] = cur_data
+
+    def _ccp_parse_ippool(self, obj) -> None:
+        for child in obj.children:
+            txt = child.text.strip()
+            if not txt.startswith('edit '):
+                continue
+            name = txt.split('edit', 1)[1].strip().strip('"')
+            current = {}
+            for gc in child.children:
+                gs = gc.text.strip()
+                tokens = self._tokenize(gs)
+                if not tokens or tokens[0].lower() != 'set' or len(tokens) < 3:
+                    continue
+                key = tokens[1].lower()
+                values = [self._strip_quotes(t) for t in tokens[2:]]
+                if key in {'startip', 'endip', 'type'}:
+                    current[key] = values[0]
+                else:
+                    current[key] = values if len(values) > 1 else values[0]
+            self.ippools[name] = current
+
+    def _ccp_parse_central_snat(self, obj) -> None:
+        for child in obj.children:
+            txt = child.text.strip()
+            if not txt.startswith('edit '):
+                continue
+            tokens_head = self._tokenize(txt)
+            seq = self._strip_quotes(tokens_head[1]) if len(tokens_head) >= 2 else None
+            current = {'seq': seq} if seq else {}
+            for gc in child.children:
+                gs = gc.text.strip()
+                tokens = self._tokenize(gs)
+                if not tokens or tokens[0].lower() != 'set' or len(tokens) < 3:
+                    continue
+                key = tokens[1].lower()
+                values = [self._strip_quotes(t) for t in tokens[2:]]
+                current[key] = values if len(values) > 1 else values[0]
+            if current:
+                self.central_snat_map.append(current)
+
+    def _ccp_parse_static_routes(self, obj) -> None:
+        for child in obj.children:
+            txt = child.text.strip()
+            if not txt.startswith('edit '):
+                continue
+            seq = txt.split('edit', 1)[1].strip().strip('"')
+            cur_route = {'seq': seq, 'destination': None, 'gateway': None, 'device': None, 'distance': None}
+            for gc in child.children:
+                gs = gc.text.strip()
+                if gs.startswith('set dst '):
+                    cur_route['destination'] = gs.split('set dst', 1)[1].strip()
+                elif gs.startswith('set gateway '):
+                    cur_route['gateway'] = gs.split('set gateway', 1)[1].strip()
+                elif gs.startswith('set device '):
+                    cur_route['device'] = gs.split('set device', 1)[1].strip().strip('"')
+                elif gs.startswith('set distance '):
+                    try:
+                        cur_route['distance'] = int(gs.split('set distance', 1)[1].strip())
+                    except ValueError:
+                        pass
+            if cur_route.get('destination'):
+                self.static_routes.append(cur_route)

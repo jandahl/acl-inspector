@@ -24,8 +24,6 @@ external = [
     # Linux x86-64; hashes differ across Python versions/platforms — regenerate with: make lock-external).
     # Audit with: make audit
     "ciscoconfparse2>=0.9.18",
-    # fortios-xutils is pre-stable; re-evaluate this pin when implementing AdvancedFTGConfig (#63).
-    "fortios-xutils==0.4.2",
 ]
 dev = [
     # Both linters are run by `make lint`; ruff is primary, flake8 catches
