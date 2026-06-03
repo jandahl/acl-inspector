@@ -258,6 +258,8 @@ def main() -> None:
     if args.find_host:
         path = args.config
         import os
+        import ipaddress as _ip
+        from parsers.loader import get_engine
 
         sources = []
         if path == '-':
@@ -274,7 +276,6 @@ def main() -> None:
             try:
                 text = read_config_text(source_path)
                 if args.vendor == 'asa':
-                    from parsers.loader import get_engine
                     cfg = get_engine('asa', text, use_external_engines=args.use_external_engines)
                     objects = []
                     literals = []
@@ -294,8 +295,6 @@ def main() -> None:
                     if hit:
                         results.append({'file': display_name, 'objects': sorted(set(objects)), 'literals': sorted(set(literals))})
                 elif args.vendor == 'fortigate':
-                    import ipaddress as _ip
-                    from parsers.loader import get_engine
                     cfg = get_engine('fortigate', text, use_external_engines=args.use_external_engines,
                                      vdom=args.vdom)
                     objects = []
