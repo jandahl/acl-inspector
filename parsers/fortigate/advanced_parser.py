@@ -10,7 +10,6 @@ flatten_policies, etc.) is inherited unchanged.
 
 from __future__ import annotations
 
-from collections import defaultdict
 from typing import Optional
 
 from parsers.fortigate.config import FTGConfig, to_ip_network
@@ -24,6 +23,8 @@ class AdvancedFTGConfig(FTGConfig):
 
     def __init__(self, text: str, vdom: Optional[str] = None) -> None:
         try:
+            # Guard-only import: raises ImportError early if library is missing.
+            # The actual working import happens inside _parse().
             from ciscoconfparse2 import CiscoConfParse  # noqa: F401
         except ImportError:
             raise ImportError(
@@ -40,6 +41,9 @@ class AdvancedFTGConfig(FTGConfig):
     def _parse(self) -> None:
         from ciscoconfparse2 import CiscoConfParse
 
+        # FortiOS uses config/edit/set/next/end block nesting. ciscoconfparse2
+        # with syntax='ios' builds the hierarchy from indentation, which works
+        # because FortiOS configs use consistent 4-space indentation per level.
         ccp = CiscoConfParse(
             self.lines,
             syntax='ios',
@@ -74,6 +78,20 @@ class AdvancedFTGConfig(FTGConfig):
             elif txt.startswith('config router static'):
                 self._ccp_parse_static_routes(obj)
 
+        # OSPF/BGP blocks: delegate to the inherited line-based parsers since
+        # the data structures are complex and benefit from existing coverage.
+        i = 0
+        L = len(self.lines)
+        while i < L:
+            s = self.lines[i].strip()
+            if s.startswith('config router ospf'):
+                i = self._parse_router_ospf(i + 1)
+                continue
+            elif s.startswith('config router bgp'):
+                i = self._parse_router_bgp(i + 1)
+                continue
+            i += 1
+
     # ------------------------------------------------------------------
     # Block parsers (one method per config section)
     # ------------------------------------------------------------------
@@ -86,11 +104,9 @@ class AdvancedFTGConfig(FTGConfig):
             name = txt.split('edit', 1)[1].strip().strip('"')
             subnet_ip = subnet_mask = None
             for gc in child.children:
-                gs = gc.text.strip()
-                if gs.startswith('set subnet '):
-                    parts = gs.split()
-                    if len(parts) >= 4:
-                        subnet_ip, subnet_mask = parts[2], parts[3]
+                tokens = self._tokenize(gc.text.strip())
+                if tokens and tokens[0].lower() == 'set' and len(tokens) >= 4 and tokens[1].lower() == 'subnet':
+                    subnet_ip, subnet_mask = tokens[2], tokens[3]
             nets = set()
             if subnet_ip and subnet_mask:
                 nets.add(to_ip_network(subnet_ip, subnet_mask))
@@ -104,10 +120,10 @@ class AdvancedFTGConfig(FTGConfig):
             name = txt.split('edit', 1)[1].strip().strip('"')
             members = []
             for gc in child.children:
-                gs = gc.text.strip()
-                if gs.startswith('set member '):
-                    for m in [x.strip('"') for x in gs.split()[2:]]:
-                        members.append({'object': m})
+                tokens = self._tokenize(gc.text.strip())
+                if tokens and tokens[0].lower() == 'set' and len(tokens) >= 3 and tokens[1].lower() == 'member':
+                    for m in tokens[2:]:
+                        members.append({'object': self._strip_quotes(m)})
             self.addrgrps[name] = members
 
     def _ccp_parse_vip(self, obj) -> None:
@@ -144,8 +160,7 @@ class AdvancedFTGConfig(FTGConfig):
             name = txt.split('edit', 1)[1].strip().strip('"')
             members = []
             for gc in child.children:
-                gs = gc.text.strip()
-                tokens = self._tokenize(gs)
+                tokens = self._tokenize(gc.text.strip())
                 if tokens and tokens[0].lower() == 'set' and len(tokens) >= 3 and tokens[1].lower() == 'member':
                     members.extend(self._strip_quotes(t) for t in tokens[2:])
             self.vipgrps[name] = members
@@ -158,13 +173,14 @@ class AdvancedFTGConfig(FTGConfig):
             name = txt.split('edit', 1)[1].strip().strip('"')
             spec = {}
             for gc in child.children:
-                gs = gc.text.strip()
-                if gs.startswith('set tcp-portrange '):
-                    tcp_range = gs.split('set tcp-portrange', 1)[1].strip()
-                    spec.setdefault('tcp', []).extend(self._split_ranges(tcp_range))
-                elif gs.startswith('set udp-portrange '):
-                    udp_range = gs.split('set udp-portrange', 1)[1].strip()
-                    spec.setdefault('udp', []).extend(self._split_ranges(udp_range))
+                tokens = self._tokenize(gc.text.strip())
+                if not tokens or tokens[0].lower() != 'set' or len(tokens) < 3:
+                    continue
+                key = tokens[1].lower()
+                if key == 'tcp-portrange':
+                    spec.setdefault('tcp', []).extend(self._split_ranges(' '.join(tokens[2:])))
+                elif key == 'udp-portrange':
+                    spec.setdefault('udp', []).extend(self._split_ranges(' '.join(tokens[2:])))
             self.services[name] = spec
 
     def _ccp_parse_service_group(self, obj) -> None:
@@ -175,9 +191,9 @@ class AdvancedFTGConfig(FTGConfig):
             name = txt.split('edit', 1)[1].strip().strip('"')
             members = set()
             for gc in child.children:
-                gs = gc.text.strip()
-                if gs.startswith('set member '):
-                    members.update(x.strip('"') for x in gs.split()[2:])
+                tokens = self._tokenize(gc.text.strip())
+                if tokens and tokens[0].lower() == 'set' and len(tokens) >= 3 and tokens[1].lower() == 'member':
+                    members.update(self._strip_quotes(m) for m in tokens[2:])
             self.service_groups[name] = members
 
     def _ccp_parse_policy(self, obj) -> None:
@@ -274,7 +290,7 @@ class AdvancedFTGConfig(FTGConfig):
                     continue
                 key = tokens[1].lower()
                 values = [self._strip_quotes(t) for t in tokens[2:]]
-                cur_data[key] = values if len(values) > 1 else values
+                cur_data[key] = values  # always a list, matching FTGConfig._parse_system_zone
             self.zones[name] = cur_data
 
     def _ccp_parse_ippool(self, obj) -> None:
@@ -324,17 +340,21 @@ class AdvancedFTGConfig(FTGConfig):
             seq = txt.split('edit', 1)[1].strip().strip('"')
             cur_route = {'seq': seq, 'destination': None, 'gateway': None, 'device': None, 'distance': None}
             for gc in child.children:
-                gs = gc.text.strip()
-                if gs.startswith('set dst '):
-                    cur_route['destination'] = gs.split('set dst', 1)[1].strip()
-                elif gs.startswith('set gateway '):
-                    cur_route['gateway'] = gs.split('set gateway', 1)[1].strip()
-                elif gs.startswith('set device '):
-                    cur_route['device'] = gs.split('set device', 1)[1].strip().strip('"')
-                elif gs.startswith('set distance '):
+                tokens = self._tokenize(gc.text.strip())
+                if not tokens or tokens[0].lower() != 'set' or len(tokens) < 3:
+                    continue
+                key = tokens[1].lower()
+                values = [self._strip_quotes(t) for t in tokens[2:]]
+                if key == 'dst':
+                    cur_route['destination'] = ' '.join(values)
+                elif key == 'gateway':
+                    cur_route['gateway'] = ' '.join(values)
+                elif key == 'device':
+                    cur_route['device'] = values[0]
+                elif key == 'distance':
                     try:
-                        cur_route['distance'] = int(gs.split('set distance', 1)[1].strip())
-                    except ValueError:
+                        cur_route['distance'] = int(values[0])
+                    except (ValueError, IndexError):
                         pass
             if cur_route.get('destination'):
                 self.static_routes.append(cur_route)

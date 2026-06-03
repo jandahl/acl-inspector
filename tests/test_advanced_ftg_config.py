@@ -14,6 +14,7 @@ def load_fixture(name: str) -> str:
 
 
 try:
+    import ciscoconfparse2  # noqa: F401 — explicit check so HAS_ADVANCED reflects library availability
     from parsers.fortigate.advanced_parser import AdvancedFTGConfig
     HAS_ADVANCED = True
 except ImportError:
@@ -49,6 +50,18 @@ class TestAdvancedFTGParityAddresses(unittest.TestCase):
 
     def test_vipgrps_match(self):
         self.assertEqual(self.adv.vipgrps, self.base.vipgrps)
+
+    def test_zones_match(self):
+        self.assertEqual(self.adv.zones, self.base.zones)
+
+    def test_interfaces_match(self):
+        self.assertEqual(self.adv.interfaces, self.base.interfaces)
+
+    def test_ippools_match(self):
+        self.assertEqual(self.adv.ippools, self.base.ippools)
+
+    def test_central_snat_match(self):
+        self.assertEqual(self.adv.central_snat_map, self.base.central_snat_map)
 
     def test_policies_count_match(self):
         self.assertEqual(len(self.adv.policies), len(self.base.policies))
@@ -92,11 +105,10 @@ class TestAdvancedFTGParityAddresses(unittest.TestCase):
 
 
 @requires_advanced
-class TestAdvancedFTGImportGuard(unittest.TestCase):
-    """AdvancedFTGConfig raises ImportError when ciscoconfparse2 absent."""
+class TestAdvancedFTGBasicInstantiation(unittest.TestCase):
+    """AdvancedFTGConfig instantiates successfully when ciscoconfparse2 is present."""
 
     def test_available(self):
-        # If we got here ciscoconfparse2 is installed; just verify instantiation.
         text = load_fixture("sample.conf")
         cfg = AdvancedFTGConfig(text)
         self.assertIsNotNone(cfg)
@@ -120,6 +132,18 @@ class TestAdvancedFTGAdvancedFixture(unittest.TestCase):
 
     def test_vips_match(self):
         self.assertEqual(self.adv.vips, self.base.vips)
+
+    def test_zones_match(self):
+        self.assertEqual(self.adv.zones, self.base.zones)
+
+    def test_interfaces_match(self):
+        self.assertEqual(self.adv.interfaces, self.base.interfaces)
+
+    def test_ippools_match(self):
+        self.assertEqual(self.adv.ippools, self.base.ippools)
+
+    def test_central_snat_match(self):
+        self.assertEqual(self.adv.central_snat_map, self.base.central_snat_map)
 
     def test_flatten_policies_parity(self):
         base_flat = self.base.flatten_policies()
