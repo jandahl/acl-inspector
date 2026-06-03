@@ -119,6 +119,33 @@ class TestExternalEngines(unittest.TestCase):
         self.assertIn('OUTSIDE', cfg.acls)
         self.assertEqual(len(cfg.acls['OUTSIDE']), 1)
 
+    def test_advanced_engine_static_route_no_metric(self):
+        """Route without explicit distance stores distance=None, not a default int.
+
+        ASAConfig and AdvancedASAConfig both use None when no metric token is
+        present; an old bug stored 1 unconditionally.
+        """
+        cfg_text = "route inside 10.10.10.0 255.255.255.0 10.0.0.254\n"
+        cfg = get_engine('asa', cfg_text, use_external_engines=True)
+        self.assertEqual(len(cfg.static_routes), 1)
+        self.assertIsNone(cfg.static_routes[0]['distance'])
+
+    def test_advanced_engine_static_route_track_and_tunneled(self):
+        """Route with 'track N tunneled' keywords sets both fields correctly."""
+        cfg_text = "route outside 0.0.0.0 0.0.0.0 192.0.2.1 1 track 5 tunneled\n"
+        cfg = get_engine('asa', cfg_text, use_external_engines=True)
+        self.assertEqual(len(cfg.static_routes), 1)
+        r = cfg.static_routes[0]
+        self.assertEqual(r['track'], 5)
+        self.assertTrue(r['tunneled'])
+
+    def test_advanced_engine_static_route_dhcp_nexthop(self):
+        """Route with 'dhcp' gateway stores next_hop=None, not the string 'dhcp'."""
+        cfg_text = "route outside 0.0.0.0 0.0.0.0 dhcp\n"
+        cfg = get_engine('asa', cfg_text, use_external_engines=True)
+        self.assertEqual(len(cfg.static_routes), 1)
+        self.assertIsNone(cfg.static_routes[0]['next_hop'])
+
 
 if __name__ == '__main__':
     unittest.main()
