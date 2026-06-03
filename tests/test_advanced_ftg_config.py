@@ -98,6 +98,12 @@ class TestAdvancedFTGParityAddresses(unittest.TestCase):
         self.assertIn(net, self.adv.ip_to_objects)
         self.assertIn('WEB_SERVER', self.adv.ip_to_objects[net])
 
+    def test_static_routes_match(self):
+        self.assertEqual(self.adv.static_routes, self.base.static_routes)
+
+    def test_dynamic_routing_match(self):
+        self.assertEqual(self.adv.dynamic_routing, self.base.dynamic_routing)
+
     def test_deny_policy_parsed(self):
         deny = [p for p in self.adv.policies if p.get('action') == 'deny']
         self.assertEqual(len(deny), 1)
@@ -144,6 +150,14 @@ class TestAdvancedFTGAdvancedFixture(unittest.TestCase):
 
     def test_central_snat_match(self):
         self.assertEqual(self.adv.central_snat_map, self.base.central_snat_map)
+
+    def test_static_routes_match(self):
+        self.assertEqual(self.adv.static_routes, self.base.static_routes)
+
+    def test_dynamic_routing_match(self):
+        # Fixture has no OSPF/BGP blocks; verifies the fallback path leaves
+        # dynamic_routing in the same state as the base parser.
+        self.assertEqual(self.adv.dynamic_routing, self.base.dynamic_routing)
 
     def test_flatten_policies_parity(self):
         base_flat = self.base.flatten_policies()

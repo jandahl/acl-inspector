@@ -6,6 +6,12 @@ Drop-in replacement for FTGConfig. Parses the same config blocks using
 ciscoconfparse2 as the structural parser instead of the hand-rolled
 line-iterator in FTGConfig._parse(). All resolution logic (resolve_addr_token,
 flatten_policies, etc.) is inherited unchanged.
+
+Note: ciscoconfparse2 is invoked with syntax='ios' because it uses indentation
+depth to build the object hierarchy. FortiOS configs use consistent 4-space
+indentation per nesting level, so the IOS parser correctly reconstructs the
+config/edit/set/next/end block structure. Configs with inconsistent or tab
+indentation would not parse correctly.
 """
 
 from __future__ import annotations
@@ -23,9 +29,7 @@ class AdvancedFTGConfig(FTGConfig):
 
     def __init__(self, text: str, vdom: Optional[str] = None) -> None:
         try:
-            # Guard-only import: raises ImportError early if library is missing.
-            # The actual working import happens inside _parse().
-            from ciscoconfparse2 import CiscoConfParse  # noqa: F401
+            import ciscoconfparse2  # noqa: F401 — guard import; raises early if missing
         except ImportError:
             raise ImportError(
                 "ciscoconfparse2 is required for the external engine. "
@@ -41,9 +45,6 @@ class AdvancedFTGConfig(FTGConfig):
     def _parse(self) -> None:
         from ciscoconfparse2 import CiscoConfParse
 
-        # FortiOS uses config/edit/set/next/end block nesting. ciscoconfparse2
-        # with syntax='ios' builds the hierarchy from indentation, which works
-        # because FortiOS configs use consistent 4-space indentation per level.
         ccp = CiscoConfParse(
             self.lines,
             syntax='ios',
@@ -53,10 +54,11 @@ class AdvancedFTGConfig(FTGConfig):
 
         for obj in ccp.objs:
             txt = obj.text.strip()
-            if txt.startswith('config firewall address') and not txt.startswith('config firewall addrgrp'):
-                self._ccp_parse_addresses(obj)
-            elif txt.startswith('config firewall addrgrp'):
+            # addrgrp before address — avoids the 'address' prefix matching 'addrgrp'
+            if txt.startswith('config firewall addrgrp'):
                 self._ccp_parse_addrgrp(obj)
+            elif txt.startswith('config firewall address'):
+                self._ccp_parse_addresses(obj)
             elif txt.startswith('config firewall vipgrp'):
                 self._ccp_parse_vipgrp(obj)
             elif txt.startswith('config firewall vip'):
@@ -132,25 +134,24 @@ class AdvancedFTGConfig(FTGConfig):
             if not txt.startswith('edit '):
                 continue
             name = txt.split('edit', 1)[1].strip().strip('"')
-            current = {}
+            cur_data = {}
             for gc in child.children:
-                gs = gc.text.strip()
-                tokens = self._tokenize(gs)
+                tokens = self._tokenize(gc.text.strip())
                 if not tokens or tokens[0].lower() != 'set' or len(tokens) < 3:
                     continue
                 key = tokens[1].lower()
                 values = [self._strip_quotes(t) for t in tokens[2:]]
                 if key in {'extip', 'mappedip'}:
-                    current[key] = values
+                    cur_data[key] = values
                 elif key in {'extintf', 'type'}:
-                    current[key] = values[0]
+                    cur_data[key] = values[0]
                 elif key in {'extport', 'mappedport'} and values:
-                    current[key] = values[0]
+                    cur_data[key] = values[0]
                 elif key == 'portforward' and values:
-                    current[key] = values[0].lower() == 'enable'
+                    cur_data[key] = values[0].lower() == 'enable'
                 else:
-                    current[key] = values if len(values) > 1 else values[0]
-            self.vips[name] = current
+                    cur_data[key] = values if len(values) > 1 else values[0]
+            self.vips[name] = cur_data
 
     def _ccp_parse_vipgrp(self, obj) -> None:
         for child in obj.children:
@@ -202,7 +203,7 @@ class AdvancedFTGConfig(FTGConfig):
             if not txt.startswith('edit '):
                 continue
             policy_id = txt.split('edit', 1)[1].strip().strip('"')
-            cur = {
+            cur_data = {
                 'id': policy_id,
                 'srcaddr': [],
                 'dstaddr': [],
@@ -211,44 +212,43 @@ class AdvancedFTGConfig(FTGConfig):
                 'dstintf': [],
             }
             for gc in child.children:
-                gs = gc.text.strip()
-                tokens = self._tokenize(gs)
+                tokens = self._tokenize(gc.text.strip())
                 if not tokens or tokens[0].lower() != 'set' or len(tokens) < 3:
                     continue
                 key = tokens[1].lower()
                 values = [self._strip_quotes(t) for t in tokens[2:]]
                 if key == 'action' and values:
                     act = values[0].lower()
-                    cur['action'] = 'permit' if act == 'accept' else 'deny'
+                    cur_data['action'] = 'permit' if act == 'accept' else 'deny'
                 elif key == 'srcaddr':
-                    cur['srcaddr'] = values
+                    cur_data['srcaddr'] = values
                 elif key == 'dstaddr':
-                    cur['dstaddr'] = values
+                    cur_data['dstaddr'] = values
                 elif key == 'service':
-                    cur['service'] = values
+                    cur_data['service'] = values
                 elif key == 'srcintf':
-                    cur['srcintf'] = values
+                    cur_data['srcintf'] = values
                 elif key == 'dstintf':
-                    cur['dstintf'] = values
+                    cur_data['dstintf'] = values
                 elif key == 'schedule' and values:
-                    cur['schedule'] = values[0]
+                    cur_data['schedule'] = values[0]
                 elif key == 'name' and values:
-                    cur['name'] = values[0]
+                    cur_data['name'] = values[0]
                 elif key == 'uuid' and values:
-                    cur['uuid'] = values[0]
+                    cur_data['uuid'] = values[0]
                 elif key == 'logtraffic' and values:
-                    cur['logtraffic'] = values[0]
+                    cur_data['logtraffic'] = values[0]
                 elif key == 'nat' and values:
-                    cur['nat'] = values[0].lower() == 'enable'
+                    cur_data['nat'] = values[0].lower() == 'enable'
                 elif key == 'ippool' and values:
-                    cur['ippool'] = values[0].lower() == 'enable'
+                    cur_data['ippool'] = values[0].lower() == 'enable'
                 elif key == 'poolname':
-                    cur['poolname'] = values
+                    cur_data['poolname'] = values
                 elif key == 'status' and values:
-                    cur['status'] = values[0]
+                    cur_data['status'] = values[0]
                 elif key == 'comments' and values:
-                    cur['comments'] = ' '.join(values)
-            self.policies.append(cur)
+                    cur_data['comments'] = ' '.join(values)
+            self.policies.append(cur_data)
 
     def _ccp_parse_system_interface(self, obj) -> None:
         for child in obj.children:
@@ -258,8 +258,7 @@ class AdvancedFTGConfig(FTGConfig):
             name = txt.split('edit', 1)[1].strip().strip('"')
             cur_data = {}
             for gc in child.children:
-                gs = gc.text.strip()
-                tokens = self._tokenize(gs)
+                tokens = self._tokenize(gc.text.strip())
                 if not tokens or tokens[0].lower() != 'set' or len(tokens) < 3:
                     continue
                 key = tokens[1].lower()
@@ -284,8 +283,7 @@ class AdvancedFTGConfig(FTGConfig):
             name = txt.split('edit', 1)[1].strip().strip('"')
             cur_data = {}
             for gc in child.children:
-                gs = gc.text.strip()
-                tokens = self._tokenize(gs)
+                tokens = self._tokenize(gc.text.strip())
                 if not tokens or tokens[0].lower() != 'set' or len(tokens) < 3:
                     continue
                 key = tokens[1].lower()
@@ -299,19 +297,18 @@ class AdvancedFTGConfig(FTGConfig):
             if not txt.startswith('edit '):
                 continue
             name = txt.split('edit', 1)[1].strip().strip('"')
-            current = {}
+            cur_data = {}
             for gc in child.children:
-                gs = gc.text.strip()
-                tokens = self._tokenize(gs)
+                tokens = self._tokenize(gc.text.strip())
                 if not tokens or tokens[0].lower() != 'set' or len(tokens) < 3:
                     continue
                 key = tokens[1].lower()
                 values = [self._strip_quotes(t) for t in tokens[2:]]
                 if key in {'startip', 'endip', 'type'}:
-                    current[key] = values[0]
+                    cur_data[key] = values[0]
                 else:
-                    current[key] = values if len(values) > 1 else values[0]
-            self.ippools[name] = current
+                    cur_data[key] = values if len(values) > 1 else values[0]
+            self.ippools[name] = cur_data
 
     def _ccp_parse_central_snat(self, obj) -> None:
         for child in obj.children:
@@ -320,17 +317,16 @@ class AdvancedFTGConfig(FTGConfig):
                 continue
             tokens_head = self._tokenize(txt)
             seq = self._strip_quotes(tokens_head[1]) if len(tokens_head) >= 2 else None
-            current = {'seq': seq} if seq else {}
+            cur_data = {'seq': seq} if seq else {}
             for gc in child.children:
-                gs = gc.text.strip()
-                tokens = self._tokenize(gs)
+                tokens = self._tokenize(gc.text.strip())
                 if not tokens or tokens[0].lower() != 'set' or len(tokens) < 3:
                     continue
                 key = tokens[1].lower()
                 values = [self._strip_quotes(t) for t in tokens[2:]]
-                current[key] = values if len(values) > 1 else values[0]
-            if current:
-                self.central_snat_map.append(current)
+                cur_data[key] = values if len(values) > 1 else values[0]
+            if cur_data:
+                self.central_snat_map.append(cur_data)
 
     def _ccp_parse_static_routes(self, obj) -> None:
         for child in obj.children:
@@ -338,7 +334,7 @@ class AdvancedFTGConfig(FTGConfig):
             if not txt.startswith('edit '):
                 continue
             seq = txt.split('edit', 1)[1].strip().strip('"')
-            cur_route = {'seq': seq, 'destination': None, 'gateway': None, 'device': None, 'distance': None}
+            cur_data = {'seq': seq, 'destination': None, 'gateway': None, 'device': None, 'distance': None}
             for gc in child.children:
                 tokens = self._tokenize(gc.text.strip())
                 if not tokens or tokens[0].lower() != 'set' or len(tokens) < 3:
@@ -346,15 +342,15 @@ class AdvancedFTGConfig(FTGConfig):
                 key = tokens[1].lower()
                 values = [self._strip_quotes(t) for t in tokens[2:]]
                 if key == 'dst':
-                    cur_route['destination'] = ' '.join(values)
+                    cur_data['destination'] = ' '.join(values)
                 elif key == 'gateway':
-                    cur_route['gateway'] = ' '.join(values)
+                    cur_data['gateway'] = ' '.join(values)
                 elif key == 'device':
-                    cur_route['device'] = values[0]
+                    cur_data['device'] = values[0]
                 elif key == 'distance':
                     try:
-                        cur_route['distance'] = int(values[0])
+                        cur_data['distance'] = int(values[0])
                     except (ValueError, IndexError):
                         pass
-            if cur_route.get('destination'):
-                self.static_routes.append(cur_route)
+            if cur_data.get('destination'):
+                self.static_routes.append(cur_data)
