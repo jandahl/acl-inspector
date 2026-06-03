@@ -105,6 +105,7 @@ object-group service S_B tcp
                 self.assertEqual(len(resolved), 2)
 
 
+
     def test_non_cyclic_ancestor_of_cycle_stays_cached(self):
         """Non-cyclic ancestors of cyclic groups must not be evicted (issue #65).
 
@@ -126,10 +127,9 @@ object-group network CYCLIC_B
  group-object CYCLIC_A
 """
         cfg = ASAConfig(cfg_text)
-        import ipaddress as _ip
         result = cfg.resolve_network('OUTER')
-        self.assertIn(_ip.ip_address('10.0.0.1'), result)
-        self.assertIn(_ip.ip_address('10.0.0.2'), result)
+        self.assertIn(ipaddress.ip_address('10.0.0.1'), result)
+        self.assertIn(ipaddress.ip_address('10.0.0.2'), result)
         # All three groups must remain cached — no spurious eviction
         for name in ('OUTER', 'CYCLIC_A', 'CYCLIC_B'):
             self.assertIn(name, cfg._network_cache, msg=f'{name} was spuriously evicted')
