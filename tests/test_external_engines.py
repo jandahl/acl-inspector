@@ -83,6 +83,28 @@ class TestExternalEngines(unittest.TestCase):
                          use_external_engines=True)
         self.assertIsInstance(cfg, ASAConfig)
 
+    def test_advanced_engine_static_route_keys_match_legacy(self):
+        """AdvancedASAConfig static_routes use the same key schema as ASAConfig.
+
+        ir_export.to_ir() and path.py both access 'destination', 'next_hop',
+        and 'distance' — wrong keys produce silent None values in IR output.
+        """
+        from parsers.cisco.asa.parser import ASAConfig
+        cfg_text = (
+            "interface GigabitEthernet0/0\n"
+            " nameif inside\n"
+            " ip address 10.0.0.1 255.255.255.0\n"
+            "route inside 192.168.1.0 255.255.255.0 10.0.0.254 1\n"
+        )
+        legacy = ASAConfig(cfg_text)
+        advanced = get_engine('asa', cfg_text, use_external_engines=True)
+        self.assertEqual(len(advanced.static_routes), 1)
+        self.assertEqual(set(legacy.static_routes[0].keys()),
+                         set(advanced.static_routes[0].keys()))
+        self.assertEqual(advanced.static_routes[0]['destination'], '192.168.1.0/24')
+        self.assertEqual(advanced.static_routes[0]['next_hop'], '10.0.0.254')
+        self.assertEqual(advanced.static_routes[0]['distance'], 1)
+
 
 if __name__ == '__main__':
     unittest.main()

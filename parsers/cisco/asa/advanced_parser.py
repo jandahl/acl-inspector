@@ -202,7 +202,7 @@ class AdvancedASAConfig(ASAConfig):
             }
 
         # ── ACL lines (flat — no parent-child benefit) ────────────────────────
-        for line_obj in ccp.find_objects(re_acl.pattern):
+        for line_obj in ccp.find_objects(re_acl):
             m = re_acl.match(line_obj.text)
             if m:
                 # linenum is 0-based; legacy stores 1-based
@@ -285,11 +285,14 @@ class AdvancedASAConfig(ASAConfig):
             if len(parts) < 5:
                 continue
             try:
+                net = to_ip_network(parts[2], parts[3])
                 self.static_routes.append({
+                    'destination': str(net),
+                    'next_hop': parts[4],
                     'interface': parts[1],
-                    'network': to_ip_network(parts[2], parts[3] if len(parts) > 3 else None),
-                    'nexthop': parts[4] if len(parts) > 4 else None,
-                    'metric': int(parts[5]) if len(parts) > 5 and parts[5].isdigit() else 1,
+                    'distance': int(parts[5]) if len(parts) > 5 and parts[5].isdigit() else 1,
+                    'track': None,
+                    'tunneled': False,
                     'raw': rt.text.strip(),
                 })
             except Exception:
