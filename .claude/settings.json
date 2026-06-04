@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "jq -r '.tool_input.command // \"\"' | grep -q 'git push' && printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"PUSH WORKFLOW: You just pushed. You MUST now post a PR comment on the relevant PR containing (1) triage status of outstanding review items, (2) a summary of the changes just pushed, (3) your signature, and (4) the line: /gemini review\"}}' || true"
+            "command": "jq -r '.tool_input.command // \"\"' | grep -q 'git push' && printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"PUSH WORKFLOW: You just pushed. Rules: (1) FIRST push on a new branch/PR — do NOT post any PR comment. (2) FOLLOW-UP push after reviews have landed — post a PR comment containing: triage table of outstanding review items, summary of changes just pushed, your signature. (3) Do NOT append /gemini review when the next step is to merge the PR.\"}}' || true"
           }
         ]
       }

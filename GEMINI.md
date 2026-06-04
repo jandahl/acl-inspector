@@ -305,6 +305,14 @@ Understanding the planned evolution helps maintain architecture alignment:
 - **Volumes**: Mount `configs/` from host for dynamic config updates
 - **Prewarming**: Set `ACLINSPECTOR_PREWARM_ALL=1` to build all indices at startup (slower start, faster first query)
 
+## PR Workflow
+
+- Keep PRs under 200 lines (ideally under 100). One logical change per PR.
+- **First push** (creating the PR): do NOT post any comment to the PR.
+- **Follow-up push** (after reviews have landed): post a PR comment with a triage table of outstanding review items and a summary of changes pushed.
+- When triaging reviews: apply valid bug fixes and minor nits inline; punt scope-expansion suggestions to new Issues.
+- Do NOT append `/gemini review` when the next step is to merge the PR.
+
 ## Additional Resources
 
 - **AGENTS.md**: Full development guidelines (migration plan, parsing rules, conventions)
