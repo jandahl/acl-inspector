@@ -29,6 +29,7 @@ ASA_HOST2 = "alpha_lobby_host2"
 ASA_DESTGRP_ALL = "alpha_destgrp_all"
 ASA_DEST1_GRP = "alpha_dest1_grp"
 ASA_DEST2_GRP = "alpha_dest2_grp"
+# Raw IPs always resolve; no pre-flight existence check needed for these.
 ASA_IP = "10.1.1.101"
 FTG_NET = "lobby-net"
 FTG_VDOM = "Alpha"
@@ -36,11 +37,16 @@ FTG_IP = "10.0.1.101"
 
 
 def _check_objects():
-    """Verify that all named objects exist in their configs before building the preview.
+    """Verify that named network objects exist in their configs before building.
 
     The CLI exits 0 even for unknown objects (returns empty target_nets/hits),
     so we parse stdout and require non-empty target_nets to confirm the object
-    is defined in the config.
+    is defined in the config. Raw IP constants (ASA_IP, FTG_IP) are excluded
+    because IPs always resolve to themselves regardless of config content.
+
+    Note: the target_nets key is part of the --inspect JSON contract
+    (see tests/test_static_preview_formatters.py); if the schema changes,
+    update the check below accordingly.
     """
     checks = [
         ("asa", str(ASA_CONFIG), None, ASA_HOST1),
@@ -483,7 +489,7 @@ body {{ margin: 0; }}
 # ── main ───────────────────────────────────────────────────────────────────────
 
 def main():
-    print("Generating static preview…")
+    print("Generating static preview...")
     PREVIEW_DIR.mkdir(exist_ok=True)
 
     for path, label in [
@@ -496,7 +502,7 @@ def main():
             print(f"  ERROR: {label} not found: {path}", file=sys.stderr)
             sys.exit(1)
 
-    print("  Pre-flight: verifying named objects exist in example configs…")
+    print("  Pre-flight: verifying named objects exist in example configs...")
     _check_objects()
 
     css = CSS_SRC.read_text(encoding="utf-8").replace("</style>", "<\\/style>")
