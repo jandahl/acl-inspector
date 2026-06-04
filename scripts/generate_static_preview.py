@@ -24,21 +24,23 @@ FTG_CONFIG = REPO_ROOT / "configs" / "fortigate" / "fortigate7-4-example"
 
 # Named objects used in the preview sections below.
 # If the example configs change, update these constants and re-run to verify.
-ASA_HOST1       = "alpha_lobby_host1"
-ASA_HOST2       = "alpha_lobby_host2"
+ASA_HOST1 = "alpha_lobby_host1"
+ASA_HOST2 = "alpha_lobby_host2"
 ASA_DESTGRP_ALL = "alpha_destgrp_all"
-ASA_DEST1_GRP   = "alpha_dest1_grp"
-ASA_DEST2_GRP   = "alpha_dest2_grp"
-ASA_IP          = "10.1.1.101"
-FTG_NET         = "lobby-net"
-FTG_VDOM        = "Alpha"
-FTG_IP          = "10.0.1.101"
+ASA_DEST1_GRP = "alpha_dest1_grp"
+ASA_DEST2_GRP = "alpha_dest2_grp"
+ASA_IP = "10.1.1.101"
+FTG_NET = "lobby-net"
+FTG_VDOM = "Alpha"
+FTG_IP = "10.0.1.101"
 
 
 def _check_objects():
     """Verify that all named objects exist in their configs before building the preview.
 
-    Exits early with a clear error rather than failing partway through the build.
+    The CLI exits 0 even for unknown objects (returns empty target_nets/hits),
+    so we parse stdout and require non-empty target_nets to confirm the object
+    is defined in the config.
     """
     checks = [
         ("asa", str(ASA_CONFIG), None, ASA_HOST1),
@@ -61,8 +63,18 @@ def _check_objects():
             ok = False
             continue
         if r.returncode != 0:
+            print(f"  PREFLIGHT ERROR: {obj!r} exited {r.returncode}", file=sys.stderr)
+            ok = False
+            continue
+        try:
+            data = json.loads(r.stdout)
+        except json.JSONDecodeError:
+            print(f"  PREFLIGHT ERROR: unparseable output for {obj!r}", file=sys.stderr)
+            ok = False
+            continue
+        if not data.get("target_nets"):
             print(f"  PREFLIGHT ERROR: object {obj!r} not found in {config} "
-                  f"(exit {r.returncode})", file=sys.stderr)
+                  f"(resolved to empty target_nets)", file=sys.stderr)
             ok = False
     if not ok:
         print("Update the object name constants at the top of this script to match "
