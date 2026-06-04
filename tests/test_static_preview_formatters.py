@@ -47,11 +47,16 @@ class TestHighlightRule(unittest.TestCase):
         result = highlight_rule("443")
         self.assertIn(self._span("num", "443"), result)
 
+    def test_keyword_token(self):
+        result = highlight_rule("host")
+        self.assertIn(self._span("kw", "host"), result)
+
     def test_full_rule(self):
         rule = "permit tcp 10.1.1.1 255.255.255.255 any eq 443"
         result = highlight_rule(rule)
         self.assertIn(self._span("act", "permit"), result)
         self.assertIn(self._span("proto", "tcp"), result)
+        self.assertIn(self._span("addr", "10.1.1.1"), result)
         self.assertIn(self._span("addr", "any"), result)
         self.assertIn(self._span("kw", "eq"), result)
         self.assertIn(self._span("num", "443"), result)
@@ -164,6 +169,7 @@ class TestFmtCompare(unittest.TestCase):
     def test_empty_removed_shows_none(self):
         result = fmt_compare(self._make_json(removed=[]))
         self.assertIn("-0 removed", result)
+        self.assertIn("none", result)
 
     def test_missing_added_key_returns_error(self):
         result = fmt_compare(json.dumps({"removed_from_old": []}))
