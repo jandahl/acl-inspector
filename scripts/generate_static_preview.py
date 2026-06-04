@@ -73,6 +73,8 @@ def _check_objects() -> bool:
             continue
         if r.returncode != 0:
             print(f"  PREFLIGHT ERROR: {obj!r} exited {r.returncode}", file=sys.stderr)
+            if r.stderr.strip():
+                print(f"    stderr: {r.stderr.strip()}", file=sys.stderr)
             ok = False
             continue
         try:
