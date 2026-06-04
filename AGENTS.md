@@ -1,6 +1,14 @@
 Agent Guidelines
 ================
 
+PR workflow
+-----------
+- Keep PRs under 200 lines (ideally under 100). One logical change per PR.
+- **First push** (creating the PR): do NOT post any comment to the PR.
+- **Follow-up push** (after reviews have landed): post a PR comment with a triage table of outstanding review items and a summary of changes pushed. Sign the comment with "— Claude".
+- When triaging reviews: apply valid bug fixes and minor nits inline; punt scope-expansion suggestions to new Issues.
+- Do NOT append `/gemini review` when the next step is to merge the PR.
+
 Migration Plan
 --------------
 - Factor the web UI into modular packages (`webui/server.py`, `webui/handlers`, `webui/templates`, `webui/themes`, `webui/indexer`, `webui/state`, `webui/settings`) to keep responsibilities focused and tests targeted.
