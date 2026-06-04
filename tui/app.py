@@ -1251,6 +1251,10 @@ class SingularityApp(App):
         # Placeholder for results
         detail_view.mount(Static("", id="path-results", classes="detail-content"))
 
+    @property
+    def _current_object_name(self) -> Optional[str]:
+        return self.selected_object.get("name") if self.selected_object else None
+
     def _run_path_check(self, src: str, dst: str, protocol: Optional[str], port: Optional[int]) -> None:
         """Run path check and display results.
 
@@ -1304,7 +1308,7 @@ class SingularityApp(App):
 
         # Store and render. The verification toggle re-renders from this state.
         # Key it by object name so a stale render can't leak across objects.
-        obj_name = self.selected_object.get("name") if self.selected_object else None
+        obj_name = self._current_object_name
         self.current_tab_result = result
         # Reset the verify toggle so each new run starts hidden (consistent default).
         self._path_show_verify = False
@@ -1333,8 +1337,7 @@ class SingularityApp(App):
             return
         obj_name, result, src, dst, protocol, port = self._path_render_state
         # Don't render stale results for a different (or no) selected object.
-        current = self.selected_object.get("name") if self.selected_object else None
-        if obj_name != current:
+        if obj_name != self._current_object_name:
             return
         content_parts = []
 
@@ -1412,9 +1415,12 @@ class SingularityApp(App):
         results_widget.update(Group(*content_parts))
 
     def _build_path_suggestion_panels(self, result: dict) -> list:
-        """Build Rich panels for the correction suggestion + verification toggle."""
+        """Build Rich panels for the correction suggestion + verification toggle.
+
+        ``suggestion.location`` is intentionally omitted: the TUI has no
+        hyperlink support (matches the web handler _render_packet_suggestion).
+        """
         from rich.panel import Panel
-        from rich.text import Text
 
         suggestion = result.get("suggestion") or {}
         if not suggestion.get("needed"):
@@ -1465,9 +1471,8 @@ class SingularityApp(App):
         # bail before touching render state (avoids relying on the except below).
         if self.current_tab_id != "path":
             return
-        current = self.selected_object.get("name") if self.selected_object else None
         # Only act when the stored results belong to the current object.
-        if not self._path_render_state or self._path_render_state[0] != current:
+        if not self._path_render_state or self._path_render_state[0] != self._current_object_name:
             return
         self._path_show_verify = not self._path_show_verify
         try:
