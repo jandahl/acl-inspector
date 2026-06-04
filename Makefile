@@ -61,6 +61,9 @@ test-minimal:
 examples:
 	$(PYTHON) aclinspector.py inspect --examples
 
+preview:
+	$(PYTHON) scripts/generate_static_preview.py
+
 tui:
 	$(if $(CONFIGS_CISCO),ACLINSPECTOR_CONFIGS_CISCO=$(CONFIGS_CISCO) ,)\
 	$(if $(CONFIGS_FORTIGATE),ACLINSPECTOR_CONFIGS_FORTIGATE=$(CONFIGS_FORTIGATE) ,)\

@@ -310,7 +310,7 @@ body {{ margin: 0; }}
   line-height: 1.65;
 }}
 .result-pre {{
-  margin: 0; white-space: pre-wrap; word-break: break-all;
+  margin: 0; white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere;
   font-family: var(--font-mono); font-size: 0.85rem;
   line-height: 1.65;
 }}
@@ -320,7 +320,7 @@ body {{ margin: 0; }}
 .no-results {{ color: var(--sub); font-style: italic; padding: 6px 0; }}
 .rule-list {{ display: flex; flex-direction: column; gap: 3px; }}
 .rule-entry {{ display: flex; align-items: baseline; gap: 8px; }}
-.rule-entry code {{ word-break: break-all; }}
+.rule-entry code {{ word-break: break-word; overflow-wrap: anywhere; }}
 :root {{ --permit-color: #c3e88d; --deny-color: #f07178; }}
 :root[data-theme='light'] {{ --permit-color: #2d7a2d; --deny-color: #c0392b; }}
 .action-permit {{ border-left: 3px solid var(--permit-color); padding-left: 8px; }}
