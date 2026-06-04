@@ -29,7 +29,6 @@ ASA_HOST2 = "alpha_lobby_host2"
 ASA_DESTGRP_ALL = "alpha_destgrp_all"
 ASA_DEST1_GRP = "alpha_dest1_grp"
 ASA_DEST2_GRP = "alpha_dest2_grp"
-# Raw IPs always resolve; no pre-flight existence check needed for these.
 ASA_IP = "10.1.1.101"
 FTG_NET = "lobby-net"
 FTG_VDOM = "Alpha"
@@ -83,6 +82,7 @@ def _check_objects() -> bool:
             print(f"  PREFLIGHT ERROR: unparseable output for {obj!r}", file=sys.stderr)
             ok = False
             continue
+        # target_nets is empty when the object isn't found (CLI exits 0 either way)
         if not data.get("target_nets"):
             print(f"  PREFLIGHT ERROR: object {obj!r} not found in {config} "
                   f"(resolved to empty target_nets)", file=sys.stderr)
