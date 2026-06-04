@@ -36,7 +36,7 @@ FTG_VDOM = "Alpha"
 FTG_IP = "10.0.1.101"
 
 
-def _check_objects():
+def _check_objects() -> bool:
     """Verify that named network objects exist in their configs before building.
 
     The CLI exits 0 even for unknown objects (returns empty target_nets/hits),
@@ -47,7 +47,10 @@ def _check_objects():
     Note: the target_nets key is part of the --inspect JSON contract
     (see tests/test_static_preview_formatters.py); if the schema changes,
     update the check below accordingly.
+
+    Returns True if all checks pass, False otherwise.
     """
+    # ASA_IP and FTG_IP are intentionally omitted — raw IPs always resolve.
     checks = [
         ("asa", str(ASA_CONFIG), None, ASA_HOST1),
         ("asa", str(ASA_CONFIG), None, ASA_HOST2),
@@ -82,10 +85,7 @@ def _check_objects():
             print(f"  PREFLIGHT ERROR: object {obj!r} not found in {config} "
                   f"(resolved to empty target_nets)", file=sys.stderr)
             ok = False
-    if not ok:
-        print("Update the object name constants at the top of this script to match "
-              "the example configs, then re-run.", file=sys.stderr)
-        sys.exit(1)
+    return ok
 
 
 def run_cli(*args):
@@ -503,7 +503,10 @@ def main():
             sys.exit(1)
 
     print("  Pre-flight: verifying named objects exist in example configs...")
-    _check_objects()
+    if not _check_objects():
+        print("Update the object name constants at the top of this script to match "
+              "the example configs, then re-run.", file=sys.stderr)
+        sys.exit(1)
 
     css = CSS_SRC.read_text(encoding="utf-8").replace("</style>", "<\\/style>")
 
