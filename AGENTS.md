@@ -178,6 +178,15 @@ TUI (Terminal User Interface)
   - `docs/TUI_IMPLEMENTATION_SUMMARY.md`: Technical implementation details
   - `docs/TUI_COMPLETION_SUMMARY.md`: Feature completion summary
   - `docs/INTERACTIVE_SETTINGS_SUMMARY.md`: Settings screen implementation details
+Utility scripts
+---------------
+- `scripts/setup_venv.sh`: Create virtual environment
+- `scripts/web_autoreload.py`: Dev server with auto-restart on file changes
+- `scripts/index_repo.py`: Batch indexer for config repositories (`make index ROOT=… CACHE=…`)
+- `scripts/download_fonts.py`: Fetch libre fonts for web UI
+- `scripts/capture_playwright_shots.py`: Capture UI screenshots for visual regression
+- `scripts/generate_static_preview.py`: Build a self-contained static HTML preview from in-repo example configs; deployed to `gh-pages` branch via `.github/workflows/pages.yml` on every push to `main`. Run locally with `make preview`.
+
 CLI output & structured formats
 ------------------------------
 - Text output aims to be explicit and readable:

@@ -309,6 +309,14 @@ object network HOST_B
  host 10.1.1.1
 ```
 
+GitHub Pages preview
+--------------------
+A static HTML preview is generated from the in-repo example configs and deployed to the `gh-pages` branch on every push to `main` (workflow: `.github/workflows/pages.yml`). To build locally:
+
+  make preview          # writes preview/index.html
+
+Enable GitHub Pages on the repo (Settings → Pages → branch: `gh-pages`, folder: `/`) to publish the preview at `https://jandahl.github.io/acl-inspector/`.
+
 Testing
 -------
 - Run unit tests in the `tests` directory:
