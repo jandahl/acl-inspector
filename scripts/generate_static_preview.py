@@ -520,7 +520,7 @@ def main():
     j1 = run_cli("--vendor", "asa", "--config", str(ASA_CONFIG), "--inspect", ASA_HOST1)
     s1a = section(
         "Inspect a named host object",
-        f"aclinspector.py inspect --vendor asa --config cisco-asa-example --inspect {ASA_HOST1}",
+        f"aclinspector.py inspect --vendor asa --config {ASA_CONFIG.name} --inspect {ASA_HOST1}",
         fmt_inspect(j1, ASA_HOST1),
     )
 
@@ -528,7 +528,7 @@ def main():
     j2 = run_cli("--vendor", "asa", "--config", str(ASA_CONFIG), "--inspect", ASA_DESTGRP_ALL)
     s1b = section(
         "Inspect an object-group (expands to multiple addresses)",
-        f"aclinspector.py inspect --vendor asa --config cisco-asa-example --inspect {ASA_DESTGRP_ALL}",
+        f"aclinspector.py inspect --vendor asa --config {ASA_CONFIG.name} --inspect {ASA_DESTGRP_ALL}",
         fmt_inspect(j2, ASA_DESTGRP_ALL),
     )
 
@@ -536,7 +536,7 @@ def main():
     j3 = run_cli("--vendor", "asa", "--config", str(ASA_CONFIG), "--inspect", ASA_IP)
     s1c = section(
         "Inspect a raw IP address",
-        f"aclinspector.py inspect --vendor asa --config cisco-asa-example --inspect {ASA_IP}",
+        f"aclinspector.py inspect --vendor asa --config {ASA_CONFIG.name} --inspect {ASA_IP}",
         fmt_inspect(j3, ASA_IP),
     )
 
@@ -550,7 +550,7 @@ def main():
                  "--old", ASA_DEST1_GRP, "--new", ASA_DEST2_GRP)
     sc = section(
         f"Compare ACL coverage: {ASA_DEST1_GRP} → {ASA_DEST2_GRP}",
-        f"aclinspector.py inspect --vendor asa --config cisco-asa-example --old {ASA_DEST1_GRP} --new {ASA_DEST2_GRP}",
+        f"aclinspector.py inspect --vendor asa --config {ASA_CONFIG.name} --old {ASA_DEST1_GRP} --new {ASA_DEST2_GRP}",
         fmt_compare(jc),
     )
 
@@ -559,7 +559,7 @@ def main():
                   "--old", ASA_HOST1, "--new", ASA_HOST2)
     sc2 = section(
         "Compare two host objects in the same subnet",
-        f"aclinspector.py inspect --vendor asa --config cisco-asa-example --old {ASA_HOST1} --new {ASA_HOST2}",
+        f"aclinspector.py inspect --vendor asa --config {ASA_CONFIG.name} --old {ASA_HOST1} --new {ASA_HOST2}",
         fmt_compare(jc2),
     )
 
@@ -586,7 +586,7 @@ def main():
                    "--vdom", FTG_VDOM, "--inspect", FTG_NET)
     sftg = section(
         f"Inspect FortiGate address object '{FTG_NET}' (VDOM: {FTG_VDOM})",
-        f"aclinspector.py inspect --vendor fortigate --config fortigate7-4-example --vdom {FTG_VDOM} --inspect {FTG_NET}",
+        f"aclinspector.py inspect --vendor fortigate --config {FTG_CONFIG.name} --vdom {FTG_VDOM} --inspect {FTG_NET}",
         fmt_inspect(jftg, FTG_NET),
     )
 
@@ -595,7 +595,7 @@ def main():
                     "--vdom", FTG_VDOM, "--inspect", FTG_IP)
     sftg2 = section(
         "Inspect by IP (resolved through FortiGate address objects)",
-        f"aclinspector.py inspect --vendor fortigate --config fortigate7-4-example --vdom {FTG_VDOM} --inspect {FTG_IP}",
+        f"aclinspector.py inspect --vendor fortigate --config {FTG_CONFIG.name} --vdom {FTG_VDOM} --inspect {FTG_IP}",
         fmt_inspect(jftg2, FTG_IP),
     )
 
