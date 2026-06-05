@@ -1295,6 +1295,23 @@ class ASAConfig:
 
         return self._clone_service_members(cached_members)
 
+    def group_membership(self) -> Dict[str, List[str]]:
+        """Return a reverse lookup: object/group name → list of parent group names.
+
+        Useful for displaying which object-groups contain a matched named object.
+        The mapping is computed once and cached on first access.
+        """
+        if not hasattr(self, '_group_membership_cache'):
+            mapping: Dict[str, List[str]] = {}
+            for grp_name, members in self.network_object_groups.items():
+                for m in members:
+                    if isinstance(m, dict):
+                        child = m.get('object') or m.get('group-object')
+                        if child:
+                            mapping.setdefault(child, []).append(grp_name)
+            self._group_membership_cache = mapping
+        return self._group_membership_cache
+
     def resolve_network(
         self,
         token: Union[str, ipaddress.IPv4Address, ipaddress.IPv4Network],
