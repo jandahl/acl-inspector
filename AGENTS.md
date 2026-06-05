@@ -44,7 +44,7 @@ Parsing rules
 - `parsers/fortigate/advanced_parser.py` — `AdvancedFTGConfig` (subclasses `FTGConfig`, shipped)
 - Both use `ciscoconfparse2` (`pip install .[external]`) for structural parsing; all resolution logic is inherited from the legacy classes unchanged.
 - Enabled via `--use-external-engines` on the CLI; dispatched through `parsers/loader.py:get_engine()`.
-- Parity with legacy engines is verified by `tests/test_advanced_ftg_config.py` and `tests/test_external_engines.py`.
+- Parity with legacy engines is verified by `tests/test_advanced_ftg_config.py`, `tests/test_external_engines.py`, and `tests/test_fortigate_path_check.py`.
 
 New features in this iteration
 ------------------------------
