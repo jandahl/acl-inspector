@@ -2,13 +2,15 @@
 # Copyright (c) 2024-2026 Jan Gronemann
 """Unit tests for scripts/generate_static_preview.py formatter functions."""
 import json
+import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 # scripts/ is not a package; add it to the path so we can import directly.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
-from generate_static_preview import fmt_compare, fmt_findhost, fmt_inspect, highlight_rule
+from generate_static_preview import fmt_compare, fmt_config_snippet, fmt_findhost, fmt_inspect, highlight_rule
 
 
 class TestHighlightRule(unittest.TestCase):
@@ -222,6 +224,66 @@ class TestFmtFindhost(unittest.TestCase):
         result = fmt_findhost(payload, "10.1.1.1")
         self.assertIn("fw1.conf", result)
         self.assertIn("fw2.conf", result)
+
+
+class TestFmtConfigSnippet(unittest.TestCase):
+    def _make_file(self, lines):
+        fd, path = tempfile.mkstemp(suffix=".conf", text=True)
+        with os.fdopen(fd, "w") as f:
+            f.write("\n".join(lines))
+        self.addCleanup(os.unlink, path)
+        return path
+
+    def test_missing_file_returns_no_results_div(self):
+        result = fmt_config_snippet("/nonexistent/path/fw.conf")
+        self.assertIn("no-results", result)
+        self.assertIn("not found", result)
+
+    def test_output_wrapped_in_pre(self):
+        path = self._make_file(["permit ip any any"])
+        result = fmt_config_snippet(path)
+        self.assertIn("result-pre", result)
+        self.assertTrue(result.startswith("<pre"))
+
+    def test_normal_line_is_highlighted(self):
+        path = self._make_file(["permit tcp 10.1.1.1 any eq 443"])
+        result = fmt_config_snippet(path)
+        self.assertIn('class="act">permit', result)
+        self.assertIn('class="proto">tcp', result)
+
+    def test_bang_comment_gets_comment_span(self):
+        path = self._make_file(["! this is a comment"])
+        result = fmt_config_snippet(path)
+        self.assertIn('class="comment">', result)
+        self.assertIn("this is a comment", result)
+
+    def test_hash_comment_gets_comment_span(self):
+        path = self._make_file(["# hash comment"])
+        result = fmt_config_snippet(path)
+        self.assertIn('class="comment">', result)
+        self.assertIn("hash comment", result)
+
+    def test_empty_line_gets_comment_span(self):
+        path = self._make_file(["permit ip any any", "", "deny ip any any"])
+        result = fmt_config_snippet(path)
+        self.assertIn('class="comment"></span>', result)
+
+    def test_truncation_shows_footer(self):
+        path = self._make_file(["permit ip any any"] * 5)
+        result = fmt_config_snippet(path, max_lines=3)
+        self.assertIn("2 more lines", result)
+        self.assertIn('class="comment">', result)
+
+    def test_no_footer_when_within_max(self):
+        path = self._make_file(["permit ip any any"] * 3)
+        result = fmt_config_snippet(path, max_lines=3)
+        self.assertNotIn("more lines", result)
+
+    def test_html_escaping_in_comment(self):
+        path = self._make_file(["! <script>alert('xss')</script>"])
+        result = fmt_config_snippet(path)
+        self.assertNotIn("<script>", result)
+        self.assertIn("&lt;script&gt;", result)
 
 
 if __name__ == "__main__":
