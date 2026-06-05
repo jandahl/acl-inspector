@@ -86,7 +86,7 @@ The codebase is structured around a **pluggable parser architecture** that norma
 
 **Parsing Engines:**
 - **Legacy (Default)**: Custom line-by-line state machine (standard library only).
-- **Advanced (`--use-external-engines`)**: Uses `ciscoconfparse` (ASA) and `fortios-xutils` (FortiGate).
+- **Advanced (`--use-external-engines`)**: Uses `ciscoconfparse2` for both ASA and FortiGate (requires `pip install .[external]`).
   - **Vision**: Enabling this engine will automatically enrich CLI output with "parent-child" context (e.g., showing the full object-group hierarchy or nested policy blocks containing a matched rule).
 
 **Parsing Flow:**
