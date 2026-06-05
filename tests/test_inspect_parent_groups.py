@@ -10,6 +10,8 @@ object network HOST_A
  host 10.1.1.1
 object network HOST_B
  host 10.1.1.2
+object-group network MANAGERS
+ network-object object HOST_A
 object-group network SERVERS
  network-object object HOST_A
  network-object object HOST_B
@@ -41,7 +43,9 @@ class TestInspectParentGroups(unittest.TestCase):
         self.assertEqual(report["parent_groups"], [])
 
     def test_parent_groups_is_sorted(self):
-        report = inspect_host(_CFG, "HOST_B")
+        # HOST_A belongs to MANAGERS and SERVERS — two parents, sort is meaningful
+        report = inspect_host(_CFG, "HOST_A")
+        self.assertEqual(len(report["parent_groups"]), 2)
         self.assertEqual(report["parent_groups"], sorted(report["parent_groups"]))
 
 

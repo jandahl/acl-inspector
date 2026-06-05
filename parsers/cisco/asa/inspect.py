@@ -108,7 +108,9 @@ def inspect_host(
         use_external_engines: If True, use parallel advanced parsing engines.
 
     Returns:
-        dict containing ``hits`` (list of flattened rules), ``target_nets``, and ``aliases``.
+        dict containing ``hits`` (list of flattened rules), ``target_nets``, ``aliases``,
+        and ``parent_groups`` (sorted list of object-group names that directly contain
+        ``target``; empty list when ``target`` is a raw IP or not a group member).
     """
     from parsers.loader import get_engine
     cfg = get_engine('asa', cfg_text, use_external_engines=use_external_engines)
