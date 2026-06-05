@@ -150,6 +150,7 @@ class ASAConfig:
         self.dynamic_routing: Dict[str, dict] = {}  # key: protocol_processid
         self._network_cache: Dict[str, Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]]] = {}
         self._service_group_cache: Dict[str, Tuple[dict, ...]] = {}
+        self._group_membership_cache: Optional[Dict[str, List[str]]] = None
         self.parse()
         self._build_reverse_indexes()
 
@@ -1299,18 +1300,21 @@ class ASAConfig:
         """Return a reverse lookup: object/group name → list of parent group names.
 
         Useful for displaying which object-groups contain a matched named object.
-        The mapping is computed once and cached on first access.
+        The mapping is computed once and cached on first access. Returns a copy
+        so callers cannot corrupt the internal cache.
         """
-        if not hasattr(self, '_group_membership_cache'):
-            mapping: Dict[str, List[str]] = {}
+        if self._group_membership_cache is None:
+            temp: Dict[str, Set[str]] = {}
             for grp_name, members in self.network_object_groups.items():
                 for m in members:
                     if isinstance(m, dict):
                         child = m.get('object') or m.get('group-object')
                         if child:
-                            mapping.setdefault(child, []).append(grp_name)
-            self._group_membership_cache = mapping
-        return self._group_membership_cache
+                            temp.setdefault(child, set()).add(grp_name)
+            self._group_membership_cache = {
+                child: sorted(parents) for child, parents in temp.items()
+            }
+        return {k: list(v) for k, v in self._group_membership_cache.items()}
 
     def resolve_network(
         self,
