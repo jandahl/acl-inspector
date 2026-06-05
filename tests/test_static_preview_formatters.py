@@ -228,16 +228,18 @@ class TestFmtFindhost(unittest.TestCase):
 
 class TestFmtConfigSnippet(unittest.TestCase):
     def _make_file(self, lines):
-        fd, path = tempfile.mkstemp(suffix=".conf", text=True)
-        with os.fdopen(fd, "w") as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".conf", delete=False, encoding="utf-8"
+        ) as f:
             f.write("\n".join(lines))
+            path = f.name
         self.addCleanup(os.unlink, path)
         return path
 
     def test_missing_file_returns_no_results_div(self):
         result = fmt_config_snippet("/nonexistent/path/fw.conf")
         self.assertIn("no-results", result)
-        self.assertIn("not found", result)
+        self.assertIn("Config file not found", result)
 
     def test_output_wrapped_in_pre(self):
         path = self._make_file(["permit ip any any"])
@@ -279,11 +281,23 @@ class TestFmtConfigSnippet(unittest.TestCase):
         result = fmt_config_snippet(path, max_lines=3)
         self.assertNotIn("more lines", result)
 
+    def test_empty_file_returns_pre(self):
+        path = self._make_file([])
+        result = fmt_config_snippet(path)
+        self.assertIn("result-pre", result)
+        self.assertNotIn("more lines", result)
+
     def test_html_escaping_in_comment(self):
         path = self._make_file(["! <script>alert('xss')</script>"])
         result = fmt_config_snippet(path)
         self.assertNotIn("<script>", result)
         self.assertIn("&lt;script&gt;", result)
+
+    def test_html_escaping_in_normal_line(self):
+        path = self._make_file(["permit ip 10.0.0.0 <badtag> any"])
+        result = fmt_config_snippet(path)
+        self.assertNotIn("<badtag>", result)
+        self.assertIn("&lt;badtag&gt;", result)
 
 
 if __name__ == "__main__":
