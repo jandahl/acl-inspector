@@ -22,6 +22,73 @@ ASA_CONFIG = REPO_ROOT / "configs" / "cisco" / "cisco-asa-example"
 ASA_DIR = REPO_ROOT / "configs" / "cisco"
 FTG_CONFIG = REPO_ROOT / "configs" / "fortigate" / "fortigate7-4-example"
 
+# Named objects used in the preview sections below.
+# If the example configs change, update these constants and re-run to verify.
+ASA_HOST1 = "alpha_lobby_host1"
+ASA_HOST2 = "alpha_lobby_host2"
+ASA_DESTGRP_ALL = "alpha_destgrp_all"
+ASA_DEST1_GRP = "alpha_dest1_grp"
+ASA_DEST2_GRP = "alpha_dest2_grp"
+ASA_IP = "10.1.1.101"
+FTG_NET = "lobby-net"
+FTG_VDOM = "Alpha"
+FTG_IP = "10.0.1.101"
+
+
+def _check_objects() -> bool:
+    """Verify that named network objects exist in their configs before building.
+
+    The CLI exits 0 even for unknown objects (returns empty target_nets/hits),
+    so we parse stdout and require non-empty target_nets to confirm the object
+    is defined in the config. Raw IP constants (ASA_IP, FTG_IP) are excluded
+    because IPs always resolve to themselves regardless of config content.
+
+    Note: the target_nets key is part of the --inspect JSON contract
+    (see tests/test_static_preview_formatters.py); if the schema changes,
+    update the check below accordingly.
+
+    Returns True if all checks pass, False otherwise.
+    """
+    # ASA_IP and FTG_IP are intentionally omitted — raw IPs always resolve.
+    checks = [
+        ("asa", str(ASA_CONFIG), None, ASA_HOST1),
+        ("asa", str(ASA_CONFIG), None, ASA_HOST2),
+        ("asa", str(ASA_CONFIG), None, ASA_DESTGRP_ALL),
+        ("asa", str(ASA_CONFIG), None, ASA_DEST1_GRP),
+        ("asa", str(ASA_CONFIG), None, ASA_DEST2_GRP),
+        ("fortigate", str(FTG_CONFIG), FTG_VDOM, FTG_NET),
+    ]
+    ok = True
+    for vendor, config, vdom, obj in checks:
+        cmd = [sys.executable, str(CLI), "inspect",
+               "--vendor", vendor, "--config", config, "--inspect", obj, "--format", "json"]
+        if vdom:
+            cmd += ["--vdom", vdom]
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, cwd=REPO_ROOT, timeout=30)
+        except subprocess.TimeoutExpired:
+            print(f"  PREFLIGHT ERROR: timed out checking {obj!r}", file=sys.stderr)
+            ok = False
+            continue
+        if r.returncode != 0:
+            print(f"  PREFLIGHT ERROR: {obj!r} exited {r.returncode}", file=sys.stderr)
+            if r.stderr.strip():
+                print(f"    stderr: {r.stderr.strip()}", file=sys.stderr)
+            ok = False
+            continue
+        try:
+            data = json.loads(r.stdout)
+        except json.JSONDecodeError:
+            print(f"  PREFLIGHT ERROR: unparseable output for {obj!r}", file=sys.stderr)
+            ok = False
+            continue
+        # target_nets is empty when the object isn't found (CLI exits 0 either way)
+        if not data.get("target_nets"):
+            print(f"  PREFLIGHT ERROR: object {obj!r} not found in {config} "
+                  f"(resolved to empty target_nets)", file=sys.stderr)
+            ok = False
+    return ok
+
 
 def run_cli(*args):
     cmd = [sys.executable, str(CLI), "inspect"] + list(args) + ["--format", "json"]
@@ -424,7 +491,7 @@ body {{ margin: 0; }}
 # ── main ───────────────────────────────────────────────────────────────────────
 
 def main():
-    print("Generating static preview…")
+    print("Generating static preview...")
     PREVIEW_DIR.mkdir(exist_ok=True)
 
     for path, label in [
@@ -436,34 +503,41 @@ def main():
         if not path.exists():
             print(f"  ERROR: {label} not found: {path}", file=sys.stderr)
             sys.exit(1)
+
+    print("  Pre-flight: verifying named objects exist in example configs...")
+    if not _check_objects():
+        print("Update the object name constants at the top of this script to match "
+              "the example configs, then re-run.", file=sys.stderr)
+        sys.exit(1)
+
     css = CSS_SRC.read_text(encoding="utf-8").replace("</style>", "<\\/style>")
 
     tabs_btns = []
     tabs_panels = []
 
     # ── Tab 1: Inspect (ASA) ────────────────────────────────────────────────
-    print("  Running: ASA inspect alpha_lobby_host1")
-    j1 = run_cli("--vendor", "asa", "--config", str(ASA_CONFIG), "--inspect", "alpha_lobby_host1")
+    print(f"  Running: ASA inspect {ASA_HOST1}")
+    j1 = run_cli("--vendor", "asa", "--config", str(ASA_CONFIG), "--inspect", ASA_HOST1)
     s1a = section(
         "Inspect a named host object",
-        "aclinspector.py inspect --vendor asa --config cisco-asa-example --inspect alpha_lobby_host1",
-        fmt_inspect(j1, "alpha_lobby_host1"),
+        f"aclinspector.py inspect --vendor asa --config {ASA_CONFIG.name} --inspect {ASA_HOST1}",
+        fmt_inspect(j1, ASA_HOST1),
     )
 
-    print("  Running: ASA inspect alpha_destgrp_all")
-    j2 = run_cli("--vendor", "asa", "--config", str(ASA_CONFIG), "--inspect", "alpha_destgrp_all")
+    print(f"  Running: ASA inspect {ASA_DESTGRP_ALL}")
+    j2 = run_cli("--vendor", "asa", "--config", str(ASA_CONFIG), "--inspect", ASA_DESTGRP_ALL)
     s1b = section(
         "Inspect an object-group (expands to multiple addresses)",
-        "aclinspector.py inspect --vendor asa --config cisco-asa-example --inspect alpha_destgrp_all",
-        fmt_inspect(j2, "alpha_destgrp_all"),
+        f"aclinspector.py inspect --vendor asa --config {ASA_CONFIG.name} --inspect {ASA_DESTGRP_ALL}",
+        fmt_inspect(j2, ASA_DESTGRP_ALL),
     )
 
-    print("  Running: ASA inspect 10.1.1.101")
-    j3 = run_cli("--vendor", "asa", "--config", str(ASA_CONFIG), "--inspect", "10.1.1.101")
+    print(f"  Running: ASA inspect {ASA_IP}")
+    j3 = run_cli("--vendor", "asa", "--config", str(ASA_CONFIG), "--inspect", ASA_IP)
     s1c = section(
         "Inspect a raw IP address",
-        "aclinspector.py inspect --vendor asa --config cisco-asa-example --inspect 10.1.1.101",
-        fmt_inspect(j3, "10.1.1.101"),
+        f"aclinspector.py inspect --vendor asa --config {ASA_CONFIG.name} --inspect {ASA_IP}",
+        fmt_inspect(j3, ASA_IP),
     )
 
     btns_html, panel_html = build_tab("asa-inspect", "Inspect (ASA)", s1a + s1b + s1c)
@@ -471,21 +545,21 @@ def main():
     tabs_panels.append(panel_html)
 
     # ── Tab 2: Compare (ASA) ────────────────────────────────────────────────
-    print("  Running: ASA compare alpha_dest1_grp vs alpha_dest2_grp")
+    print(f"  Running: ASA compare {ASA_DEST1_GRP} vs {ASA_DEST2_GRP}")
     jc = run_cli("--vendor", "asa", "--config", str(ASA_CONFIG),
-                 "--old", "alpha_dest1_grp", "--new", "alpha_dest2_grp")
+                 "--old", ASA_DEST1_GRP, "--new", ASA_DEST2_GRP)
     sc = section(
-        "Compare ACL coverage: alpha_dest1_grp → alpha_dest2_grp",
-        "aclinspector.py inspect --vendor asa --config cisco-asa-example --old alpha_dest1_grp --new alpha_dest2_grp",
+        f"Compare ACL coverage: {ASA_DEST1_GRP} → {ASA_DEST2_GRP}",
+        f"aclinspector.py inspect --vendor asa --config {ASA_CONFIG.name} --old {ASA_DEST1_GRP} --new {ASA_DEST2_GRP}",
         fmt_compare(jc),
     )
 
-    print("  Running: ASA compare alpha_lobby_host1 vs alpha_lobby_host2")
+    print(f"  Running: ASA compare {ASA_HOST1} vs {ASA_HOST2}")
     jc2 = run_cli("--vendor", "asa", "--config", str(ASA_CONFIG),
-                  "--old", "alpha_lobby_host1", "--new", "alpha_lobby_host2")
+                  "--old", ASA_HOST1, "--new", ASA_HOST2)
     sc2 = section(
         "Compare two host objects in the same subnet",
-        "aclinspector.py inspect --vendor asa --config cisco-asa-example --old alpha_lobby_host1 --new alpha_lobby_host2",
+        f"aclinspector.py inspect --vendor asa --config {ASA_CONFIG.name} --old {ASA_HOST1} --new {ASA_HOST2}",
         fmt_compare(jc2),
     )
 
@@ -494,12 +568,12 @@ def main():
     tabs_panels.append(panel_html)
 
     # ── Tab 3: Find host ─────────────────────────────────────────────────────
-    print("  Running: find-host 10.1.1.101 across configs/cisco/")
-    jf = run_cli("--vendor", "asa", "--config", str(ASA_DIR), "--find-host", "10.1.1.101")
+    print(f"  Running: find-host {ASA_IP} across configs/cisco/")
+    jf = run_cli("--vendor", "asa", "--config", str(ASA_DIR), "--find-host", ASA_IP)
     sf = section(
-        "Find host 10.1.1.101 across all configs in the directory",
-        "aclinspector.py inspect --vendor asa --config configs/cisco/ --find-host 10.1.1.101",
-        fmt_findhost(jf, "10.1.1.101"),
+        f"Find host {ASA_IP} across all configs in the directory",
+        f"aclinspector.py inspect --vendor asa --config configs/cisco/ --find-host {ASA_IP}",
+        fmt_findhost(jf, ASA_IP),
     )
 
     btns_html, panel_html = build_tab("find-host", "Find host", sf)
@@ -507,22 +581,22 @@ def main():
     tabs_panels.append(panel_html)
 
     # ── Tab 4: FortiGate ─────────────────────────────────────────────────────
-    print("  Running: FortiGate inspect lobby-net")
+    print(f"  Running: FortiGate inspect {FTG_NET}")
     jftg = run_cli("--vendor", "fortigate", "--config", str(FTG_CONFIG),
-                   "--vdom", "Alpha", "--inspect", "lobby-net")
+                   "--vdom", FTG_VDOM, "--inspect", FTG_NET)
     sftg = section(
-        "Inspect FortiGate address object 'lobby-net' (VDOM: Alpha)",
-        "aclinspector.py inspect --vendor fortigate --config fortigate7-4-example --vdom Alpha --inspect lobby-net",
-        fmt_inspect(jftg, "lobby-net"),
+        f"Inspect FortiGate address object '{FTG_NET}' (VDOM: {FTG_VDOM})",
+        f"aclinspector.py inspect --vendor fortigate --config {FTG_CONFIG.name} --vdom {FTG_VDOM} --inspect {FTG_NET}",
+        fmt_inspect(jftg, FTG_NET),
     )
 
-    print("  Running: FortiGate inspect 10.0.1.101")
+    print(f"  Running: FortiGate inspect {FTG_IP}")
     jftg2 = run_cli("--vendor", "fortigate", "--config", str(FTG_CONFIG),
-                    "--vdom", "Alpha", "--inspect", "10.0.1.101")
+                    "--vdom", FTG_VDOM, "--inspect", FTG_IP)
     sftg2 = section(
         "Inspect by IP (resolved through FortiGate address objects)",
-        "aclinspector.py inspect --vendor fortigate --config fortigate7-4-example --vdom Alpha --inspect 10.0.1.101",
-        fmt_inspect(jftg2, "10.0.1.101"),
+        f"aclinspector.py inspect --vendor fortigate --config {FTG_CONFIG.name} --vdom {FTG_VDOM} --inspect {FTG_IP}",
+        fmt_inspect(jftg2, FTG_IP),
     )
 
     btns_html, panel_html = build_tab("fortigate", "FortiGate", sftg + sftg2)
