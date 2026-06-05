@@ -22,8 +22,7 @@ if TYPE_CHECKING:
     from parsers.fortigate.config import FTGConfig
     from parsers.cisco.asa.advanced_parser import AdvancedASAConfig
     from parsers.fortigate.advanced_parser import AdvancedFTGConfig
-
-_AnyConfig = Union["ASAConfig", "AdvancedASAConfig", "FTGConfig", "AdvancedFTGConfig"]
+    _AnyConfig = Union[ASAConfig, AdvancedASAConfig, FTGConfig, AdvancedFTGConfig]
 
 
 class ConfigLoadError(Exception):
@@ -36,7 +35,7 @@ def get_engine(
     text: str,
     use_external_engines: bool = False,
     vdom: Optional[str] = None
-) -> "_AnyConfig":
+) -> _AnyConfig:
     """Internal helper to instantiate the requested parsing engine.
 
     Args:
@@ -88,7 +87,7 @@ def load_config(
     min_confidence: int = 60,
     strict: bool = False,
     use_external_engines: bool = False
-) -> "Tuple[_AnyConfig, str, int]":
+) -> Tuple[_AnyConfig, str, int]:
     """Load firewall config with automatic vendor detection.
 
     Args:
