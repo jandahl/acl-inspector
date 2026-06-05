@@ -117,4 +117,5 @@ def inspect_host(
     entries = cfg.flatten_acl()
     hits = evaluate_acl(entries, target_nets, cfg, service_filter=service_filter, ignore_any=(not include_any))
     aliases = cfg.find_alias_objects(target, target_nets)
-    return {"hits": hits, "target_nets": target_nets, "aliases": aliases}
+    parent_groups = cfg.group_membership().get(target, [])
+    return {"hits": hits, "target_nets": target_nets, "aliases": aliases, "parent_groups": parent_groups}
