@@ -20,6 +20,9 @@ __all__ = ["ConfigLoadError", "load_config", "load_config_to_ir", "get_engine"]
 if TYPE_CHECKING:
     from parsers.cisco.asa.parser import ASAConfig
     from parsers.fortigate.config import FTGConfig
+    from parsers.cisco.asa.advanced_parser import AdvancedASAConfig
+    from parsers.fortigate.advanced_parser import AdvancedFTGConfig
+    _AnyConfig = Union[ASAConfig, AdvancedASAConfig, FTGConfig, AdvancedFTGConfig]
 
 
 class ConfigLoadError(Exception):
@@ -32,7 +35,7 @@ def get_engine(
     text: str,
     use_external_engines: bool = False,
     vdom: Optional[str] = None
-) -> Union[ASAConfig, FTGConfig]:
+) -> _AnyConfig:
     """Internal helper to instantiate the requested parsing engine.
 
     Args:
@@ -84,7 +87,7 @@ def load_config(
     min_confidence: int = 60,
     strict: bool = False,
     use_external_engines: bool = False
-) -> Tuple[Union[ASAConfig, FTGConfig], str, int]:
+) -> Tuple[_AnyConfig, str, int]:
     """Load firewall config with automatic vendor detection.
 
     Args:
