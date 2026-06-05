@@ -1302,6 +1302,10 @@ class ASAConfig:
         Useful for displaying which object-groups contain a matched named object.
         The mapping is computed once and cached on first access. Returns a copy
         so callers cannot corrupt the internal cache.
+
+        Only named members (``network-object object <NAME>`` and
+        ``group-object <NAME>``) are indexed; inline host/subnet entries have
+        no resolvable name and are skipped.
         """
         if self._group_membership_cache is None:
             temp: Dict[str, Set[str]] = {}
@@ -1314,7 +1318,8 @@ class ASAConfig:
             self._group_membership_cache = {
                 child: sorted(parents) for child, parents in temp.items()
             }
-        return {k: list(v) for k, v in self._group_membership_cache.items()}
+        # Copy each list so callers cannot mutate the cache.
+        return {k: list(parents) for k, parents in self._group_membership_cache.items()}
 
     def resolve_network(
         self,

@@ -21,6 +21,8 @@ object-group network ALL_SERVERS
  network-object object HOST_C
 object-group network ALSO_SERVERS
  network-object object HOST_A
+object-group network YET_MORE_SERVERS
+ network-object object HOST_A
 """
 
 
@@ -47,11 +49,12 @@ class TestGroupMembership(unittest.TestCase):
         self.assertNotIn("SERVERS", m.get("HOST_C", []))
 
     def test_multi_parent(self):
-        # HOST_A is in both SERVERS and ALSO_SERVERS
+        # HOST_A is in SERVERS, ALSO_SERVERS, and YET_MORE_SERVERS
         m = self.cfg.group_membership()
         self.assertIn("SERVERS", m["HOST_A"])
         self.assertIn("ALSO_SERVERS", m["HOST_A"])
-        self.assertEqual(len(m["HOST_A"]), 2)
+        self.assertIn("YET_MORE_SERVERS", m["HOST_A"])
+        self.assertEqual(len(m["HOST_A"]), 3)
 
     def test_parent_list_is_sorted(self):
         m = self.cfg.group_membership()
