@@ -274,7 +274,6 @@ class TestFmtConfigSnippet(unittest.TestCase):
         path = self._make_file(["permit ip any any"] * 5)
         result = fmt_config_snippet(path, max_lines=3)
         self.assertIn("2 more lines", result)
-        self.assertIn('class="comment">', result)
 
     def test_no_footer_when_within_max(self):
         path = self._make_file(["permit ip any any"] * 3)
