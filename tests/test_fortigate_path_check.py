@@ -12,6 +12,7 @@ FIXTURES = Path(__file__).parent / "fixtures" / "configs" / "fortigate"
 
 try:
     import ciscoconfparse2  # noqa: F401
+    from parsers.fortigate.advanced_parser import AdvancedFTGConfig  # noqa: F401
     HAS_ADVANCED = True
 except ImportError:
     HAS_ADVANCED = False
