@@ -150,7 +150,6 @@ class TestFilterIntegration(unittest.TestCase):
                 resolved_addresses=["10.0.0.1"],
                 matching_rules=rules,
                 duplicates=[],
-                total_rules=len(rules)
             )
 
             # Filter by action
@@ -162,7 +161,6 @@ class TestFilterIntegration(unittest.TestCase):
                 resolved_addresses=result.resolved_addresses,
                 matching_rules=filtered_rules,
                 duplicates=result.duplicates,
-                total_rules=len(filtered_rules)
             )
 
             self.assertEqual(filtered_result.total_rules, 2)

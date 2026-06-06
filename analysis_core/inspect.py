@@ -28,16 +28,14 @@ class InspectResult:
     duplicates: List[str]
     """Other object names that resolve to the same IP addresses (aliases)."""
 
-    total_rules: int
-    """Total number of matching ACL rules."""
+    total_rules: int = field(init=False)
+    """Total number of matching ACL rules (derived from matching_rules)."""
 
     parent_groups: List[str] = field(default_factory=list)
     """Object-group names that directly contain this object (ASA only; [] otherwise)."""
 
     def __post_init__(self):
-        """Calculate derived fields."""
-        if self.total_rules is None:
-            self.total_rules = len(self.matching_rules)
+        self.total_rules = len(self.matching_rules)
 
 
 def inspect_object(
@@ -131,6 +129,5 @@ def inspect_object(
         resolved_addresses=[str(net) for net in result_dict["target_nets"]],
         matching_rules=result_dict["hits"],
         duplicates=aliases,
-        total_rules=len(result_dict["hits"]),
         parent_groups=result_dict.get("parent_groups", []),
     )
