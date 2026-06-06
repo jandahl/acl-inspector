@@ -55,6 +55,10 @@ class TestFTGGroupMembership(unittest.TestCase):
         m2 = self.cfg.group_membership()
         self.assertNotIn("ROGUE", m2.get("HOST_A", []))
 
+    def test_object_not_in_any_group(self):
+        cfg = FTGConfig(_CFG + 'config firewall address\n    edit "HOST_C"\n        set subnet 10.1.1.3 255.255.255.255\n    next\nend\n')
+        self.assertEqual(cfg.group_membership().get("HOST_C", []), [])
+
     def test_empty_config(self):
         self.assertEqual(FTGConfig("").group_membership(), {})
 
@@ -72,6 +76,20 @@ class TestFTGGroupMembership(unittest.TestCase):
         report = inspect_host(cfg_with_policy, "HOST_A")
         self.assertIn("parent_groups", report)
         self.assertEqual(report["parent_groups"], ["SERVERS"])
+
+    def test_inspect_host_ip_target_has_empty_parent_groups(self):
+        cfg_with_policy = _CFG + (
+            'config firewall policy\n'
+            '    edit 1\n'
+            '        set srcintf "any"\n'
+            '        set dstintf "any"\n'
+            '        set srcaddr "all"\n'
+            '        set dstaddr "HOST_A"\n'
+            '        set action accept\n'
+            '    next\nend\n'
+        )
+        report = inspect_host(cfg_with_policy, "10.1.1.1")
+        self.assertEqual(report["parent_groups"], [])
 
 
 if __name__ == "__main__":

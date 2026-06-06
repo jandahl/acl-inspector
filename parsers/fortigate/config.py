@@ -287,6 +287,11 @@ class FTGConfig:
         host/subnet entries have no resolvable name and are skipped.
         The mapping is computed once and cached. Returns a copy so callers
         cannot corrupt the internal cache.
+
+        Note: FortiGate stores both named addresses and nested addrgrp references
+        as ``{'object': name}`` (a single key), unlike ASA which uses separate
+        ``'object'`` and ``'group-object'`` keys. Only ``m.get('object')`` is
+        needed here.
         """
         if self._group_membership_cache is None:
             temp: Dict[str, Set[str]] = {}
