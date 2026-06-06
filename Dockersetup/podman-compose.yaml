@@ -26,7 +26,7 @@ services:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8083/healthz', timeout=3)"]
       interval: 30s
       timeout: 5s
-      start_period: 60s
+      start_period: 60s  # covers worst-case prewarm; does not delay explicit docker stop
       retries: 3
     # Prevent privilege escalation inside the container
     security_opt:
@@ -38,7 +38,12 @@ services:
     # Restart on crash but not on explicit stop/down.
     # Note: silently ignored by rootless Podman (lifecycle managed by systemd/user).
     restart: on-failure
-    # Give the server 5 s to flush in-flight responses on SIGTERM before SIGKILL.
+    # 5 s is sufficient to flush in-flight HTTP responses on SIGTERM.
+    # Safe even when ACLINSPECTOR_PREWARM_ALL=1: cache writes use an atomic
+    # tmp→rename pattern so a SIGKILL mid-prewarm leaves no corrupt files.
+    # Worst case is a repeated (idempotent) prewarm on the next boot.
+    # If prewarming routinely exceeds 5 s in your environment, increase this
+    # to 15s or 30s — mtime/size validation ensures no stale data is served.
     stop_grace_period: 5s
     # Limit process count — a Python HTTP server has no reason to fork heavily.
     pids_limit: 50
