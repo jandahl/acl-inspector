@@ -108,7 +108,9 @@ def inspect_host(
         use_external_engines: If True, use parallel advanced parsing engines.
 
     Returns:
-        dict containing ``hits`` (list of flattened rules), ``target_nets``, and ``aliases``.
+        dict containing ``hits`` (list of flattened rules), ``target_nets``, ``aliases``,
+        and ``parent_groups`` (sorted list of object-group names that directly contain
+        ``target``; empty list when ``target`` is a raw IP or not a group member).
     """
     from parsers.loader import get_engine
     cfg = get_engine('asa', cfg_text, use_external_engines=use_external_engines)
@@ -117,4 +119,5 @@ def inspect_host(
     entries = cfg.flatten_acl()
     hits = evaluate_acl(entries, target_nets, cfg, service_filter=service_filter, ignore_any=(not include_any))
     aliases = cfg.find_alias_objects(target, target_nets)
-    return {"hits": hits, "target_nets": target_nets, "aliases": aliases}
+    parent_groups = cfg.group_membership().get(target, [])
+    return {"hits": hits, "target_nets": target_nets, "aliases": aliases, "parent_groups": parent_groups}

@@ -7,7 +7,7 @@ This module provides vendor-agnostic object inspection across ACLs.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Set
 import ipaddress
 
@@ -30,6 +30,9 @@ class InspectResult:
 
     total_rules: int
     """Total number of matching ACL rules."""
+
+    parent_groups: List[str] = field(default_factory=list)
+    """Object-group names that directly contain this object (ASA only; [] otherwise)."""
 
     def __post_init__(self):
         """Calculate derived fields."""
@@ -128,5 +131,6 @@ def inspect_object(
         resolved_addresses=[str(net) for net in result_dict["target_nets"]],
         matching_rules=result_dict["hits"],
         duplicates=aliases,
-        total_rules=len(result_dict["hits"])
+        total_rules=len(result_dict["hits"]),
+        parent_groups=result_dict.get("parent_groups", []),
     )

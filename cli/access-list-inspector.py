@@ -123,6 +123,7 @@ def _serialize_report(report: dict) -> dict:
         'target_nets': _to_str_set(report.get('target_nets', [])),
         'hits': [_serialize_entry(e) for e in report.get('hits', [])],
         'aliases': {str(k): sorted(list(v)) for k, v in (report.get('aliases') or {}).items()},
+        'parent_groups': report.get('parent_groups', []),
     }
 
 
@@ -552,6 +553,8 @@ def main() -> None:
                 return
             print(bold(f"Inspection: {args.inspect}"))
             print(f"Resolved to: {', '.join(str(n) for n in report['target_nets'])}")
+            if report.get('parent_groups'):
+                print(f"Member of: {', '.join(report['parent_groups'])}")
             print(blue(f"Matching ACL entries: {len(report['hits'])}"))
             print("\nDetails (flattened):")
             for e in report['hits']:
@@ -601,6 +604,7 @@ def main() -> None:
                 return
             print(bold(f"Inspection: {args.inspect} (VDOM={args.vdom or 'default'})"))
             print(f"Resolved to: {', '.join(str(n) for n in report['target_nets'])}")
+            # TODO: surface parent addrgrp membership here once FTGConfig gains group_membership()
             print(blue(f"Matching policy entries: {len(report['hits'])}"))
             print("\nDetails (flattened):")
             for e in report['hits']:
