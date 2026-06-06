@@ -14,6 +14,9 @@ config firewall address
     edit "HOST_B"
         set subnet 10.1.1.2 255.255.255.255
     next
+    edit "HOST_C"
+        set subnet 10.1.1.3 255.255.255.255
+    next
 end
 config firewall addrgrp
     edit "SERVERS"
@@ -66,8 +69,8 @@ class TestFTGGroupMembership(unittest.TestCase):
         self.assertEqual(parents, ['SERVERS', 'SPECIAL'])  # sorted, no duplicates
 
     def test_object_not_in_any_group(self):
-        cfg = FTGConfig(_CFG + 'config firewall address\n    edit "HOST_C"\n        set subnet 10.1.1.3 255.255.255.255\n    next\nend\n')
-        self.assertEqual(cfg.group_membership().get("HOST_C", []), [])
+        # HOST_C is defined in _CFG but belongs to no addrgrp
+        self.assertEqual(self.cfg.group_membership().get("HOST_C", []), [])
 
     def test_empty_config(self):
         self.assertEqual(FTGConfig("").group_membership(), {})
