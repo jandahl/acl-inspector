@@ -1136,7 +1136,7 @@ class SingularityApp(App):
                 resolved_addresses=result.resolved_addresses,
                 matching_rules=filtered_rules,
                 duplicates=result.duplicates,
-                total_rules=len(filtered_rules)
+                parent_groups=result.parent_groups,
             )
 
         # Store result for export

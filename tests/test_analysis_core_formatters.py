@@ -78,7 +78,6 @@ access-list INSIDE_IN extended deny ip any any
             resolved_addresses=["10.1.0.10"],
             matching_rules=rules,
             duplicates=[],
-            total_rules=len(rules),
         )
         formatted = format_inspect_rich(result)
         self.assertIsInstance(formatted, Group)

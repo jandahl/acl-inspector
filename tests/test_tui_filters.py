@@ -150,7 +150,6 @@ class TestFilterIntegration(unittest.TestCase):
                 resolved_addresses=["10.0.0.1"],
                 matching_rules=rules,
                 duplicates=[],
-                total_rules=len(rules)
             )
 
             # Filter by action
@@ -162,13 +161,63 @@ class TestFilterIntegration(unittest.TestCase):
                 resolved_addresses=result.resolved_addresses,
                 matching_rules=filtered_rules,
                 duplicates=result.duplicates,
-                total_rules=len(filtered_rules)
             )
 
             self.assertEqual(filtered_result.total_rules, 2)
             self.assertTrue(all(r["action"] == "permit" for r in filtered_result.matching_rules))
         except ImportError:
             self.skipTest("analysis_core not available")
+
+    def test_inspect_result_total_rules_not_an_init_param(self):
+        """Passing total_rules= to InspectResult must raise TypeError.
+
+        Regression lock: field is init=False; any call site that passes
+        total_rules= will crash at runtime, not silently compute a wrong value.
+        """
+        try:
+            from analysis_core.inspect import InspectResult
+        except ImportError:
+            self.skipTest("analysis_core not available")
+        with self.assertRaises(TypeError):
+            InspectResult(
+                object_name="X",
+                resolved_addresses=[],
+                matching_rules=[],
+                duplicates=[],
+                total_rules=0,
+            )
+
+    def test_filter_copy_preserves_parent_groups(self):
+        """parent_groups must survive when constructing a filtered InspectResult.
+
+        Regression lock for the tui/app.py action-filter pattern: omitting
+        parent_groups= silently resets it to [], losing group-membership context.
+        """
+        try:
+            from analysis_core.inspect import InspectResult
+        except ImportError:
+            self.skipTest("analysis_core not available")
+        rules = [
+            {"protocol": "tcp", "action": "permit", "acl": "test"},
+            {"protocol": "tcp", "action": "deny", "acl": "test"},
+        ]
+        original = InspectResult(
+            object_name="HOST_A",
+            resolved_addresses=["10.0.0.1"],
+            matching_rules=rules,
+            duplicates=[],
+            parent_groups=["MANAGERS", "SERVERS"],
+        )
+        filtered_rules = [r for r in original.matching_rules if r["action"] == "permit"]
+        filtered = InspectResult(
+            object_name=original.object_name,
+            resolved_addresses=original.resolved_addresses,
+            matching_rules=filtered_rules,
+            duplicates=original.duplicates,
+            parent_groups=original.parent_groups,
+        )
+        self.assertEqual(filtered.parent_groups, ["MANAGERS", "SERVERS"])
+        self.assertEqual(filtered.total_rules, 1)
 
 
 if __name__ == "__main__":
