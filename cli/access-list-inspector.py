@@ -604,7 +604,8 @@ def main() -> None:
                 return
             print(bold(f"Inspection: {args.inspect} (VDOM={args.vdom or 'default'})"))
             print(f"Resolved to: {', '.join(str(n) for n in report['target_nets'])}")
-            # TODO: surface parent addrgrp membership here once FTGConfig gains group_membership()
+            if report.get('parent_groups'):
+                print(f"Member of: {', '.join(report['parent_groups'])}")
             print(blue(f"Matching policy entries: {len(report['hits'])}"))
             print("\nDetails (flattened):")
             for e in report['hits']:
