@@ -85,4 +85,9 @@ def inspect_host(
         if names:
             aliases[net] = names
     parent_groups = cfg.group_membership().get(target, [])
-    return {"hits": hits, "target_nets": target_nets, "aliases": aliases, "parent_groups": parent_groups}
+    return {
+        "hits": hits,
+        "target_nets": target_nets,
+        "aliases": aliases,
+        "parent_groups": parent_groups,
+    }
