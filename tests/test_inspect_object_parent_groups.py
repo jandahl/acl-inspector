@@ -13,7 +13,7 @@ object-group network SERVERS
  network-object object HOST_A
 object-group network MANAGERS
  network-object object HOST_A
-access-list OUTSIDE_IN extended permit ip any object HOST_A
+access-list OUTSIDE_IN extended permit ip host 10.2.2.2 object HOST_A
 """
 
 
@@ -29,6 +29,7 @@ class TestInspectObject(unittest.TestCase):
 
     def test_total_rules_derived(self):
         result = inspect_object(self.cfg, "HOST_A")
+        self.assertEqual(result.total_rules, 1)
         self.assertEqual(result.total_rules, len(result.matching_rules))
 
     def test_ip_target_has_empty_parent_groups(self):
