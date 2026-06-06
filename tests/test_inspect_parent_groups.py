@@ -26,7 +26,7 @@ class TestInspectParentGroups(unittest.TestCase):
     def test_named_target_returns_parent_groups(self):
         report = inspect_host(_CFG, "HOST_A")
         self.assertIn("parent_groups", report)
-        self.assertIn("SERVERS", report["parent_groups"])
+        self.assertEqual(set(report["parent_groups"]), {"MANAGERS", "SERVERS"})
 
     def test_nested_group_not_in_direct_parents(self):
         # ALL_SERVERS contains SERVERS (group-object), not HOST_A directly
