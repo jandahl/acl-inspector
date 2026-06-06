@@ -81,6 +81,7 @@ class FTGConfig:
         self.policy_vip_refs: Dict[str, Set[str]] = defaultdict(set)
         self.static_routes: List[dict] = []
         self.dynamic_routing: Dict[str, dict] = {}  # key: protocol_processid
+        self._group_membership_cache: Optional[Dict[str, List[str]]] = None
         self._parse()
         self._build_reverse_indexes()
         self._map_zones()
@@ -278,6 +279,33 @@ class FTGConfig:
                 self.addresses[cur] = nets
                 cur = None
         return i
+
+    def group_membership(self) -> Dict[str, List[str]]:
+        """Return a reverse lookup: address/addrgrp name → list of parent addrgrp names.
+
+        Only named members (``set member <NAME> ...``) are indexed; inline
+        host/subnet entries have no resolvable name and are skipped.
+        The mapping is computed once and cached. Returns a copy so callers
+        cannot corrupt the internal cache.
+
+        Note: FortiGate stores both named addresses and nested addrgrp references
+        as ``{'object': name}`` (a single key), unlike ASA which uses separate
+        ``'object'`` and ``'group-object'`` keys. Only ``m.get('object')`` is
+        needed here.
+        """
+        if self._group_membership_cache is None:
+            temp: Dict[str, Set[str]] = {}
+            for grp_name, members in self.addrgrps.items():
+                for m in members:
+                    if isinstance(m, dict):
+                        child = m.get('object')
+                        if child:
+                            temp.setdefault(child, set()).add(grp_name)
+            self._group_membership_cache = {
+                child: sorted(parents) for child, parents in temp.items()
+            }
+        # Copy each list so callers cannot mutate the cache.
+        return {k: list(parents) for k, parents in self._group_membership_cache.items()}
 
     def _parse_addrgrp(self, i: int) -> int:
         i, blk = self._parse_block(i)
