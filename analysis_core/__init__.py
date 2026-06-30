@@ -3,6 +3,7 @@
 """Core analysis utilities shared across presentation layers."""
 
 from .index import IndexEntry, IndexManager
+from .parsed_cache import ParsedConfigCache
 from .inspect import inspect_object, InspectResult
 from .compare import compare_objects, CompareResult
 from .acl_usage import find_object_usage, UsageResult
@@ -38,6 +39,7 @@ except ImportError:
 __all__ = [
     "IndexEntry",
     "IndexManager",
+    "ParsedConfigCache",
     "inspect_object",
     "InspectResult",
     "compare_objects",
