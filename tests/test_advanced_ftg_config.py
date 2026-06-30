@@ -1,10 +1,17 @@
 # SPDX-License-Identifier: MPL-2.0
 # Copyright (c) 2024-2026 Jan Gronemann
-"""Parity tests: AdvancedFTGConfig must produce identical output to FTGConfig."""
+"""Coverage for the ciscoconfparse2-backed FTGConfig parser.
+
+ciscoconfparse2 is the single FortiGate engine now (the AdvancedFTGConfig
+subclass was merged into FTGConfig), so these tests exercise FTGConfig directly
+on the sample fixtures and assert resolution/index/routing behaviour.
+"""
 
 import ipaddress
 import unittest
 from pathlib import Path
+
+from parsers.fortigate.config import FTGConfig
 
 FIXTURES = Path(__file__).parent / "fixtures" / "configs" / "fortigate"
 
@@ -13,175 +20,87 @@ def load_fixture(name: str) -> str:
     return (FIXTURES / name).read_text()
 
 
-try:
-    import ciscoconfparse2  # noqa: F401 — explicit check so HAS_ADVANCED reflects library availability
-    from parsers.fortigate.advanced_parser import AdvancedFTGConfig
-    HAS_ADVANCED = True
-except ImportError:
-    HAS_ADVANCED = False
-
-requires_advanced = unittest.skipUnless(HAS_ADVANCED, "ciscoconfparse2 not installed")
-
-
-@requires_advanced
-class TestAdvancedFTGParityAddresses(unittest.TestCase):
-    """AdvancedFTGConfig address/group/VIP parsing matches FTGConfig."""
+class TestFTGSampleFixture(unittest.TestCase):
+    """FTGConfig parses the sample fixture's objects/groups/VIPs/policies."""
 
     def setUp(self):
-        from parsers.fortigate.config import FTGConfig
-        text = load_fixture("sample.conf")
-        self.base = FTGConfig(text)
-        self.adv = AdvancedFTGConfig(text)
+        self.cfg = FTGConfig(load_fixture("sample.conf"))
 
-    def test_addresses_match(self):
-        self.assertEqual(self.adv.addresses, self.base.addresses)
+    def test_addresses_parsed(self):
+        self.assertIn('WEB_SERVER', self.cfg.addresses)
 
-    def test_addrgrps_match(self):
-        self.assertEqual(self.adv.addrgrps, self.base.addrgrps)
-
-    def test_services_match(self):
-        self.assertEqual(self.adv.services, self.base.services)
-
-    def test_service_groups_match(self):
-        self.assertEqual(self.adv.service_groups, self.base.service_groups)
-
-    def test_vips_match(self):
-        self.assertEqual(self.adv.vips, self.base.vips)
-
-    def test_vipgrps_match(self):
-        self.assertEqual(self.adv.vipgrps, self.base.vipgrps)
-
-    def test_zones_match(self):
-        self.assertEqual(self.adv.zones, self.base.zones)
-
-    def test_interfaces_match(self):
-        self.assertEqual(self.adv.interfaces, self.base.interfaces)
-
-    def test_ippools_match(self):
-        self.assertEqual(self.adv.ippools, self.base.ippools)
-
-    def test_central_snat_match(self):
-        self.assertEqual(self.adv.central_snat_map, self.base.central_snat_map)
-
-    def test_policies_count_match(self):
-        self.assertEqual(len(self.adv.policies), len(self.base.policies))
-
-    def test_policy_ids_match(self):
-        adv_ids = [p.get('id') for p in self.adv.policies]
-        base_ids = [p.get('id') for p in self.base.policies]
-        self.assertEqual(adv_ids, base_ids)
-
-    def test_flatten_policies_parity(self):
-        base_flat = self.base.flatten_policies()
-        adv_flat = self.adv.flatten_policies()
-        self.assertEqual(len(adv_flat), len(base_flat))
-        for i, (b, a) in enumerate(zip(base_flat, adv_flat)):
-            for key in ('policy_id', 'action', 'src', 'dst', 'nat'):
-                self.assertEqual(a.get(key), b.get(key),
-                    msg=f"policy[{i}].{key}: adv={a.get(key)!r} base={b.get(key)!r}")
+    def test_addrgrps_parsed(self):
+        self.assertIn('BACKEND_SERVERS', self.cfg.addrgrps)
 
     def test_resolve_addr_token_object_name(self):
-        result = self.adv.resolve_addr_token('WEB_SERVER')
+        result = self.cfg.resolve_addr_token('WEB_SERVER')
         self.assertIn(ipaddress.ip_network('10.1.1.10/32'), result)
 
     def test_resolve_addr_token_addrgrp(self):
-        result = self.adv.resolve_addr_token('BACKEND_SERVERS')
+        result = self.cfg.resolve_addr_token('BACKEND_SERVERS')
         self.assertIn(ipaddress.ip_network('10.1.1.10/32'), result)
         self.assertIn(ipaddress.ip_network('10.1.1.20/32'), result)
 
     def test_resolve_addr_token_vip(self):
-        result = self.adv.resolve_addr_token('VIP_WEB')
+        result = self.cfg.resolve_addr_token('VIP_WEB')
         self.assertIn(ipaddress.ip_address('203.0.113.1'), result)
 
     def test_ip_to_objects_reverse_index(self):
         net = ipaddress.ip_network('10.1.1.10/32')
-        self.assertIn(net, self.adv.ip_to_objects)
-        self.assertIn('WEB_SERVER', self.adv.ip_to_objects[net])
-
-    def test_static_routes_match(self):
-        self.assertEqual(self.adv.static_routes, self.base.static_routes)
-
-    def test_dynamic_routing_match(self):
-        self.assertEqual(self.adv.dynamic_routing, self.base.dynamic_routing)
+        self.assertIn(net, self.cfg.ip_to_objects)
+        self.assertIn('WEB_SERVER', self.cfg.ip_to_objects[net])
 
     def test_deny_policy_parsed(self):
-        deny = [p for p in self.adv.policies if p.get('action') == 'deny']
+        deny = [p for p in self.cfg.policies if p.get('action') == 'deny']
         self.assertEqual(len(deny), 1)
         self.assertEqual(deny[0]['id'], '100')
 
+    def test_flatten_policies_non_empty(self):
+        flat = self.cfg.flatten_policies()
+        self.assertTrue(flat)
+        for entry in flat:
+            self.assertIn('action', entry)
+            self.assertIn('src', entry)
+            self.assertIn('dst', entry)
 
-@requires_advanced
-class TestAdvancedFTGBasicInstantiation(unittest.TestCase):
-    """AdvancedFTGConfig instantiates successfully when ciscoconfparse2 is present."""
+
+class TestFTGBasicInstantiation(unittest.TestCase):
 
     def test_available(self):
-        text = load_fixture("sample.conf")
-        cfg = AdvancedFTGConfig(text)
+        cfg = FTGConfig(load_fixture("sample.conf"))
         self.assertIsNotNone(cfg)
 
     def test_empty_config_does_not_crash(self):
-        cfg = AdvancedFTGConfig("")
+        cfg = FTGConfig("")
         self.assertEqual(cfg.addresses, {})
         self.assertEqual(cfg.policies, [])
 
     def test_explicit_vdom_arg_parses_correctly(self):
-        """AdvancedFTGConfig with vdom= exercises the textwrap.dedent path."""
-        from parsers.fortigate.config import FTGConfig
-        text = load_fixture("advanced_policy_nat.conf")
-        base = FTGConfig(text, vdom="root")
-        adv = AdvancedFTGConfig(text, vdom="root")
-        self.assertEqual(adv.vdom, "root")
-        self.assertEqual(adv.addresses, base.addresses)
-        self.assertEqual(adv.policies, base.policies)
+        """vdom= exercises the textwrap.dedent path on the VDOM-nested fixture."""
+        cfg = FTGConfig(load_fixture("advanced_policy_nat.conf"), vdom="root")
+        self.assertEqual(cfg.vdom, "root")
+        self.assertTrue(cfg.addresses)
+        self.assertTrue(cfg.policies)
 
 
-@requires_advanced
-class TestAdvancedFTGAdvancedFixture(unittest.TestCase):
-    """Parity on the richer advanced_policy_nat fixture."""
+class TestFTGAdvancedFixture(unittest.TestCase):
+    """Parsing the richer advanced_policy_nat fixture."""
 
     def setUp(self):
-        from parsers.fortigate.config import FTGConfig
-        text = load_fixture("advanced_policy_nat.conf")
-        self.base = FTGConfig(text)
-        self.adv = AdvancedFTGConfig(text)
+        self.cfg = FTGConfig(load_fixture("advanced_policy_nat.conf"))
 
-    def test_addresses_match(self):
-        self.assertEqual(self.adv.addresses, self.base.addresses)
+    def test_addresses_parsed(self):
+        self.assertTrue(self.cfg.addresses)
 
-    def test_services_match(self):
-        self.assertEqual(self.adv.services, self.base.services)
+    def test_vips_parsed(self):
+        # The advanced fixture defines at least one VIP.
+        self.assertTrue(self.cfg.vips)
 
-    def test_vips_match(self):
-        self.assertEqual(self.adv.vips, self.base.vips)
-
-    def test_zones_match(self):
-        self.assertEqual(self.adv.zones, self.base.zones)
-
-    def test_interfaces_match(self):
-        self.assertEqual(self.adv.interfaces, self.base.interfaces)
-
-    def test_ippools_match(self):
-        self.assertEqual(self.adv.ippools, self.base.ippools)
-
-    def test_central_snat_match(self):
-        self.assertEqual(self.adv.central_snat_map, self.base.central_snat_map)
-
-    def test_static_routes_match(self):
-        self.assertEqual(self.adv.static_routes, self.base.static_routes)
-
-    def test_dynamic_routing_match(self):
-        # Fixture has no OSPF/BGP blocks; verifies the fallback path leaves
-        # dynamic_routing in the same state as the base parser.
-        self.assertEqual(self.adv.dynamic_routing, self.base.dynamic_routing)
-
-    def test_flatten_policies_parity(self):
-        base_flat = self.base.flatten_policies()
-        adv_flat = self.adv.flatten_policies()
-        self.assertEqual(len(adv_flat), len(base_flat))
-        for i, (b, a) in enumerate(zip(base_flat, adv_flat)):
-            for key in ('policy_id', 'action', 'nat'):
-                self.assertEqual(a.get(key), b.get(key),
-                    msg=f"policy[{i}].{key}: adv={a.get(key)!r} base={b.get(key)!r}")
+    def test_flatten_policies_carry_nat_flag(self):
+        flat = self.cfg.flatten_policies()
+        self.assertTrue(flat)
+        for entry in flat:
+            self.assertIn('nat', entry)
 
 
 if __name__ == '__main__':

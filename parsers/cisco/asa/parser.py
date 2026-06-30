@@ -33,6 +33,9 @@ import socket
 from collections import defaultdict
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Union
 
+from ciscoconfparse2 import CiscoConfParse
+
+from ._extract import parse_dynamic_routing_block
 from .services import entry_effective_protos, spec_to_range_tuple, dst_ports_from_entry, service_matches
 from .nat import (
     nat_result_template,
@@ -266,485 +269,298 @@ class ASAConfig:
         }
 
     def parse(self) -> None:
-        i = 0
-        L = len(self.lines)
-        while i < L:
-            line = self.lines[i]
-            # Interfaces
-            if line.startswith('interface '):
-                phys = line.split(None, 1)[1].strip()
-                nameif = None
-                ipv4 = None
-                sec = None
-                i += 1
-                while i < L and self.lines[i].startswith(' '):
-                    ln = self.lines[i].strip()
-                    if ln.lower().startswith('nameif '):
-                        nameif = ln.split(None, 1)[1].strip()
-                    elif ln.lower().startswith('ip address '):
-                        parts = ln.split()
-                        if len(parts) >= 3:
-                            try:
-                                ipv4 = to_ip_network(parts[2], parts[3]) if len(parts) >= 4 else to_ip_network(parts[2])
-                            except Exception:
-                                pass
-                    elif ln.lower().startswith('security-level '):
+        """Parse the ASA config using ciscoconfparse2's parent-child hierarchy.
+
+        ciscoconfparse2 is a hard dependency (the single parsing engine). This
+        method covers every construct the resolution/flatten/eval layers rely on:
+        network objects, object-groups, interfaces, ACL lines, access-group
+        bindings, object/manual NAT, static routes, and dynamic routing.
+        """
+        ccp = CiscoConfParse(self.lines, syntax='asa')
+
+        # ── Network objects ──────────────────────────────────────────────────
+        for obj in ccp.find_objects(r'^object\s+network\s+'):
+            m = re_object.match(obj.text)
+            if not m:
+                continue
+            name = m.group('name')
+            nets: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]] = set()
+            for child in obj.children:
+                ct = child.text.strip()
+                nat_m = re.match(
+                    r'nat\s*\((?P<src_if>[^,]+),(?P<dst_if>[^\)]+)\)\s+(?P<rest>.+)',
+                    ct, re.IGNORECASE,
+                )
+                if nat_m:
+                    mm = re.match(
+                        r'(?P<kind>static|dynamic)\s+(?P<target>\S+)',
+                        nat_m.group('rest'), re.IGNORECASE,
+                    )
+                    self.nat_rules.append({
+                        'type': 'auto', 'section': 2,
+                        'src_if': nat_m.group('src_if').strip(),
+                        'dst_if': nat_m.group('dst_if').strip(),
+                        'real_object': name,
+                        'kind': mm.group('kind').lower() if mm else None,
+                        'mapped': mm.group('target') if mm else None,
+                        'service': None, 'sequence': None,
+                        'order_keyword': None, 'raw': ct,
+                    })
+                    continue
+                lm = re_object_network_host.match(child.text)
+                if lm:
+                    try:
+                        nets.add(to_ip_network(lm.group('ip')))
+                    except Exception:
+                        self.network_object_literals[name].add(ct)
+                    continue
+                lm2 = re_object_network_subnet.match(child.text)
+                if lm2:
+                    try:
+                        nets.add(to_ip_network(lm2.group('ip'), lm2.group('mask')))
+                    except Exception:
+                        self.network_object_literals[name].add(ct)
+                    continue
+                if ct and not ct.lower().startswith(('description', 'nat')):
+                    self.network_object_literals[name].add(ct)
+            self.network_objects[name] = nets
+
+        # ── Object groups ────────────────────────────────────────────────────
+        for grp in ccp.find_objects(r'^object-group\s+'):
+            mg = re_object_group.match(grp.text)
+            if not mg:
+                continue
+            typ = mg.group('type').lower()
+            name = mg.group('name')
+            service_group_proto = (mg.group('proto') or '').lower() if typ == 'service' else None
+            members: List[object] = []
+
+            for child in grp.children:
+                ln = child.text
+                if typ == 'network':
+                    m_host = re_group_network_host.match(ln)
+                    m_obj = re_group_network_object.match(ln)
+                    m_subnet = re_group_network_subnet.match(ln)
+                    m_grpobj = re_group_network_groupobj.match(ln)
+                    if m_host:
                         try:
-                            sec = int(ln.split()[-1])
+                            members.append(to_ip_network(m_host.group('ip')))
+                        except Exception:
+                            self.network_object_group_literals[name].add(ln.strip())
+                    elif m_subnet:
+                        try:
+                            members.append(to_ip_network(m_subnet.group('ip'), m_subnet.group('mask')))
+                        except Exception:
+                            self.network_object_group_literals[name].add(ln.strip())
+                    elif m_obj:
+                        members.append({'object': m_obj.group('name')})
+                    elif m_grpobj:
+                        members.append({'group-object': m_grpobj.group('name')})
+
+                elif typ == 'service':
+                    m_grpobj = re_group_network_groupobj.match(ln)
+                    if m_grpobj:
+                        members.append({'group-object': m_grpobj.group('name')})
+                        continue
+                    mport = re.match(
+                        r'^\s*port-object\s+(eq|lt|gt|neq|range)\s+(\S+)(?:\s+(\S+))?',
+                        ln, re.IGNORECASE,
+                    )
+                    if mport:
+                        members.append({
+                            'proto': service_group_proto or 'tcp',
+                            'op': mport.group(1).lower(),
+                            'v1': mport.group(2),
+                            'v2': mport.group(3),
+                        })
+                        continue
+                    msvc = re.match(
+                        r'^\s*service-object\s+(tcp|udp|icmp|ip)(?:\s+(eq|lt|gt|neq|range)\s+(\S+)(?:\s+(\S+))?)?',
+                        ln, re.IGNORECASE,
+                    )
+                    if msvc:
+                        spec: dict = {'proto': msvc.group(1).lower()}
+                        op = (msvc.group(2) or '').lower()
+                        if op in {'eq', 'lt', 'gt', 'neq', 'range'}:
+                            spec.update({'op': op, 'v1': msvc.group(3), 'v2': msvc.group(4)})
+                        members.append(spec)
+                        continue
+                    mobj = re.match(r'^\s*service-object\s+object\s+(\S+)', ln, re.IGNORECASE)
+                    if mobj:
+                        members.append({'object': mobj.group(1)})
+
+            if typ == 'network':
+                self.network_object_groups[name] = members
+            elif typ == 'service':
+                if not hasattr(self, 'service_object_groups'):
+                    self.service_object_groups = {}
+                self.service_object_groups[name] = members
+
+        # ── Interfaces ───────────────────────────────────────────────────────
+        for iface in ccp.find_objects(r'^interface\s+'):
+            phys = iface.text.split(None, 1)[1].strip()
+            nameif = None
+            ipv4 = None
+            sec = None
+            for child in iface.children:
+                ct = child.text.strip()
+                low = ct.lower()
+                if low.startswith('nameif '):
+                    nameif = ct.split(None, 1)[1].strip()
+                elif low.startswith('ip address '):
+                    parts = ct.split()
+                    if len(parts) >= 3:
+                        try:
+                            mask = parts[3] if len(parts) >= 4 else None
+                            ipv4 = to_ip_network(parts[2], mask)
                         except Exception:
                             pass
-                    i += 1
-                key = nameif or phys
-                self.interfaces[key] = {'phys': phys, 'nameif': nameif, 'ipv4': ipv4, 'security_level': sec}
-                continue
+                elif low.startswith('security-level '):
+                    try:
+                        sec = int(ct.split()[-1])
+                    except Exception:
+                        pass
+            key = nameif or phys
+            self.interfaces[key] = {
+                'phys': phys, 'nameif': nameif, 'ipv4': ipv4, 'security_level': sec,
+            }
 
-            # ACL to interface binding
-            m_ag = re.match(r"^access-group\s+(?P<acl>\S+)\s+(?P<body>.+)$", line, re.IGNORECASE)
-            if m_ag:
-                acl_name = m_ag.group('acl')
-                body = m_ag.group('body')
-                self.acl_bindings[acl_name] = self._parse_access_group_binding(body, line)
-                i += 1
-                continue
-            m = re_object.match(line)
+        # ── ACL lines (flat — no parent-child benefit) ────────────────────────
+        for line_obj in ccp.find_objects(re_acl):
+            m = re_acl.match(line_obj.text)
             if m:
-                name = m.group('name')
-                nets: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]] = set()
-                i += 1
-                while i < L and self.lines[i].startswith(' '):
-                    current_line = self.lines[i]
-                    lm = re_object_network_host.match(current_line)
-                    if lm:
-                        value = lm.group('ip')
-                        try:
-                            nets.add(to_ip_network(value))
-                        except ValueError:
-                            self.network_object_literals[name].add(current_line.strip())
-                    else:
-                        lm2 = re_object_network_subnet.match(current_line)
-                        if lm2:
-                            try:
-                                nets.add(to_ip_network(lm2.group('ip'), lm2.group('mask')))
-                            except ValueError:
-                                self.network_object_literals[name].add(current_line.strip())
-                        else:
-                            # Auto NAT (object NAT) inside object network block
-                            mnat = re.match(r"^\s*nat\s*\((?P<src_if>[^,]+),(?P<dst_if>[^\)]+)\)\s+(?P<rest>.+)$", current_line, re.IGNORECASE)
-                            if mnat:
-                                src_if = mnat.group('src_if').strip()
-                                dst_if = mnat.group('dst_if').strip()
-                                rest = mnat.group('rest').strip()
-                                mm = re.match(r"^(?P<kind>static|dynamic)\s+(?P<target>\S+)", rest, re.IGNORECASE)
-                                kind = mm.group('kind').lower() if mm else None
-                                target = mm.group('target') if mm else None
-                                self.nat_rules.append({
-                                    'type': 'auto', 'section': 2,
-                                    'src_if': src_if, 'dst_if': dst_if,
-                                    'real_object': name,
-                                    'kind': kind,
-                                    'mapped': target,
-                                    'service': None,
-                                    'sequence': None,
-                                    'order_keyword': None,
-                                    'raw': self.lines[i].strip(),
-                                })
-                    i += 1
-                self.network_objects[name] = nets
+                # linenum is 0-based; legacy stores 1-based
+                self.acls[m.group('name')].append((line_obj.text, line_obj.linenum + 1))
+
+        # ── Access groups ─────────────────────────────────────────────────────
+        for ag in ccp.find_objects(r'^access-group\s+'):
+            m = re.match(r'^access-group\s+(\S+)\s+(.+)$', ag.text, re.IGNORECASE)
+            if m:
+                self.acl_bindings[m.group(1)] = self._parse_access_group_binding(
+                    m.group(2), ag.text
+                )
+
+        # ── Manual NAT (top-level nat lines) ──────────────────────────────────
+        for nat_obj in ccp.find_objects(r'^nat\s*\('):
+            line = nat_obj.text
+            mnat = re.match(
+                r'^nat\s*\((?P<src_if>[^,]+),(?P<dst_if>[^\)]+)\)\s*(?P<rest>.+)$',
+                line, re.IGNORECASE,
+            )
+            if not mnat:
                 continue
-
-            mg = re_object_group.match(line)
-            if mg:
-                typ = mg.group('type').lower()
-                name = mg.group('name')
-                service_group_proto = (mg.group('proto') or '').lower() if typ == 'service' else None
-                members = []
-                i += 1
-                while i < L and self.lines[i].startswith(' '):
-                    ln = self.lines[i]
-                    if typ == 'network':
-                        m_host = re_group_network_host.match(ln)
-                        m_obj = re_group_network_object.match(ln)
-                        m_subnet = re_group_network_subnet.match(ln)
-                        m_group = re_group_network_groupobj.match(ln)
-                        if m_host:
-                            host_val = m_host.group('ip')
-                            try:
-                                members.append(to_ip_network(host_val))
-                            except ValueError:
-                                self.network_object_group_literals[name].add(ln.strip())
-                        elif m_subnet:
-                            try:
-                                members.append(to_ip_network(m_subnet.group('ip'), m_subnet.group('mask')))
-                            except ValueError:
-                                self.network_object_group_literals[name].add(ln.strip())
-                        elif m_obj:
-                            members.append({'object': m_obj.group('name')})
-                        elif m_group:
-                            members.append({'group-object': m_group.group('name')})
-                    elif typ == 'service':
-                        m_group = re_group_network_groupobj.match(ln)
-                        if m_group:
-                            members.append({'group-object': m_group.group('name')})
-                        else:
-                            # Parse port-object lines (destination ports for tcp/udp)
-                            mport = re.match(r"^\s*port-object\s+(eq|lt|gt|neq|range)\s+(\S+)(?:\s+(\S+))?", ln, re.IGNORECASE)
-                            if mport:
-                                # port-object doesn't specify protocol, it's inherited from object-group declaration
-                                # e.g., "object-group service HTTP tcp" means port-objects are tcp ports
-                                op = mport.group(1).lower()
-                                v1 = mport.group(2)
-                                v2 = mport.group(3)
-                                # Use protocol from object-group header (captured as service_group_proto)
-                                proto = service_group_proto or 'tcp'  # Default to tcp if not specified
-                                spec = {"proto": proto, "op": op, "v1": v1, "v2": v2}
-                                members.append(spec)
-                            else:
-                                msvc = re.match(r"^\s*service-object\s+(tcp|udp|icmp|ip)(?:\s+(eq|lt|gt|neq|range)\s+(\S+)(?:\s+(\S+))?)?", ln, re.IGNORECASE)
-                                if msvc:
-                                    proto = msvc.group(1).lower()
-                                    op = (msvc.group(2) or '').lower()
-                                    v1 = msvc.group(3)
-                                    v2 = msvc.group(4)
-                                    spec = {"proto": proto}
-                                    if op in {"eq", "lt", "gt", "neq", "range"}:
-                                        spec.update({"op": op, "v1": v1, "v2": v2})
-                                    members.append(spec)
-                                else:
-                                    mobj = re.match(r"^\s*service-object\s+object\s+(\S+)", ln, re.IGNORECASE)
-                                    if mobj:
-                                        members.append({"object": mobj.group(1)})
-                    i += 1
-                if typ == 'network':
-                    self.network_object_groups[name] = members
-                elif typ == 'service':
-                    if not hasattr(self, 'service_object_groups'):
-                        self.service_object_groups = {}
-                    self.service_object_groups[name] = members
+            src_if = mnat.group('src_if').strip()
+            dst_if = mnat.group('dst_if').strip()
+            rest = mnat.group('rest').strip()
+            section = 1
+            sequence = None
+            order_kw = None
+            m_seq = re.match(r'^(?P<num>\d+)\s+(?P<tail>.+)$', rest)
+            if m_seq:
+                sequence = int(m_seq.group('num'))
+                rest = m_seq.group('tail').strip()
+            lower_rest = rest.lower()
+            if lower_rest.startswith('after-auto'):
+                order_kw = 'after-auto'
+                rest = rest.split(None, 1)[1].strip() if ' ' in rest else ''
+                section = 3
+            elif lower_rest.startswith('before-auto'):
+                order_kw = 'before-auto'
+                rest = rest.split(None, 1)[1].strip() if ' ' in rest else ''
+            msrc = re.match(
+                r'^source\s+(static|dynamic)\s+(\S+)\s+(\S+)(?P<tail>.*)$',
+                rest, re.IGNORECASE,
+            )
+            if msrc:
+                s_kind = msrc.group(1).lower()
+                s_real = msrc.group(2)
+                s_map = msrc.group(3)
+                tail = (msrc.group('tail') or '').strip()
+                dest_data = None
+                service_data = None
+                if tail.lower().startswith('destination '):
+                    mdest = re.match(
+                        r'^destination\s+(static|dynamic)\s+(\S+)\s+(\S+)(?P<tail>.*)$',
+                        tail, re.IGNORECASE,
+                    )
+                    if mdest:
+                        dest_data = {
+                            'kind': mdest.group(1).lower(),
+                            'real': mdest.group(2),
+                            'mapped': mdest.group(3),
+                        }
+                        tail = (mdest.group('tail') or '').strip()
+                if tail:
+                    service_data, _ = self._parse_nat_service_clause(tail)
+                self.nat_rules.append({
+                    'type': 'manual', 'section': section, 'sequence': sequence,
+                    'order_keyword': order_kw,
+                    'src_if': src_if, 'dst_if': dst_if,
+                    'source': {'kind': s_kind, 'real': s_real, 'mapped': s_map},
+                    'destination': dest_data,
+                    'service': service_data,
+                    'raw': line.strip(),
+                })
                 continue
+            # Dynamic PAT to interface without an explicit 'source' keyword.
+            mdyn = re.match(r'^(?:source\s+)?dynamic\s+(\S+)\s+interface', rest, re.IGNORECASE)
+            if mdyn:
+                self.nat_rules.append({
+                    'type': 'manual', 'section': section, 'sequence': sequence,
+                    'order_keyword': order_kw,
+                    'src_if': src_if, 'dst_if': dst_if,
+                    'source': {'kind': 'dynamic', 'real': mdyn.group(1), 'mapped': 'interface'},
+                    'destination': None,
+                    'service': None,
+                    'raw': line.strip(),
+                })
 
-            macl = re_acl.match(line)
-            if macl:
-                self.acls[macl.group('name')].append((line, i + 1))
-                i += 1
+        # ── Static routes ─────────────────────────────────────────────────────
+        for rt in ccp.find_objects(r'^route\s+'):
+            parts = rt.text.split()
+            if len(parts) < 5:
                 continue
-            # Manual NAT (common forms)
-            mnat2 = re.match(r"^nat\s*\((?P<src_if>[^,]+),(?P<dst_if>[^\)]+)\)\s*(?P<rest>.+)$", line, re.IGNORECASE)
-            if mnat2:
-                src_if = mnat2.group('src_if').strip()
-                dst_if = mnat2.group('dst_if').strip()
-                rest = mnat2.group('rest').strip()
-                section = 1
-                sequence: Optional[int] = None
-                order_kw: Optional[str] = None
-                m_seq = re.match(r"^(?P<num>\d+)\s+(?P<tail>.+)$", rest)
-                if m_seq:
-                    sequence = int(m_seq.group('num'))
-                    rest = m_seq.group('tail').strip()
-                lower_rest = rest.lower()
-                if lower_rest.startswith('after-auto'):
-                    order_kw = 'after-auto'
-                    parts = rest.split(None, 1)
-                    rest = parts[1].strip() if len(parts) > 1 else ''
-                elif lower_rest.startswith('before-auto'):
-                    order_kw = 'before-auto'
-                    parts = rest.split(None, 1)
-                    rest = parts[1].strip() if len(parts) > 1 else ''
-                if order_kw == 'after-auto':
-                    section = 3
-                elif order_kw == 'before-auto':
-                    section = 1
-                msrc = re.match(r"^source\s+(static|dynamic)\s+(\S+)\s+(\S+)(?P<tail>.*)$", rest, re.IGNORECASE)
-                if msrc:
-                    s_kind = msrc.group(1).lower()
-                    s_real = msrc.group(2)
-                    s_map = msrc.group(3)
-                    tail = (msrc.group('tail') or '').strip()
-                    dest_data = None
-                    service_data = None
-                    if tail.lower().startswith('destination '):
-                        mdest = re.match(r"^destination\s+(static|dynamic)\s+(\S+)\s+(\S+)(?P<tail>.*)$", tail, re.IGNORECASE)
-                        if mdest:
-                            d_kind = mdest.group(1).lower()
-                            d_real = mdest.group(2)
-                            d_map = mdest.group(3)
-                            dest_data = {'kind': d_kind, 'real': d_real, 'mapped': d_map}
-                            tail = (mdest.group('tail') or '').strip()
-                    if tail.lower().startswith('service '):
-                        service_data, tail = self._parse_nat_service_clause(tail)
-                    self.nat_rules.append({
-                        'type': 'manual', 'section': section,
-                        'src_if': src_if, 'dst_if': dst_if,
-                        'source': {'kind': s_kind, 'real': s_real, 'mapped': s_map},
-                        'destination': dest_data,
-                        'service': service_data,
-                        'sequence': sequence,
-                        'order_keyword': order_kw,
-                        'extra': tail if tail else None,
-                        'raw': line.strip(),
-                    })
-                    i += 1
-                    continue
-                mdyn = re.match(r"^(?:source\s+)?dynamic\s+(\S+)\s+interface", rest, re.IGNORECASE)
-                if mdyn:
-                    self.nat_rules.append({
-                        'type': 'manual', 'section': section,
-                        'src_if': src_if, 'dst_if': dst_if,
-                        'source': {'kind': 'dynamic', 'real': mdyn.group(1), 'mapped': 'interface'},
-                        'destination': None,
-                        'service': None,
-                        'sequence': sequence,
-                        'order_keyword': order_kw,
-                        'raw': line.strip(),
-                    })
-                    i += 1
-                    continue
-
-            # Static routes: route <interface> <destination> <netmask> <gateway> [distance] [track N]
-            m_route = re.match(r"^route\s+(?P<iface>\S+)\s+(?P<dest>\S+)\s+(?P<mask>\S+)\s+(?P<gw>\S+)(?:\s+(?P<rest>.*))?$", line, re.IGNORECASE)
-            if m_route:
-                iface = m_route.group('iface')
-                dest_ip = m_route.group('dest')
-                mask = m_route.group('mask')
-                gateway = m_route.group('gw')
-                rest = (m_route.group('rest') or '').strip()
-
-                # Parse optional distance and track
+            try:
+                dest_ip, mask = parts[2], parts[3]
+                try:
+                    dest_cidr = str(to_ip_network(dest_ip, mask))
+                except Exception:
+                    dest_cidr = f"{dest_ip}/{mask}"
+                rest_tokens = parts[5:]
                 distance = None
                 track = None
                 tunneled = False
-                rest_tokens = rest.split() if rest else []
-                if rest_tokens:
-                    # First token after gateway is usually distance
-                    if rest_tokens[0].isdigit():
-                        distance = int(rest_tokens[0])
-                        rest_tokens = rest_tokens[1:]
-                    # Check for 'tunneled' keyword
-                    if 'tunneled' in [t.lower() for t in rest_tokens]:
-                        tunneled = True
-                    # Check for 'track N'
-                    for idx, token in enumerate(rest_tokens):
-                        if token.lower() == 'track' and idx + 1 < len(rest_tokens):
-                            try:
-                                track = int(rest_tokens[idx + 1])
-                            except ValueError:
-                                pass
-
-                # Convert to CIDR
-                try:
-                    net = to_ip_network(dest_ip, mask)
-                    dest_cidr = str(net)
-                except Exception:
-                    dest_cidr = f"{dest_ip}/{mask}"
-
+                if rest_tokens and rest_tokens[0].isdigit():
+                    distance = int(rest_tokens[0])
+                    rest_tokens = rest_tokens[1:]
+                if 'tunneled' in [t.lower() for t in rest_tokens]:
+                    tunneled = True
+                for idx, token in enumerate(rest_tokens):
+                    if token.lower() == 'track' and idx + 1 < len(rest_tokens):
+                        try:
+                            track = int(rest_tokens[idx + 1])
+                        except ValueError:
+                            pass
                 self.static_routes.append({
                     'destination': dest_cidr,
-                    'next_hop': gateway if gateway.lower() != 'dhcp' else None,
-                    'interface': iface,
+                    'next_hop': parts[4] if parts[4].lower() != 'dhcp' else None,
+                    'interface': parts[1],
                     'distance': distance,
                     'track': track,
                     'tunneled': tunneled,
-                    'raw': line.strip(),
+                    'raw': rt.text.strip(),
                 })
-                i += 1
-                continue
+            except Exception:
+                pass
 
-            # Dynamic routing protocols: router <protocol> <process-id>
-            m_router = re.match(r"^router\s+(?P<protocol>ospf|eigrp|bgp|rip)\s*(?P<pid>\d*)$", line, re.IGNORECASE)
-            if m_router:
-                protocol = m_router.group('protocol').lower()
-                process_id = m_router.group('pid') or None
-                key = f"{protocol}_{process_id}" if process_id else protocol
-
-                routing_config = {
-                    'protocol': protocol,
-                    'process_id': process_id,
-                    'router_id': None,
-                    'networks': [],
-                    'neighbors': [],
-                    'redistribute': [],
-                    'areas': [],
-                    'passive_interfaces': [],
-                    'timers': {},
-                    'authentication': {},
-                    'distance': {},
-                    'config': {},
-                    'raw_lines': [line.strip()],
-                }
-
-                # Parse routing protocol block
-                i += 1
-                while i < L and (self.lines[i].startswith(' ') or self.lines[i].strip() == ''):
-                    if not self.lines[i].strip():
-                        i += 1
-                        continue
-                    rline = self.lines[i]
-                    routing_config['raw_lines'].append(rline.strip())
-
-                    # Router ID
-                    m_rid = re.match(r"^\s*router-id\s+(?P<rid>\S+)", rline, re.IGNORECASE)
-                    if m_rid:
-                        routing_config['router_id'] = m_rid.group('rid')
-                        i += 1
-                        continue
-
-                    # Network statement
-                    m_net = re.match(r"^\s*network\s+(?P<net>\S+)(?:\s+(?P<mask>\S+))?(?:\s+area\s+(?P<area>\S+))?", rline, re.IGNORECASE)
-                    if m_net:
-                        network = m_net.group('net')
-                        mask = m_net.group('mask')
-                        area = m_net.group('area')
-                        net_entry = {'network': network}
-                        if mask:
-                            net_entry['mask'] = mask
-                        if area:
-                            net_entry['area'] = area
-                        routing_config['networks'].append(net_entry)
-                        i += 1
-                        continue
-
-                    # Neighbor (BGP)
-                    m_neigh = re.match(r"^\s*neighbor\s+(?P<ip>\S+)\s+remote-as\s+(?P<as>\d+)", rline, re.IGNORECASE)
-                    if m_neigh:
-                        routing_config['neighbors'].append({
-                            'ip': m_neigh.group('ip'),
-                            'remote_as': m_neigh.group('as'),
-                        })
-                        i += 1
-                        continue
-
-                    # Redistribute
-                    m_redis = re.match(r"^\s*redistribute\s+(?P<source>\S+)(?:\s+(?P<options>.*))?", rline, re.IGNORECASE)
-                    if m_redis:
-                        redis_entry = {'source': m_redis.group('source')}
-                        options = m_redis.group('options')
-                        if options:
-                            if 'subnets' in options.lower():
-                                redis_entry['subnets'] = True
-                            if 'metric' in options.lower():
-                                m_metric = re.search(r"metric\s+(\d+)", options, re.IGNORECASE)
-                                if m_metric:
-                                    redis_entry['metric'] = int(m_metric.group(1))
-                        routing_config['redistribute'].append(redis_entry)
-                        i += 1
-                        continue
-
-                    # Passive interface
-                    m_passive = re.match(r"^\s*passive-interface\s+(?P<iface>\S+)", rline, re.IGNORECASE)
-                    if m_passive:
-                        routing_config['passive_interfaces'].append(m_passive.group('iface'))
-                        i += 1
-                        continue
-
-                    # Distance (administrative distance)
-                    m_dist = re.match(r"^\s*distance\s+(?P<value>\d+)", rline, re.IGNORECASE)
-                    if m_dist:
-                        routing_config['distance']['default'] = int(m_dist.group('value'))
-                        i += 1
-                        continue
-
-                    # OSPF area authentication
-                    m_area_auth = re.match(r"^\s*area\s+(?P<area>\S+)\s+authentication(?:\s+(?P<type>message-digest))?", rline, re.IGNORECASE)
-                    if m_area_auth:
-                        area_id = m_area_auth.group('area')
-                        auth_type = m_area_auth.group('type') or 'simple'
-                        if 'areas_config' not in routing_config:
-                            routing_config['areas_config'] = {}
-                        if area_id not in routing_config['areas_config']:
-                            routing_config['areas_config'][area_id] = {}
-                        routing_config['areas_config'][area_id]['authentication'] = auth_type
-                        i += 1
-                        continue
-
-                    # OSPF area stub/nssa
-                    m_area_stub = re.match(r"^\s*area\s+(?P<area>\S+)\s+(?P<type>stub|nssa)(?:\s+(?P<opts>.*))?", rline, re.IGNORECASE)
-                    if m_area_stub:
-                        area_id = m_area_stub.group('area')
-                        area_type = m_area_stub.group('type')
-                        opts = m_area_stub.group('opts') or ''
-                        if 'areas_config' not in routing_config:
-                            routing_config['areas_config'] = {}
-                        if area_id not in routing_config['areas_config']:
-                            routing_config['areas_config'][area_id] = {}
-                        routing_config['areas_config'][area_id]['type'] = area_type
-                        if 'no-summary' in opts.lower():
-                            routing_config['areas_config'][area_id]['no_summary'] = True
-                        i += 1
-                        continue
-
-                    # Timers (BGP/OSPF)
-                    m_timers = re.match(r"^\s*timers\s+(?P<type>\S+)\s+(?P<val1>\d+)(?:\s+(?P<val2>\d+))?", rline, re.IGNORECASE)
-                    if m_timers:
-                        timer_type = m_timers.group('type')
-                        routing_config['timers'][timer_type] = {
-                            'value1': int(m_timers.group('val1')),
-                            'value2': int(m_timers.group('val2')) if m_timers.group('val2') else None
-                        }
-                        i += 1
-                        continue
-
-                    # BGP neighbor password
-                    m_nbr_pass = re.match(r"^\s*neighbor\s+(?P<ip>\S+)\s+password\s+(?P<pwd>.+)", rline, re.IGNORECASE)
-                    if m_nbr_pass:
-                        nbr_ip = m_nbr_pass.group('ip')
-                        # Find existing neighbor or create new
-                        for nbr in routing_config['neighbors']:
-                            if nbr.get('ip') == nbr_ip:
-                                nbr['password'] = True  # Don't store actual password
-                                break
-                        i += 1
-                        continue
-
-                    # BGP neighbor description
-                    m_nbr_desc = re.match(r"^\s*neighbor\s+(?P<ip>\S+)\s+description\s+(?P<desc>.+)", rline, re.IGNORECASE)
-                    if m_nbr_desc:
-                        nbr_ip = m_nbr_desc.group('ip')
-                        desc = m_nbr_desc.group('desc').strip()
-                        for nbr in routing_config['neighbors']:
-                            if nbr.get('ip') == nbr_ip:
-                                nbr['description'] = desc
-                                break
-                        i += 1
-                        continue
-
-                    # BGP neighbor timers
-                    m_nbr_timers = re.match(r"^\s*neighbor\s+(?P<ip>\S+)\s+timers\s+(?P<keepalive>\d+)\s+(?P<holdtime>\d+)", rline, re.IGNORECASE)
-                    if m_nbr_timers:
-                        nbr_ip = m_nbr_timers.group('ip')
-                        for nbr in routing_config['neighbors']:
-                            if nbr.get('ip') == nbr_ip:
-                                nbr['timers'] = {
-                                    'keepalive': int(m_nbr_timers.group('keepalive')),
-                                    'holdtime': int(m_nbr_timers.group('holdtime'))
-                                }
-                                break
-                        i += 1
-                        continue
-
-                    # Default information originate (OSPF)
-                    if re.match(r"^\s*default-information\s+originate", rline, re.IGNORECASE):
-                        routing_config['config']['default_information_originate'] = True
-                        i += 1
-                        continue
-
-                    # Log adjacency changes
-                    if re.match(r"^\s*log-adjacency-changes", rline, re.IGNORECASE):
-                        routing_config['config']['log_adjacency_changes'] = True
-                        i += 1
-                        continue
-
-                    # Auto-cost reference bandwidth (OSPF)
-                    m_autocost = re.match(r"^\s*auto-cost\s+reference-bandwidth\s+(?P<bw>\d+)", rline, re.IGNORECASE)
-                    if m_autocost:
-                        routing_config['config']['auto_cost_reference_bandwidth'] = int(m_autocost.group('bw'))
-                        i += 1
-                        continue
-
-                    i += 1
-
+        # ── Dynamic routing protocols (router ospf/eigrp/bgp/rip) ─────────────
+        for robj in ccp.find_objects(r'^router\s+(ospf|eigrp|bgp|rip)\b'):
+            parsed = parse_dynamic_routing_block(
+                robj.text, [c.text for c in robj.children]
+            )
+            if parsed:
+                key, routing_config = parsed
                 self.dynamic_routing[key] = routing_config
-                continue
-
-            i += 1
 
     def _build_reverse_indexes(self) -> None:
         ip_to_objects: Dict[Union[ipaddress.IPv4Address, ipaddress.IPv4Network], Set[str]] = defaultdict(set)

@@ -39,12 +39,11 @@ Parsing rules
 - Parse basic service-groups: `service-object tcp|udp` with `eq/lt/gt/neq/range`, and nested `group-object`
 - Time-range and service-objects referenced by name are not resolved yet
 
-### Advanced Engine (ciscoconfparse2-based)
-- `parsers/cisco/asa/advanced_parser.py` — `AdvancedASAConfig` (subclasses `ASAConfig`, shipped)
-- `parsers/fortigate/advanced_parser.py` — `AdvancedFTGConfig` (subclasses `FTGConfig`, shipped)
-- Both use `ciscoconfparse2` (`pip install .[external]`) for structural parsing; all resolution logic is inherited from the legacy classes unchanged.
-- Enabled via `--use-external-engines` on the CLI; dispatched through `parsers/loader.py:get_engine()`.
-- Parity with legacy engines is verified by `tests/test_advanced_ftg_config.py`, `tests/test_external_engines.py`, and `tests/test_fortigate_path_check.py`.
+### Parsing Engine (ciscoconfparse2-based, default)
+- `ciscoconfparse2` is the single parsing engine and a **core dependency** (`pip install .`).
+- `ASAConfig.parse()` (`parsers/cisco/asa/parser.py`) and `FTGConfig._parse()` (`parsers/fortigate/config.py`) drive `CiscoConfParse`'s parent-child tree-walk. ASA dynamic-routing extraction lives in `parsers/cisco/asa/_extract.py`.
+- There is no separate "advanced" subclass; the `--use-external-engines` flag / `use_external_engines` arg are accepted-but-ignored (deprecated).
+- Dispatched through `parsers/loader.py:get_engine()`. Coverage: `tests/test_external_engines.py`, `tests/test_advanced_ftg_config.py`, `tests/test_fortigate_path_check.py`.
 
 New features in this iteration
 ------------------------------

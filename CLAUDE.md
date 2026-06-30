@@ -96,7 +96,7 @@ Raw Config → Vendor Parser → Intermediate Representation (IR) → CLI/Web UI
   - `path.py`: Packet path evaluation through NAT + ACL
   - `inspect.py`: Object resolution and inspection logic
 - **`parsers/fortigate/`**: FortiGate parser (VDOM-aware)
-- **Advanced engines** (`--use-external-engines`): `parsers/cisco/asa/advanced_parser.py` (`AdvancedASAConfig`) and `parsers/fortigate/advanced_parser.py` (`AdvancedFTGConfig`) are `ciscoconfparse2`-backed drop-in subclasses; all resolution logic is inherited from the legacy classes. Install: `pip install .[external]`. Parity verified by `tests/test_advanced_ftg_config.py`, `tests/test_external_engines.py`, and `tests/test_fortigate_path_check.py`.
+- **Parsing engine**: `ciscoconfparse2` is the single, default parsing engine and a **core dependency** (`pip install .`). `ASAConfig.parse()` (`parsers/cisco/asa/parser.py`) and `FTGConfig._parse()` (`parsers/fortigate/config.py`) drive `CiscoConfParse`'s parent-child tree-walk; the verbose ASA dynamic-routing extraction lives in `parsers/cisco/asa/_extract.py`. There is no separate "advanced" subclass — the `--use-external-engines` flag / `use_external_engines` arg are accepted but ignored (deprecated). Coverage: `tests/test_external_engines.py`, `tests/test_advanced_ftg_config.py`, `tests/test_fortigate_path_check.py`.
 
 **Analysis layer:**
 - **`analysis_core/index.py`**: Manages search indices with in-memory and disk caching
@@ -310,7 +310,7 @@ Understanding the planned evolution helps maintain architecture alignment:
 ## Docker Notes
 
 - **Compose file**: `Dockersetup/podman-compose.yaml` — works with both `docker-compose` and `podman-compose`
-- **Dockerfile**: `Dockersetup/Dockerfile` — builds from `python:3.11-slim-bookworm`, no pip install needed (stdlib-only web UI)
+- **Dockerfile**: `Dockersetup/Dockerfile` — builds from `python:3.11-slim-bookworm`; installs the hash-pinned `ciscoconfparse2` closure via `pip install --require-hashes -r requirements-external.lock` (the parsing engine is a core dependency)
 - **Entry point inside container**: `python aclinspector.py web --port 8083 --addr 0.0.0.0`
 - **Exposed port**: 8083
 - **Runtime user**: `appuser` (uid/gid 1000) — container never runs as root

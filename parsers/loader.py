@@ -26,9 +26,7 @@ __all__ = [
 if TYPE_CHECKING:
     from parsers.cisco.asa.parser import ASAConfig
     from parsers.fortigate.config import FTGConfig
-    from parsers.cisco.asa.advanced_parser import AdvancedASAConfig
-    from parsers.fortigate.advanced_parser import AdvancedFTGConfig
-    _AnyConfig = Union[ASAConfig, AdvancedASAConfig, FTGConfig, AdvancedFTGConfig]
+    _AnyConfig = Union[ASAConfig, FTGConfig]
 
 
 class ConfigLoadError(Exception):
@@ -42,41 +40,30 @@ def get_engine(
     use_external_engines: bool = False,
     vdom: Optional[str] = None
 ) -> _AnyConfig:
-    """Internal helper to instantiate the requested parsing engine.
+    """Internal helper to instantiate the parsing engine.
+
+    The parsers are ciscoconfparse2-backed (a core dependency), so there is a
+    single engine per vendor. ``use_external_engines`` is accepted but ignored —
+    retained only so existing callers keep working; it will be removed.
 
     Args:
         vendor: 'asa' or 'fortigate'
         text: Raw configuration text
-        use_external_engines: If True, use the AST-based engine.
+        use_external_engines: Deprecated no-op (single engine).
         vdom: Optional FortiGate VDOM
 
     Returns:
-        Config object (ASAConfig, FTGConfig, etc.)
+        Config object (ASAConfig or FTGConfig).
 
     Raises:
-        ConfigLoadError: If engine fails to load due to missing dependencies or 
-            unimplemented features.
+        ConfigLoadError: If the vendor is unsupported or not yet implemented.
     """
     vendor = vendor.lower()
     if vendor == 'asa':
-        if use_external_engines:
-            from parsers.cisco.asa.advanced_parser import AdvancedASAConfig
-            try:
-                return AdvancedASAConfig(text)
-            except (ImportError, NotImplementedError) as e:
-                raise ConfigLoadError(f"External engine error: {e}") from e
-
         from parsers.cisco.asa.parser import ASAConfig
         return ASAConfig(text)
 
     elif vendor == 'fortigate':
-        if use_external_engines:
-            from parsers.fortigate.advanced_parser import AdvancedFTGConfig
-            try:
-                return AdvancedFTGConfig(text, vdom=vdom)
-            except (ImportError, NotImplementedError) as e:
-                raise ConfigLoadError(f"External engine error: {e}") from e
-
         from parsers.fortigate.config import FTGConfig
         return FTGConfig(text, vdom=vdom)
 
