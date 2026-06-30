@@ -51,14 +51,14 @@ class ParsedConfigCache:
 
     # ------------------------- keys / freshness -------------------------
     @staticmethod
-    def _path_key(vendor: str, path: str) -> str:
+    def _path_key(vendor: str, path: str, vdom: str = "") -> str:
         digest = hashlib.sha1(os.path.realpath(path).encode("utf-8")).hexdigest()
-        return f"{vendor}-{digest}"
+        return f"{vendor}-{digest}-{vdom}"
 
     @staticmethod
-    def _text_key(vendor: str, text: str) -> str:
+    def _text_key(vendor: str, text: str, vdom: str = "") -> str:
         digest = hashlib.sha1(text.encode("utf-8")).hexdigest()
-        return f"{vendor}-text-{digest}"
+        return f"{vendor}-text-{digest}-{vdom}"
 
     @staticmethod
     def _is_fresh(stored_mtime: Optional[float], stored_size: Optional[int],
@@ -75,10 +75,16 @@ class ParsedConfigCache:
             store.popitem(last=False)
 
     # ------------------------- public API -------------------------
-    def get(self, vendor: str, path: str, *, use_external_engines: bool = False) -> Any:
-        """Return a parsed config for ``path``, rebuilding if the file changed."""
+    def get(self, vendor: str, path: str, *, vdom: str = "",
+            use_external_engines: bool = False) -> Any:
+        """Return a parsed config for ``path``, rebuilding if the file changed.
+
+        ``vdom`` participates in the cache key so FortiGate configs parsed for
+        different VDOMs do not collide.
+        """
         vendor = (vendor or "").lower()
-        key = self._path_key(vendor, path)
+        vdom = vdom or ""
+        key = self._path_key(vendor, path, vdom)
         stat = os.stat(path)
         with self._lock:
             hit = self._cfgs.get(key)
@@ -88,31 +94,33 @@ class ParsedConfigCache:
 
         # Build outside the lock (parsing can be slow); store under the lock.
         text = clean_config_text(load_config_text(path))
-        cfg = self._parse(vendor, text, use_external_engines)
+        cfg = self._parse(vendor, text, vdom, use_external_engines)
         with self._lock:
             self._store(self._cfgs, key, (cfg, stat.st_mtime, stat.st_size))
         return cfg
 
-    def get_from_text(self, vendor: str, text: str, *,
+    def get_from_text(self, vendor: str, text: str, *, vdom: str = "",
                       use_external_engines: bool = False) -> Any:
         """Return a parsed config for already-read ``text`` (content-hash keyed)."""
         vendor = (vendor or "").lower()
-        key = self._text_key(vendor, text)
+        vdom = vdom or ""
+        key = self._text_key(vendor, text, vdom)
         with self._lock:
             hit = self._cfgs.get(key)
             if hit:
                 self._cfgs.move_to_end(key)
                 return hit[0]
-        cfg = self._parse(vendor, text, use_external_engines)
+        cfg = self._parse(vendor, text, vdom, use_external_engines)
         with self._lock:
             self._store(self._cfgs, key, (cfg, None, None))
         return cfg
 
-    def get_device(self, vendor: str, path: str, *,
+    def get_device(self, vendor: str, path: str, *, vdom: str = "",
                    use_external_engines: bool = False) -> Any:
         """Return the IR ``Device`` for ``path``, cached alongside the parsed config."""
         vendor = (vendor or "").lower()
-        key = self._path_key(vendor, path)
+        vdom = vdom or ""
+        key = self._path_key(vendor, path, vdom)
         stat = os.stat(path)
         with self._lock:
             hit = self._devices.get(key)
@@ -120,7 +128,7 @@ class ParsedConfigCache:
                 self._devices.move_to_end(key)
                 return hit[0]
 
-        cfg = self.get(vendor, path, use_external_engines=use_external_engines)
+        cfg = self.get(vendor, path, vdom=vdom, use_external_engines=use_external_engines)
         device = self._to_ir(vendor, cfg, device_name=os.path.splitext(os.path.basename(path))[0])
         with self._lock:
             self._store(self._devices, key, (device, stat.st_mtime, stat.st_size))
@@ -145,11 +153,11 @@ class ParsedConfigCache:
 
     # ------------------------- internals -------------------------
     @staticmethod
-    def _parse(vendor: str, text: str, use_external_engines: bool) -> Any:
+    def _parse(vendor: str, text: str, vdom: str, use_external_engines: bool) -> Any:
         # Imported lazily to avoid a hard import cycle at module load time.
         from parsers.loader import get_engine_from_text
         cfg, _vendor, _conf = get_engine_from_text(
-            text, vendor=vendor, use_external_engines=use_external_engines
+            text, vendor=vendor, vdom=vdom, use_external_engines=use_external_engines
         )
         return cfg
 

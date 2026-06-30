@@ -360,10 +360,9 @@ def aliases(
     if vendor.lower() != "asa":
         return 200, {"aliases": {}}
     try:
-        text = clean_config_text(load_config_text(path))
+        cfg = state.parsed_cache.get("asa", path)
     except Exception as exc:  # pragma: no cover - filesystem errors
         return 500, {"error": f"read_failed: {exc}"}
-    cfg = asa_parser.ASAConfig(text)
     nets = cfg.resolve_network(target)
     aliases_map = cfg.find_alias_objects(target, nets)
     serialized = {str(net): sorted(list(names)) for net, names in aliases_map.items()}
@@ -518,10 +517,8 @@ def compare_cross_vendor(
 
     Returns comparison results with match statistics.
     """
-    # Import IR modules
-    from parsers.cisco.asa import parser as asa_parser_module
+    # Import IR export modules (parsing goes through the shared parsed-config cache)
     from parsers.cisco.asa import ir_export as asa_export
-    from parsers.fortigate.config import FTGConfig
     from parsers.fortigate import ir_export as ftg_export
 
     # Resolve config paths
@@ -534,24 +531,23 @@ def compare_cross_vendor(
         return 400, {"error": "config_b_not_found", "vendor": vendor_b, "filename": filename_b}
 
     try:
-        # Parse vendor A
-        text_a = clean_config_text(load_config_text(path_a))
+        # Parse vendor A (shared parsed-config cache; explicit device_name keeps
+        # the response label as the filename, not the cache's stem default).
         if vendor_a.lower() == 'asa':
-            cfg_a = asa_parser_module.ASAConfig(text_a)
+            cfg_a = state.parsed_cache.get('asa', str(path_a))
             device_a = asa_export.to_ir(cfg_a, device_name=filename_a)
         elif vendor_a.lower() == 'fortigate':
-            cfg_a = FTGConfig(text_a)
+            cfg_a = state.parsed_cache.get('fortigate', str(path_a))
             device_a = ftg_export.to_ir(cfg_a, device_name=filename_a)
         else:
             return 400, {"error": "vendor_a_not_supported", "vendor": vendor_a}
 
         # Parse vendor B
-        text_b = clean_config_text(load_config_text(path_b))
         if vendor_b.lower() == 'asa':
-            cfg_b = asa_parser_module.ASAConfig(text_b)
+            cfg_b = state.parsed_cache.get('asa', str(path_b))
             device_b = asa_export.to_ir(cfg_b, device_name=filename_b)
         elif vendor_b.lower() == 'fortigate':
-            cfg_b = FTGConfig(text_b)
+            cfg_b = state.parsed_cache.get('fortigate', str(path_b))
             device_b = ftg_export.to_ir(cfg_b, device_name=filename_b)
         else:
             return 400, {"error": "vendor_b_not_supported", "vendor": vendor_b}

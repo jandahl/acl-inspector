@@ -44,6 +44,7 @@ def compare_old_new(
     service_filter: Optional[dict] = None,
     include_any: bool = False,
     use_external_engines: bool = False,
+    cfg: Optional[ASAConfig] = None,
 ) -> dict:
     """Compare ACL impact for two network targets within the same config.
 
@@ -64,9 +65,13 @@ def compare_old_new(
             ``removed_from_old``: entries unique to the old target.
         Each flattened entry retains the original ACL line under ``raw`` so UIs
         can reference back to the source configuration.
+
+        ``cfg`` may be a pre-parsed :class:`ASAConfig` (e.g. from a shared cache),
+        in which case ``cfg_text`` is not re-parsed.
     """
-    from parsers.loader import get_engine
-    cfg = get_engine('asa', cfg_text, use_external_engines=use_external_engines)
+    if cfg is None:
+        from parsers.loader import get_engine
+        cfg = get_engine('asa', cfg_text, use_external_engines=use_external_engines)
 
     old_nets = cfg.resolve_network(old_target)
     new_nets = cfg.resolve_network(new_target)
@@ -97,6 +102,7 @@ def inspect_host(
     service_filter: Optional[dict] = None,
     include_any: bool = False,
     use_external_engines: bool = False,
+    cfg: Optional[ASAConfig] = None,
 ) -> dict:
     """Collect flattened ACL entries affecting ``target``.
     
@@ -111,9 +117,13 @@ def inspect_host(
         dict containing ``hits`` (list of flattened rules), ``target_nets``, ``aliases``,
         and ``parent_groups`` (sorted list of object-group names that directly contain
         ``target``; empty list when ``target`` is a raw IP or not a group member).
+
+        ``cfg`` may be a pre-parsed :class:`ASAConfig` (e.g. from a shared cache),
+        in which case ``cfg_text`` is not re-parsed.
     """
-    from parsers.loader import get_engine
-    cfg = get_engine('asa', cfg_text, use_external_engines=use_external_engines)
+    if cfg is None:
+        from parsers.loader import get_engine
+        cfg = get_engine('asa', cfg_text, use_external_engines=use_external_engines)
 
     target_nets = cfg.resolve_network(target)
     entries = cfg.flatten_acl()

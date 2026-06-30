@@ -730,7 +730,10 @@ class FTGConfig:
     # ---------- Flattening and evaluation ----------
     def flatten_policies(self) -> List[dict]:
         entries: List[dict] = []
-        self.policy_vip_refs = defaultdict(set)
+        # Build VIP refs into a local map and rebind atomically at the end so a
+        # concurrent reader of a shared/cached FTGConfig never observes a
+        # half-populated dict (this method is idempotent and deterministic).
+        policy_vip_refs: Dict[str, Set[str]] = defaultdict(set)
         for p in self.policies:
             srcs: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network, str]] = set()
             dsts: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network, str]] = set()
@@ -763,7 +766,7 @@ class FTGConfig:
             raw = f"policy {p.get('id')} action {p.get('action','permit')} srcaddr {p.get('srcaddr',[])} dstaddr {p.get('dstaddr',[])} service {p.get('service',[])}"
             if policy_id:
                 for vip_name in vip_refs_for_policy:
-                    self.policy_vip_refs[vip_name].add(policy_id)
+                    policy_vip_refs[vip_name].add(policy_id)
             entries.append({
                 'acl': 'policy',
                 'action': p.get('action', 'permit'),
@@ -778,6 +781,7 @@ class FTGConfig:
                 'ippool': p.get('ippool', False),
                 'poolname': p.get('poolname', []),
             })
+        self.policy_vip_refs = policy_vip_refs
         return entries
 
     def _parse_static_routes(self, i: int) -> int:
