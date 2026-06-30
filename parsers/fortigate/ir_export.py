@@ -16,6 +16,8 @@ from typing import TYPE_CHECKING, Dict, List, Optional, Set, Union
 if TYPE_CHECKING:
     from .config import FTGConfig
 
+from parsers import ir_normalize
+
 # IR model for cross-vendor mapping
 try:
     from parsers import model as ir
@@ -147,21 +149,9 @@ def to_ir(cfg: FTGConfig, device_name: str = None) -> "ir.Device":
     if flattened:
         entries: List[ir.ACLEntry] = []
         for e in flattened:
-            src = sorted([str(s) for s in e.get('src', [])])
-            dst = sorted([str(d) for d in e.get('dst', [])])
-            svc = e.get('svc') or {}
-
-            # Normalize service dict for IR compatibility
-            svc_norm = {
-                'proto': svc.get('proto'),
-                'service_group_at_proto': None,  # FortiGate doesn't use this concept
-                'dst_ports': [
-                    {'op': op, 'start': rng[0], 'end': rng[1]}
-                    for (op, rng) in svc.get('dst_ports', [])
-                ],
-                'dst_service_groups': sorted(list(svc.get('dst_service_groups') or [])),
-                'dst_service_objects': [],  # FortiGate resolver returns groups, not individual objects
-            }
+            src = ir_normalize.addrs_to_strs(e.get('src'))
+            dst = ir_normalize.addrs_to_strs(e.get('dst'))
+            svc_norm = ir_normalize.svc_to_ir(e.get('svc'))
 
             policy_binding = e.get('binding')
             binding_dict = policy_binding or {}
