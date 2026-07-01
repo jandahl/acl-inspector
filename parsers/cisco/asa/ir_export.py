@@ -171,6 +171,7 @@ def to_ir(cfg: ASAConfig, device_name: str = None) -> "ir.Device":
             bound_to=bound_to,
             binding=binding,
             direction=direction,
+            line=e.get('line'),
             src_interfaces=src_interfaces,
             dst_interfaces=dst_interfaces,
         )

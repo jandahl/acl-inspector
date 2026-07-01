@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, asdict, is_dataclass
 from typing import Any, Dict, List, Optional
 
-IR_VERSION = "1.1"  # 1.1: + ACLEntry.src/dst_interfaces, Interface.zone/vdom, Device.vdom
+IR_VERSION = "1.2"  # 1.2: + ACLEntry.line. 1.1: + ACLEntry.src/dst_interfaces, Interface.zone/vdom, Device.vdom
 
 
 def _jsonable(obj: Any):
@@ -92,6 +92,7 @@ class ACLEntry:
     bound_to: Optional[str] = None  # interface name if bound
     binding: Optional[Dict[str, Any]] = None
     direction: Optional[str] = None  # 'in' | 'out' | 'global' | 'control-plane'
+    line: Optional[int] = None  # source config line number (1-based) if known
     # Ingress/egress interface metadata for rule generation. For ASA these are
     # derived from the access-group binding; for FortiGate they map to the
     # policy srcintf/dstintf so a corrective policy can be synthesised.
