@@ -22,6 +22,12 @@ WORKDIR /app
 # redirects runtime writes to world-writable /tmp.
 RUN groupadd -r -g 1000 appuser && useradd -r -u 1000 -g appuser appuser
 
+# Install the parsing engine (ciscoconfparse2) and its hash-pinned transitive
+# closure before copying app code, so this layer caches independently of source
+# changes. ciscoconfparse2 is a core dependency (the single parsing engine).
+COPY requirements-external.lock /app/requirements-external.lock
+RUN pip install --no-cache-dir --require-hashes -r /app/requirements-external.lock
+
 # Copy application code (see .dockerignore at repo root for exclusions)
 COPY . /app
 

@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import ipaddress
-from typing import Dict, List, Optional, Set, Union
+from typing import List, Optional, Set, Union
 
 from .parser import (
     ASAConfig,
@@ -15,6 +15,21 @@ from .parser import (
 )
 
 __all__ = ["evaluate_acl", "compare_old_new", "inspect_host"]
+
+
+def _device_query(cfg_text, cfg, device, use_external_engines):
+    """Build a DeviceQuery (IR spine) from whichever input is provided.
+
+    Precedence: an explicit ``device`` (IR) > a parsed ``cfg`` > raw ``cfg_text``.
+    The web layer passes a cached IR ``device``; the CLI passes ``cfg_text``.
+    """
+    from parsers.query import DeviceQuery
+    if device is None:
+        if cfg is None:
+            from parsers.loader import get_engine
+            cfg = get_engine('asa', cfg_text, use_external_engines=use_external_engines)
+        device = cfg.to_ir()
+    return DeviceQuery(device)
 
 
 def evaluate_acl(
@@ -44,6 +59,8 @@ def compare_old_new(
     service_filter: Optional[dict] = None,
     include_any: bool = False,
     use_external_engines: bool = False,
+    cfg: Optional[ASAConfig] = None,
+    device=None,
 ) -> dict:
     """Compare ACL impact for two network targets within the same config.
 
@@ -54,7 +71,7 @@ def compare_old_new(
         service_filter: Optional dict with keys ``proto`` and ``dports`` (set[int])
             to constrain matches to a protocol/port set.
         include_any: When True, do not drop rules with ``any`` in src/dst.
-        use_external_engines: If True, use parallel advanced parsing engines.
+        use_external_engines: Deprecated no-op (ciscoconfparse2 is the single engine).
 
     Returns:
         dict with keys:
@@ -64,15 +81,17 @@ def compare_old_new(
             ``removed_from_old``: entries unique to the old target.
         Each flattened entry retains the original ACL line under ``raw`` so UIs
         can reference back to the source configuration.
-    """
-    from parsers.loader import get_engine
-    cfg = get_engine('asa', cfg_text, use_external_engines=use_external_engines)
 
-    old_nets = cfg.resolve_network(old_target)
-    new_nets = cfg.resolve_network(new_target)
-    entries = cfg.flatten_acl()
-    old_hits = evaluate_acl(entries, old_nets, cfg, service_filter=service_filter, ignore_any=(not include_any))
-    new_hits = evaluate_acl(entries, new_nets, cfg, service_filter=service_filter, ignore_any=(not include_any))
+        Resolution and matching go through the IR spine (:class:`DeviceQuery`).
+        ``device`` (an IR ``Device``) or a pre-parsed ``cfg`` may be supplied to
+        avoid re-parsing ``cfg_text``.
+    """
+    q = _device_query(cfg_text, cfg, device, use_external_engines)
+
+    old_nets = q.resolve(old_target)
+    new_nets = q.resolve(new_target)
+    old_hits = q.rules_affecting(old_nets, service_filter=service_filter, ignore_any=(not include_any))
+    new_hits = q.rules_affecting(new_nets, service_filter=service_filter, ignore_any=(not include_any))
 
     def rule_id(e):
         return (e.get("acl"), e["raw"], tuple(sorted([str(s) for s in e["src"]])), tuple(sorted([str(d) for d in e["dst"]])))
@@ -97,6 +116,8 @@ def inspect_host(
     service_filter: Optional[dict] = None,
     include_any: bool = False,
     use_external_engines: bool = False,
+    cfg: Optional[ASAConfig] = None,
+    device=None,
 ) -> dict:
     """Collect flattened ACL entries affecting ``target``.
     
@@ -105,19 +126,21 @@ def inspect_host(
         target: Network object or IP address to inspect.
         service_filter: Optional dict to constrain matches.
         include_any: When True, do not drop rules with ``any`` in src/dst.
-        use_external_engines: If True, use parallel advanced parsing engines.
+        use_external_engines: Deprecated no-op (ciscoconfparse2 is the single engine).
 
     Returns:
         dict containing ``hits`` (list of flattened rules), ``target_nets``, ``aliases``,
         and ``parent_groups`` (sorted list of object-group names that directly contain
         ``target``; empty list when ``target`` is a raw IP or not a group member).
-    """
-    from parsers.loader import get_engine
-    cfg = get_engine('asa', cfg_text, use_external_engines=use_external_engines)
 
-    target_nets = cfg.resolve_network(target)
-    entries = cfg.flatten_acl()
-    hits = evaluate_acl(entries, target_nets, cfg, service_filter=service_filter, ignore_any=(not include_any))
-    aliases = cfg.find_alias_objects(target, target_nets)
-    parent_groups = cfg.group_membership().get(target, [])
+        Resolution and matching go through the IR spine (:class:`DeviceQuery`).
+        ``device`` (an IR ``Device``) or a pre-parsed ``cfg`` may be supplied to
+        avoid re-parsing ``cfg_text``.
+    """
+    q = _device_query(cfg_text, cfg, device, use_external_engines)
+
+    target_nets = q.resolve(target)
+    hits = q.rules_affecting(target_nets, service_filter=service_filter, ignore_any=(not include_any))
+    aliases = q.alias_objects(target, target_nets)
+    parent_groups = q.group_membership().get(target, [])
     return {"hits": hits, "target_nets": target_nets, "aliases": aliases, "parent_groups": parent_groups}

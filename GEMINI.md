@@ -74,20 +74,19 @@ make themes
 # Download libre fonts for web UI
 make fonts
 
-# Install optional external parsing engines (advanced AST handling)
-pip install .[external]
+# Core install (includes the ciscoconfparse2 parsing engine)
+pip install .
 ```
 
 ## Architecture
 
 ### Multi-Vendor Parser Design
 
-The codebase is structured around a **pluggable parser architecture** that normalizes vendor-specific configs into shared data models. A parallel "advanced" engine powered by external libraries is available for testing:
+The codebase is structured around a **pluggable parser architecture** that normalizes vendor-specific configs into shared data models.
 
-**Parsing Engines:**
-- **Legacy (Default)**: Custom line-by-line state machine (standard library only).
-- **Advanced (`--use-external-engines`)**: Uses `ciscoconfparse2` for both ASA and FortiGate (requires `pip install ".[external]"`).
-  - **Vision**: Enabling this engine will automatically enrich CLI output with "parent-child" context (e.g., showing the full object-group hierarchy or nested policy blocks containing a matched rule).
+**Parsing Engine:**
+- `ciscoconfparse2` is the single, default engine and a core dependency. `ASAConfig.parse()` and `FTGConfig._parse()` drive its parent-child tree-walk.
+- The `--use-external-engines` flag is a deprecated no-op (there is no longer a separate engine to select).
 
 **Parsing Flow:**
 ```
@@ -95,8 +94,8 @@ Raw Config → Vendor Parser → Intermediate Representation (IR) → CLI/Web UI
 ```
 
 **Key modules:**
-- **`parsers/base.py`**: Defines normalized dataclasses (`FlatRule`, `Endpoint`, `ServiceSpec`) that all vendor parsers target
-- **`parsers/model.py`**: Versioned IR module with `Device`, `Interface`, `Object`, `ACL`, `NAT` dataclasses for JSON-friendly representation
+- **`parsers/model.py`**: Versioned IR (the single internal model) with `Device`, `Interface`, `Object`, `ACL`, `ACLEntry`, `NAT` dataclasses for JSON-friendly representation
+- **`parsers/query.py`**: `DeviceQuery` — resolution + rule matching over the IR; the spine inspect/compare read from
 - **`parsers/cisco/asa/`**: ASA-specific implementation
   - `parser.py`: Main config parsing (objects, groups, ACLs)
   - `services.py`: Service object-group handling

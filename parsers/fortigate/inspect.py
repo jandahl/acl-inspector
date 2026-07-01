@@ -7,7 +7,7 @@ from __future__ import annotations
 import ipaddress
 from typing import Dict, List, Optional, Set, Union
 
-from .config import FTGConfig, nets_overlap, _service_matches
+from .config import nets_overlap, _service_matches
 
 __all__ = ["evaluate", "compare_old_new", "inspect_host"]
 
@@ -35,10 +35,16 @@ def compare_old_new(
     service_filter: Optional[dict] = None,
     vdom: Optional[str] = None,
     use_external_engines: bool = False,
+    cfg=None,
 ) -> dict:
-    """Compare policy impact for two targets within the same FortiGate config."""
-    from parsers.loader import get_engine
-    cfg = get_engine('fortigate', cfg_text, use_external_engines=use_external_engines, vdom=vdom)
+    """Compare policy impact for two targets within the same FortiGate config.
+
+    ``cfg`` may be a pre-parsed ``FTGConfig`` (e.g. from a shared cache), in which
+    case ``cfg_text`` is not re-parsed.
+    """
+    if cfg is None:
+        from parsers.loader import get_engine
+        cfg = get_engine('fortigate', cfg_text, use_external_engines=use_external_engines, vdom=vdom)
 
     old_nets = cfg.resolve_addr_token(old_target)
     new_nets = cfg.resolve_addr_token(new_target)
@@ -69,10 +75,16 @@ def inspect_host(
     service_filter: Optional[dict] = None,
     vdom: Optional[str] = None,
     use_external_engines: bool = False,
+    cfg=None,
 ) -> dict:
-    """Resolve policies impacting ``target`` within an optional VDOM."""
-    from parsers.loader import get_engine
-    cfg = get_engine('fortigate', cfg_text, use_external_engines=use_external_engines, vdom=vdom)
+    """Resolve policies impacting ``target`` within an optional VDOM.
+
+    ``cfg`` may be a pre-parsed ``FTGConfig`` (e.g. from a shared cache), in which
+    case ``cfg_text`` is not re-parsed.
+    """
+    if cfg is None:
+        from parsers.loader import get_engine
+        cfg = get_engine('fortigate', cfg_text, use_external_engines=use_external_engines, vdom=vdom)
 
     target_nets = cfg.resolve_addr_token(target)
     entries = cfg.flatten_policies()

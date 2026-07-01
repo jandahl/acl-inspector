@@ -211,7 +211,7 @@ def main() -> None:
     parser.add_argument('--packet-src', dest='packet_src', help='Source IP/object for --packet evaluation')
     parser.add_argument('--packet-dst', dest='packet_dst', help='Destination IP/object for --packet evaluation')
     parser.add_argument('--verify', action='store_true', help='Show live-verification commands (packet-tracer/iprope) for path suggestions')
-    parser.add_argument('--use-external-engines', action='store_true', help='Use ciscoconfparse2-based parsing engines for ASA and FortiGate (requires pip install ".[external]")')
+    parser.add_argument('--use-external-engines', action='store_true', help='Deprecated no-op: ciscoconfparse2 is now the default (and only) parsing engine.')
     parser.add_argument('--singularitty', '--singularity', action='store_true', help='Launch the Singularity TUI interface (intentional play on TTY)')
 
     args = parser.parse_args()

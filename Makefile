@@ -181,7 +181,7 @@ index:
 
 lock-external:
 	@test -x "$(PIP_COMPILE)" 2>/dev/null || command -v "$(PIP_COMPILE)" >/dev/null 2>&1 || { echo "pip-compile not found; install pip-tools: pip install pip-tools"; exit 1; }
-	$(PIP_COMPILE) --generate-hashes --no-strip-extras --extra=external \
+	$(PIP_COMPILE) --generate-hashes --no-strip-extras \
 		--output-file=requirements-external.lock pyproject.toml
 
 audit:

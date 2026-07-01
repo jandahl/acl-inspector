@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from . import settings as settings_mod
-from analysis_core import IndexEntry, IndexManager
+from analysis_core import IndexEntry, IndexManager, ParsedConfigCache
 from .themes import DEFAULT_THEMES, load_themes
 from .fonts import FontFile, discover_fonts, render_font_css
 
@@ -197,6 +197,7 @@ class AppState:
     disk_cache: DiskCache
     search_index: SearchIndex
     index_manager: IndexManager
+    parsed_cache: ParsedConfigCache
     history: HistoryTracker
     themes: List[Dict[str, Any]]
     font_files: List[FontFile]
@@ -225,6 +226,7 @@ class AppState:
             search_cache=search_index,
             manifest_name=settings.features.disk_cache.manifest,
         )
+        parsed_cache = ParsedConfigCache()
         theme_dir = settings.paths.themes_dir
         if theme_dir and not Path(theme_dir).exists():
             logger.info("Theme directory '%s' is missing; using built-in themes only.", theme_dir)
@@ -244,6 +246,7 @@ class AppState:
             disk_cache=disk_cache,
             search_index=search_index,
             index_manager=index_manager,
+            parsed_cache=parsed_cache,
             history=history,
             themes=themes,
             font_files=font_files,
@@ -253,5 +256,6 @@ class AppState:
     def flush_caches(self, include_disk: bool = False) -> Dict[str, Any]:
         summary = {}
         summary["index"] = self.index_manager.flush(include_disk=include_disk)
+        summary["parsed"] = {"cleared": self.parsed_cache.clear()}
         summary["history"] = {"cleared": self.history.clear()}
         return summary

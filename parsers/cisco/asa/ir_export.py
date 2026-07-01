@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING, Dict, List, Union
 if TYPE_CHECKING:
     from .parser import ASAConfig
 
+from parsers import ir_normalize
+
 # IR model for cross-vendor mapping
 try:
     from parsers import model as ir
@@ -128,21 +130,9 @@ def to_ir(cfg: ASAConfig, device_name: str = None) -> "ir.Device":
     flattened = cfg.flatten_acl()
     acl_map: Dict[str, List[ir.ACLEntry]] = {}
     for e in flattened:
-        src = sorted([str(s) for s in e.get('src', [])])
-        dst = sorted([str(d) for d in e.get('dst', [])])
-        svc = e.get('svc') or {}
-
-        # Normalize sets to lists for IR compatibility
-        svc_norm = {
-            'proto': svc.get('proto'),
-            'service_group_at_proto': svc.get('service_group_at_proto'),
-            'dst_ports': [
-                {'op': op, 'start': rng[0], 'end': rng[1]}
-                for (op, rng) in svc.get('dst_ports', [])
-            ],
-            'dst_service_groups': sorted(list(svc.get('dst_service_groups') or [])),
-            'dst_service_objects': sorted(list(svc.get('dst_service_objects') or [])),
-        }
+        src = ir_normalize.addrs_to_strs(e.get('src'))
+        dst = ir_normalize.addrs_to_strs(e.get('dst'))
+        svc_norm = ir_normalize.svc_to_ir(e.get('svc'))
 
         acl_name = e.get('acl')
         binding = cfg.acl_bindings.get(acl_name) if acl_name else None
@@ -181,6 +171,7 @@ def to_ir(cfg: ASAConfig, device_name: str = None) -> "ir.Device":
             bound_to=bound_to,
             binding=binding,
             direction=direction,
+            line=e.get('line'),
             src_interfaces=src_interfaces,
             dst_interfaces=dst_interfaces,
         )

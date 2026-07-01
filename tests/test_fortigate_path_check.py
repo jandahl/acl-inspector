@@ -10,15 +10,6 @@ from parsers.fortigate.path import path_check
 
 FIXTURES = Path(__file__).parent / "fixtures" / "configs" / "fortigate"
 
-try:
-    import ciscoconfparse2  # noqa: F401
-    from parsers.fortigate.advanced_parser import AdvancedFTGConfig  # noqa: F401
-    HAS_ADVANCED = True
-except ImportError:
-    HAS_ADVANCED = False
-
-requires_advanced = unittest.skipUnless(HAS_ADVANCED, "ciscoconfparse2 not installed")
-
 
 class TestFortiGatePathCheck(unittest.TestCase):
     """Verify NAT + policy evaluation for FortiGate."""
@@ -56,9 +47,8 @@ class TestFortiGatePathCheck(unittest.TestCase):
         self.assertEqual(result["acl"]["decision"], "permit")
 
 
-@requires_advanced
-class TestFortiGatePathCheckAdvancedEngine(unittest.TestCase):
-    """AdvancedFTGConfig produces identical path_check results to FTGConfig."""
+class TestFortiGatePathCheckExternalFlag(unittest.TestCase):
+    """path_check with the deprecated use_external_engines=True no-op still works."""
 
     @classmethod
     def setUpClass(cls):

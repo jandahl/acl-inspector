@@ -92,9 +92,11 @@ def process_run(state: AppState, fields: Mapping[str, List[str]]) -> Tuple[int, 
                 return 400, {"error": f"Inspect not supported for vendor {vendor!r}"}
             target = get("inspect")
             if vendor == "asa":
-                cfg = asa_parser.ASAConfig(cfg_text)
+                cfg = state.parsed_cache.get("asa", path)
+                device = state.parsed_cache.get_device("asa", path)
                 report = asa_parser.inspect_host(
-                    cfg_text, target, service_filter=svc_filter, include_any=include_any
+                    cfg_text, target, service_filter=svc_filter,
+                    include_any=include_any, device=device,
                 )
                 try:
                     nets = cfg.resolve_network(target)
@@ -108,10 +110,11 @@ def process_run(state: AppState, fields: Mapping[str, List[str]]) -> Tuple[int, 
                     pass
                 html_output = _render_report(target, report, cfg_file, cfg)
             elif vendor == "fortigate":
+                cfg = state.parsed_cache.get("fortigate", path, vdom=vdom or "")
                 report = fortigate_parser.inspect_host(
-                    cfg_text, target, service_filter=svc_filter, vdom=vdom or None
+                    cfg_text, target, service_filter=svc_filter,
+                    vdom=vdom or None, cfg=cfg,
                 )
-                cfg = FTGConfig(cfg_text, vdom=vdom or None)
                 html_output = _render_fortigate_report(target, report, cfg_file, cfg, vdom=vdom)
             else:
                 return 400, {"error": f"Inspect not supported for vendor {vendor!r}"}
@@ -124,10 +127,12 @@ def process_run(state: AppState, fields: Mapping[str, List[str]]) -> Tuple[int, 
             old = get("old")
             new = get("new")
             if vendor == "asa":
+                cfg = state.parsed_cache.get("asa", path)
+                device = state.parsed_cache.get_device("asa", path)
                 diff = asa_parser.compare_old_new(
-                    cfg_text, old, new, service_filter=svc_filter, include_any=include_any
+                    cfg_text, old, new, service_filter=svc_filter,
+                    include_any=include_any, device=device,
                 )
-                cfg = asa_parser.ASAConfig(cfg_text)
 
                 def _incl(name: str) -> Dict[ipaddress._BaseAddress, Set[str]]:
                     out: Dict[ipaddress._BaseAddress, Set[str]] = {}
@@ -142,10 +147,11 @@ def process_run(state: AppState, fields: Mapping[str, List[str]]) -> Tuple[int, 
                 new_aliases = _incl(new) if new else {}
                 html_output = _render_diff(old, new, diff, cfg_file, cfg, old_aliases, new_aliases)
             elif vendor == "fortigate":
+                cfg = state.parsed_cache.get("fortigate", path, vdom=vdom or "")
                 diff = fortigate_parser.compare_old_new(
-                    cfg_text, old, new, service_filter=svc_filter, vdom=vdom or None
+                    cfg_text, old, new, service_filter=svc_filter,
+                    vdom=vdom or None, cfg=cfg,
                 )
-                cfg = FTGConfig(cfg_text, vdom=vdom or None)
                 html_output = _render_fortigate_diff(old, new, diff, cfg_file, cfg, vdom=vdom)
             else:
                 return 400, {"error": f"Compare not supported for vendor {vendor!r}"}

@@ -9,21 +9,20 @@ description = "Firewall ACL analysis tool for Cisco ASA and FortiGate configurat
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.9"
-# Core install is stdlib-only (matches README). TUI requires textual + rich.
-dependencies = []
+# ciscoconfparse2 is the single parsing engine and therefore a core dependency
+# (the v2 successor package, separate from ciscoconfparse 1.x). The hash-pinned
+# transitive closure is tracked in requirements-external.lock (Python 3.11,
+# Linux x86-64; hashes differ across Python versions/platforms — regenerate with:
+# make lock-external). Audit with: make audit. TUI additionally requires
+# textual + rich.
+dependencies = [
+    "ciscoconfparse2>=0.9.18",
+]
 
 [project.optional-dependencies]
 tui = [
     "rich>=13.0",
     "textual>=0.60",
-]
-external = [
-    # ciscoconfparse2 is the v2 successor package (separate from ciscoconfparse 1.x).
-    # See issue #62 for implementation notes.
-    # Hash-pinned transitive closure is tracked in requirements-external.lock (Python 3.11,
-    # Linux x86-64; hashes differ across Python versions/platforms — regenerate with: make lock-external).
-    # Audit with: make audit
-    "ciscoconfparse2>=0.9.18",
 ]
 dev = [
     # Both linters are run by `make lint`; ruff is primary, flake8 catches

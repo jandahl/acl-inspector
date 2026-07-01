@@ -32,8 +32,11 @@ from __future__ import annotations
 import ipaddress
 import shlex
 import socket
+import textwrap
 from collections import defaultdict
 from typing import Dict, List, Optional, Set, Tuple, Union
+
+from ciscoconfparse2 import CiscoConfParse
 
 
 def to_ip_network(ip: str, mask: Optional[str] = None) -> Union[ipaddress.IPv4Address, ipaddress.IPv4Network]:
@@ -88,53 +91,62 @@ class FTGConfig:
 
     # ---------- Block parsers ----------
     def _parse(self) -> None:
+
+        # _select_vdom_lines preserves original indentation, so VDOM-nested
+        # configs arrive with 8+ leading spaces. Dedent to bring 'config ...'
+        # lines back to column 0 before ciscoconfparse2 builds its hierarchy.
+        dedented = textwrap.dedent('\n'.join(self.lines)).splitlines()
+        ccp = CiscoConfParse(
+            dedented,
+            syntax='ios',
+            comment_delimiters=['#'],
+            ignore_blank_lines=True,
+        )
+
+        # find_objects(r'^config ') matches only unindented 'config ...' lines,
+        # skipping all child/grandchild objects in one pass.
+        for obj in ccp.find_objects(r'^config '):
+            txt = obj.text.strip()
+            # addrgrp before address — avoids the 'address' prefix matching 'addrgrp'
+            if txt.startswith('config firewall addrgrp'):
+                self._ccp_parse_addrgrp(obj)
+            elif txt.startswith('config firewall address'):
+                self._ccp_parse_addresses(obj)
+            elif txt.startswith('config firewall vipgrp'):
+                self._ccp_parse_vipgrp(obj)
+            elif txt.startswith('config firewall vip'):
+                self._ccp_parse_vip(obj)
+            elif txt.startswith('config firewall service custom'):
+                self._ccp_parse_service_custom(obj)
+            elif txt.startswith('config firewall service group'):
+                self._ccp_parse_service_group(obj)
+            elif txt.startswith('config firewall policy'):
+                self._ccp_parse_policy(obj)
+            elif txt.startswith('config firewall ippool'):
+                self._ccp_parse_ippool(obj)
+            elif txt.startswith('config firewall central-snat-map'):
+                self._ccp_parse_central_snat(obj)
+            elif txt.startswith('config system interface'):
+                self._ccp_parse_system_interface(obj)
+            elif txt.startswith('config system zone'):
+                self._ccp_parse_system_zone(obj)
+            elif txt.startswith('config router static'):
+                self._ccp_parse_static_routes(obj)
+
+        # OSPF/BGP blocks: delegate to the inherited line-based parsers since
+        # the data structures are complex and benefit from existing coverage.
         i = 0
         L = len(self.lines)
         while i < L:
-            line = self.lines[i].strip()
-            if line.startswith('config firewall address'):
-                i = self._parse_addresses(i + 1)
-                continue
-            if line.startswith('config firewall addrgrp'):
-                i = self._parse_addrgrp(i + 1)
-                continue
-            if line.startswith('config firewall service custom'):
-                i = self._parse_service_custom(i + 1)
-                continue
-            if line.startswith('config firewall service group'):
-                i = self._parse_service_group(i + 1)
-                continue
-            if line.startswith('config firewall policy'):
-                i = self._parse_policy(i + 1)
-                continue
-            if line.startswith('config system interface'):
-                i = self._parse_system_interface(i + 1)
-                continue
-            if line.startswith('config system zone'):
-                i = self._parse_system_zone(i + 1)
-                continue
-            if line.startswith('config firewall vipgrp'):
-                i = self._parse_firewall_vipgrp(i + 1)
-                continue
-            if line.startswith('config firewall vip'):
-                i = self._parse_firewall_vip(i + 1)
-                continue
-            if line.startswith('config firewall ippool'):
-                i = self._parse_firewall_ippool(i + 1)
-                continue
-            if line.startswith('config firewall central-snat-map'):
-                i = self._parse_central_snat(i + 1)
-                continue
-            if line.startswith('config router static'):
-                i = self._parse_static_routes(i + 1)
-                continue
-            if line.startswith('config router ospf'):
+            s = self.lines[i].strip()
+            if s.startswith('config router ospf'):
                 i = self._parse_router_ospf(i + 1)
                 continue
-            if line.startswith('config router bgp'):
+            elif s.startswith('config router bgp'):
                 i = self._parse_router_bgp(i + 1)
                 continue
             i += 1
+
 
     @staticmethod
     def list_vdom_names(lines: List[str]) -> List[str]:
@@ -259,26 +271,6 @@ class FTGConfig:
         except ValueError:
             return line.split()
 
-    def _parse_addresses(self, i: int) -> int:
-        i, blk = self._parse_block(i)
-        cur: Optional[str] = None
-        subnet_ip = subnet_mask = None
-        for line in blk:
-            s = line.strip()
-            if s.startswith('edit '):
-                cur = s.split('edit', 1)[1].strip().strip('"')
-                subnet_ip = subnet_mask = None
-            elif s.startswith('set subnet '):
-                parts = s.split()
-                if len(parts) >= 4:
-                    subnet_ip, subnet_mask = parts[2], parts[3]
-            elif s.startswith('next') and cur:
-                nets: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network]] = set()
-                if subnet_ip and subnet_mask:
-                    nets.add(to_ip_network(subnet_ip, subnet_mask))
-                self.addresses[cur] = nets
-                cur = None
-        return i
 
     def group_membership(self) -> Dict[str, List[str]]:
         """Return a reverse lookup: address/addrgrp name → list of parent addrgrp names.
@@ -307,81 +299,8 @@ class FTGConfig:
         # Copy each list so callers cannot mutate the cache.
         return {k: list(parents) for k, parents in self._group_membership_cache.items()}
 
-    def _parse_addrgrp(self, i: int) -> int:
-        i, blk = self._parse_block(i)
-        cur: Optional[str] = None
-        members: List[Union[dict, ipaddress.IPv4Address, ipaddress.IPv4Network]] = []
-        for line in blk:
-            s = line.strip()
-            if s.startswith('edit '):
-                cur = s.split('edit', 1)[1].strip().strip('"')
-                members = []
-            elif s.startswith('set member '):
-                names = [x.strip('"') for x in s.split()[2:]]
-                for n in names:
-                    members.append({'object': n})
-            elif s.startswith('next') and cur is not None:
-                self.addrgrps[cur] = members[:]
-                cur = None
-        return i
 
-    def _parse_system_interface(self, i: int) -> int:
-        i, blk = self._parse_block(i)
-        cur: Optional[str] = None
-        cur_data: Dict[str, Union[str, List[str], bool]] = {}
-        for line in blk:
-            s = line.strip()
-            if not s:
-                continue
-            tokens = self._tokenize(s)
-            if not tokens:
-                continue
-            head = tokens[0].lower()
-            if head == 'edit' and len(tokens) >= 2:
-                cur = self._strip_quotes(tokens[1])
-                cur_data = {}
-            elif head == 'set' and len(tokens) >= 3 and cur:
-                key = tokens[1].lower()
-                values = [self._strip_quotes(t) for t in tokens[2:]]
-                if key == 'ip':
-                    cur_data['ip'] = ' '.join(values)
-                elif key == 'allowaccess':
-                    cur_data['allowaccess'] = values
-                elif key == 'alias':
-                    cur_data['alias'] = ' '.join(values)
-                elif key == 'description':
-                    cur_data['description'] = ' '.join(values)
-                else:
-                    cur_data[key] = values if len(values) > 1 else values[0]
-            elif head == 'next' and cur:
-                self.interfaces[cur] = cur_data.copy()
-                cur = None
-        return i
 
-    def _parse_system_zone(self, i: int) -> int:
-        i, blk = self._parse_block(i)
-        cur: Optional[str] = None
-        cur_data: Dict[str, Union[str, List[str]]] = {}
-        for line in blk:
-            s = line.strip()
-            if not s:
-                continue
-            tokens = self._tokenize(s)
-            if not tokens:
-                continue
-            head = tokens[0].lower()
-            if head == 'edit' and len(tokens) >= 2:
-                cur = self._strip_quotes(tokens[1])
-                cur_data = {}
-            elif head == 'set' and len(tokens) >= 3 and cur:
-                key = tokens[1].lower()
-                values = [self._strip_quotes(t) for t in tokens[2:]]
-                # Most zone properties are multi-value; collapse singletons for readability
-                cur_data[key] = values if len(values) > 1 else values
-            elif head == 'next' and cur:
-                self.zones[cur] = cur_data.copy()
-                cur = None
-        return i
 
     def _map_zones(self) -> None:
         """Build interface→zone mapping from parsed zone data."""
@@ -410,209 +329,12 @@ class FTGConfig:
                 zones.append(zone)
         return zones
 
-    def _parse_service_custom(self, i: int) -> int:
-        i, blk = self._parse_block(i)
-        cur: Optional[str] = None
-        tcp_range = udp_range = None
-        for line in blk:
-            s = line.strip()
-            if s.startswith('edit '):
-                cur = s.split('edit', 1)[1].strip().strip('"')
-                tcp_range = udp_range = None
-            elif s.startswith('set tcp-portrange '):
-                tcp_range = s.split('set tcp-portrange', 1)[1].strip()
-            elif s.startswith('set udp-portrange '):
-                udp_range = s.split('set udp-portrange', 1)[1].strip()
-            elif s.startswith('next') and cur:
-                spec = {}
-                if tcp_range:
-                    spec.setdefault('tcp', []).extend(self._split_ranges(tcp_range))
-                if udp_range:
-                    spec.setdefault('udp', []).extend(self._split_ranges(udp_range))
-                self.services[cur] = spec
-                cur = None
-        return i
 
-    def _parse_service_group(self, i: int) -> int:
-        i, blk = self._parse_block(i)
-        cur: Optional[str] = None
-        members: Set[str] = set()
-        for line in blk:
-            s = line.strip()
-            if s.startswith('edit '):
-                cur = s.split('edit', 1)[1].strip().strip('"')
-                members = set()
-            elif s.startswith('set member '):
-                names = [x.strip('"') for x in s.split()[2:]]
-                members.update(names)
-            elif s.startswith('next') and cur:
-                self.service_groups[cur] = set(members)
-                cur = None
-        return i
 
-    def _parse_firewall_vip(self, i: int) -> int:
-        i, blk = self._parse_block(i)
-        cur: Optional[str] = None
-        current: Dict[str, Union[str, List[str], bool]] = {}
-        for line in blk:
-            s = line.strip()
-            if not s:
-                continue
-            tokens = self._tokenize(s)
-            if not tokens:
-                continue
-            head = tokens[0].lower()
-            if head == 'edit' and len(tokens) >= 2:
-                cur = self._strip_quotes(tokens[1])
-                current = {}
-            elif head == 'set' and len(tokens) >= 3 and cur:
-                key = tokens[1].lower()
-                values = [self._strip_quotes(t) for t in tokens[2:]]
-                if key in {'extip', 'mappedip'}:
-                    current[key] = values
-                elif key in {'extintf', 'type'}:
-                    current[key] = values[0]
-                elif key in {'extport', 'mappedport'} and values:
-                    current[key] = values[0]
-                elif key == 'portforward' and values:
-                    current[key] = values[0].lower() == 'enable'
-                else:
-                    current[key] = values if len(values) > 1 else values[0]
-            elif head == 'next' and cur:
-                self.vips[cur] = current.copy()
-                cur = None
-        return i
 
-    def _parse_firewall_vipgrp(self, i: int) -> int:
-        i, blk = self._parse_block(i)
-        cur: Optional[str] = None
-        members: List[str] = []
-        for line in blk:
-            s = line.strip()
-            if not s:
-                continue
-            tokens = self._tokenize(s)
-            if not tokens:
-                continue
-            head = tokens[0].lower()
-            if head == 'edit' and len(tokens) >= 2:
-                cur = self._strip_quotes(tokens[1])
-                members = []
-            elif head == 'set' and len(tokens) >= 3 and tokens[1].lower() == 'member':
-                members.extend(self._strip_quotes(t) for t in tokens[2:])
-            elif head == 'next' and cur:
-                self.vipgrps[cur] = members[:]
-                cur = None
-        return i
 
-    def _parse_firewall_ippool(self, i: int) -> int:
-        i, blk = self._parse_block(i)
-        cur: Optional[str] = None
-        current: Dict[str, Union[str, bool]] = {}
-        for line in blk:
-            s = line.strip()
-            if not s:
-                continue
-            tokens = self._tokenize(s)
-            if not tokens:
-                continue
-            head = tokens[0].lower()
-            if head == 'edit' and len(tokens) >= 2:
-                cur = self._strip_quotes(tokens[1])
-                current = {}
-            elif head == 'set' and len(tokens) >= 3 and cur:
-                key = tokens[1].lower()
-                values = [self._strip_quotes(t) for t in tokens[2:]]
-                if key in {'startip', 'endip', 'type'}:
-                    current[key] = values[0]
-                else:
-                    current[key] = values if len(values) > 1 else values[0]
-            elif head == 'next' and cur:
-                self.ippools[cur] = current.copy()
-                cur = None
-        return i
 
-    def _parse_central_snat(self, i: int) -> int:
-        i, blk = self._parse_block(i)
-        current: Dict[str, Union[str, List[str]]] = {}
-        for line in blk:
-            s = line.strip()
-            if not s:
-                continue
-            tokens = self._tokenize(s)
-            if not tokens:
-                continue
-            head = tokens[0].lower()
-            if head == 'edit':
-                current = {'seq': self._strip_quotes(tokens[1])} if len(tokens) >= 2 else {}
-            elif head == 'set' and len(tokens) >= 3:
-                key = tokens[1].lower()
-                values = [self._strip_quotes(t) for t in tokens[2:]]
-                current[key] = values if len(values) > 1 else values[0]
-            elif head == 'next' and current:
-                self.central_snat_map.append(current.copy())
-                current = {}
-        return i
 
-    def _parse_policy(self, i: int) -> int:
-        i, blk = self._parse_block(i)
-        cur: Dict[str, Union[str, List[str], bool]] = {}
-        for line in blk:
-            s = line.strip()
-            if not s:
-                continue
-            tokens = self._tokenize(s)
-            if not tokens:
-                continue
-            head = tokens[0].lower()
-            if head == 'edit' and len(tokens) >= 2:
-                cur = {
-                    'id': self._strip_quotes(tokens[1]),
-                    'srcaddr': [],
-                    'dstaddr': [],
-                    'service': [],
-                    'srcintf': [],
-                    'dstintf': [],
-                }
-            elif head == 'set' and len(tokens) >= 3:
-                key = tokens[1].lower()
-                values = [self._strip_quotes(t) for t in tokens[2:]]
-                if key == 'action' and values:
-                    act = values[0].lower()
-                    cur['action'] = 'permit' if act == 'accept' else 'deny'
-                elif key == 'srcaddr':
-                    cur['srcaddr'] = values
-                elif key == 'dstaddr':
-                    cur['dstaddr'] = values
-                elif key == 'service':
-                    cur['service'] = values
-                elif key == 'srcintf':
-                    cur['srcintf'] = values
-                elif key == 'dstintf':
-                    cur['dstintf'] = values
-                elif key == 'schedule' and values:
-                    cur['schedule'] = values[0]
-                elif key == 'name' and values:
-                    cur['name'] = values[0]
-                elif key == 'uuid' and values:
-                    cur['uuid'] = values[0]
-                elif key == 'logtraffic' and values:
-                    cur['logtraffic'] = values[0]
-                elif key == 'nat' and values:
-                    cur['nat'] = values[0].lower() == 'enable'
-                elif key == 'ippool' and values:
-                    cur['ippool'] = values[0].lower() == 'enable'
-                elif key == 'poolname':
-                    cur['poolname'] = values
-                elif key == 'status' and values:
-                    cur['status'] = values[0]
-                elif key == 'comments' and values:
-                    cur['comments'] = ' '.join(values)
-            elif head == 'next':
-                if cur:
-                    self.policies.append(cur.copy())
-                cur = {}
-        return i
 
     # ---------- Resolution helpers ----------
     def _build_reverse_indexes(self) -> None:
@@ -730,7 +452,10 @@ class FTGConfig:
     # ---------- Flattening and evaluation ----------
     def flatten_policies(self) -> List[dict]:
         entries: List[dict] = []
-        self.policy_vip_refs = defaultdict(set)
+        # Build VIP refs into a local map and rebind atomically at the end so a
+        # concurrent reader of a shared/cached FTGConfig never observes a
+        # half-populated dict (this method is idempotent and deterministic).
+        policy_vip_refs: Dict[str, Set[str]] = defaultdict(set)
         for p in self.policies:
             srcs: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network, str]] = set()
             dsts: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network, str]] = set()
@@ -763,7 +488,7 @@ class FTGConfig:
             raw = f"policy {p.get('id')} action {p.get('action','permit')} srcaddr {p.get('srcaddr',[])} dstaddr {p.get('dstaddr',[])} service {p.get('service',[])}"
             if policy_id:
                 for vip_name in vip_refs_for_policy:
-                    self.policy_vip_refs[vip_name].add(policy_id)
+                    policy_vip_refs[vip_name].add(policy_id)
             entries.append({
                 'acl': 'policy',
                 'action': p.get('action', 'permit'),
@@ -778,37 +503,9 @@ class FTGConfig:
                 'ippool': p.get('ippool', False),
                 'poolname': p.get('poolname', []),
             })
+        self.policy_vip_refs = policy_vip_refs
         return entries
 
-    def _parse_static_routes(self, i: int) -> int:
-        """Parse FortiGate static routes: config router static."""
-        i, blk = self._parse_block(i)
-        cur_route: Optional[dict] = None
-        for line in blk:
-            s = line.strip()
-            if s.startswith('edit '):
-                seq = s.split('edit', 1)[1].strip().strip('"')
-                cur_route = {'seq': seq, 'destination': None, 'gateway': None, 'device': None, 'distance': None}
-            elif s.startswith('set dst ') and cur_route:
-                dst = s.split('set dst', 1)[1].strip()
-                cur_route['destination'] = dst
-            elif s.startswith('set gateway ') and cur_route:
-                gw = s.split('set gateway', 1)[1].strip()
-                cur_route['gateway'] = gw
-            elif s.startswith('set device ') and cur_route:
-                dev = s.split('set device', 1)[1].strip().strip('"')
-                cur_route['device'] = dev
-            elif s.startswith('set distance ') and cur_route:
-                try:
-                    dist = int(s.split('set distance', 1)[1].strip())
-                    cur_route['distance'] = dist
-                except ValueError:
-                    pass
-            elif s.startswith('next') and cur_route:
-                if cur_route.get('destination'):
-                    self.static_routes.append(cur_route.copy())
-                cur_route = None
-        return i
 
     def _parse_router_ospf(self, i: int) -> int:
         """Parse FortiGate OSPF config: config router ospf."""
@@ -961,6 +658,263 @@ class FTGConfig:
 
         self.dynamic_routing['bgp'] = routing_config
         return i
+
+    def _ccp_parse_addresses(self, obj) -> None:
+        for child in obj.children:
+            txt = child.text.strip()
+            if not txt.startswith('edit '):
+                continue
+            name = txt.split('edit', 1)[1].strip().strip('"')
+            subnet_ip = subnet_mask = None
+            for gc in child.children:
+                tokens = self._tokenize(gc.text.strip())
+                if tokens and tokens[0].lower() == 'set' and len(tokens) >= 4 and tokens[1].lower() == 'subnet':
+                    subnet_ip, subnet_mask = tokens[2], tokens[3]
+            nets = set()
+            if subnet_ip and subnet_mask:
+                nets.add(to_ip_network(subnet_ip, subnet_mask))
+            self.addresses[name] = nets
+
+    def _ccp_parse_addrgrp(self, obj) -> None:
+        for child in obj.children:
+            txt = child.text.strip()
+            if not txt.startswith('edit '):
+                continue
+            name = txt.split('edit', 1)[1].strip().strip('"')
+            members = []
+            for gc in child.children:
+                tokens = self._tokenize(gc.text.strip())
+                if tokens and tokens[0].lower() == 'set' and len(tokens) >= 3 and tokens[1].lower() == 'member':
+                    for m in tokens[2:]:
+                        members.append({'object': self._strip_quotes(m)})
+            self.addrgrps[name] = members
+
+    def _ccp_parse_vip(self, obj) -> None:
+        for child in obj.children:
+            txt = child.text.strip()
+            if not txt.startswith('edit '):
+                continue
+            name = txt.split('edit', 1)[1].strip().strip('"')
+            cur_data = {}
+            for gc in child.children:
+                tokens = self._tokenize(gc.text.strip())
+                if not tokens or tokens[0].lower() != 'set' or len(tokens) < 3:
+                    continue
+                key = tokens[1].lower()
+                values = [self._strip_quotes(t) for t in tokens[2:]]
+                if key in {'extip', 'mappedip'}:
+                    cur_data[key] = values
+                elif key in {'extintf', 'type'}:
+                    cur_data[key] = values[0]
+                elif key in {'extport', 'mappedport'} and values:
+                    cur_data[key] = values[0]
+                elif key == 'portforward' and values:
+                    cur_data[key] = values[0].lower() == 'enable'
+                else:
+                    cur_data[key] = values if len(values) > 1 else values[0]
+            self.vips[name] = cur_data
+
+    def _ccp_parse_vipgrp(self, obj) -> None:
+        for child in obj.children:
+            txt = child.text.strip()
+            if not txt.startswith('edit '):
+                continue
+            name = txt.split('edit', 1)[1].strip().strip('"')
+            members = []
+            for gc in child.children:
+                tokens = self._tokenize(gc.text.strip())
+                if tokens and tokens[0].lower() == 'set' and len(tokens) >= 3 and tokens[1].lower() == 'member':
+                    members.extend(self._strip_quotes(t) for t in tokens[2:])
+            self.vipgrps[name] = members
+
+    def _ccp_parse_service_custom(self, obj) -> None:
+        for child in obj.children:
+            txt = child.text.strip()
+            if not txt.startswith('edit '):
+                continue
+            name = txt.split('edit', 1)[1].strip().strip('"')
+            spec = {}
+            for gc in child.children:
+                tokens = self._tokenize(gc.text.strip())
+                if not tokens or tokens[0].lower() != 'set' or len(tokens) < 3:
+                    continue
+                key = tokens[1].lower()
+                if key == 'tcp-portrange':
+                    spec.setdefault('tcp', []).extend(self._split_ranges(' '.join(tokens[2:])))
+                elif key == 'udp-portrange':
+                    spec.setdefault('udp', []).extend(self._split_ranges(' '.join(tokens[2:])))
+            self.services[name] = spec
+
+    def _ccp_parse_service_group(self, obj) -> None:
+        for child in obj.children:
+            txt = child.text.strip()
+            if not txt.startswith('edit '):
+                continue
+            name = txt.split('edit', 1)[1].strip().strip('"')
+            members = set()
+            for gc in child.children:
+                tokens = self._tokenize(gc.text.strip())
+                if tokens and tokens[0].lower() == 'set' and len(tokens) >= 3 and tokens[1].lower() == 'member':
+                    members.update(self._strip_quotes(m) for m in tokens[2:])
+            self.service_groups[name] = members
+
+    def _ccp_parse_policy(self, obj) -> None:
+        for child in obj.children:
+            txt = child.text.strip()
+            if not txt.startswith('edit '):
+                continue
+            policy_id = txt.split('edit', 1)[1].strip().strip('"')
+            cur_data = {
+                'id': policy_id,
+                'srcaddr': [],
+                'dstaddr': [],
+                'service': [],
+                'srcintf': [],
+                'dstintf': [],
+            }
+            for gc in child.children:
+                tokens = self._tokenize(gc.text.strip())
+                if not tokens or tokens[0].lower() != 'set' or len(tokens) < 3:
+                    continue
+                key = tokens[1].lower()
+                values = [self._strip_quotes(t) for t in tokens[2:]]
+                if key == 'action' and values:
+                    act = values[0].lower()
+                    cur_data['action'] = 'permit' if act == 'accept' else 'deny'
+                elif key == 'srcaddr':
+                    cur_data['srcaddr'] = values
+                elif key == 'dstaddr':
+                    cur_data['dstaddr'] = values
+                elif key == 'service':
+                    cur_data['service'] = values
+                elif key == 'srcintf':
+                    cur_data['srcintf'] = values
+                elif key == 'dstintf':
+                    cur_data['dstintf'] = values
+                elif key == 'schedule' and values:
+                    cur_data['schedule'] = values[0]
+                elif key == 'name' and values:
+                    cur_data['name'] = values[0]
+                elif key == 'uuid' and values:
+                    cur_data['uuid'] = values[0]
+                elif key == 'logtraffic' and values:
+                    cur_data['logtraffic'] = values[0]
+                elif key == 'nat' and values:
+                    cur_data['nat'] = values[0].lower() == 'enable'
+                elif key == 'ippool' and values:
+                    cur_data['ippool'] = values[0].lower() == 'enable'
+                elif key == 'poolname':
+                    cur_data['poolname'] = values
+                elif key == 'status' and values:
+                    cur_data['status'] = values[0]
+                elif key == 'comments' and values:
+                    cur_data['comments'] = ' '.join(values)
+            self.policies.append(cur_data)
+
+    def _ccp_parse_system_interface(self, obj) -> None:
+        for child in obj.children:
+            txt = child.text.strip()
+            if not txt.startswith('edit '):
+                continue
+            name = txt.split('edit', 1)[1].strip().strip('"')
+            cur_data = {}
+            for gc in child.children:
+                tokens = self._tokenize(gc.text.strip())
+                if not tokens or tokens[0].lower() != 'set' or len(tokens) < 3:
+                    continue
+                key = tokens[1].lower()
+                values = [self._strip_quotes(t) for t in tokens[2:]]
+                if key == 'ip':
+                    cur_data['ip'] = ' '.join(values)
+                elif key == 'allowaccess':
+                    cur_data['allowaccess'] = values
+                elif key == 'alias':
+                    cur_data['alias'] = ' '.join(values)
+                elif key == 'description':
+                    cur_data['description'] = ' '.join(values)
+                else:
+                    cur_data[key] = values if len(values) > 1 else values[0]
+            self.interfaces[name] = cur_data
+
+    def _ccp_parse_system_zone(self, obj) -> None:
+        for child in obj.children:
+            txt = child.text.strip()
+            if not txt.startswith('edit '):
+                continue
+            name = txt.split('edit', 1)[1].strip().strip('"')
+            cur_data = {}
+            for gc in child.children:
+                tokens = self._tokenize(gc.text.strip())
+                if not tokens or tokens[0].lower() != 'set' or len(tokens) < 3:
+                    continue
+                key = tokens[1].lower()
+                values = [self._strip_quotes(t) for t in tokens[2:]]
+                cur_data[key] = values  # always a list, matching FTGConfig._parse_system_zone
+            self.zones[name] = cur_data
+
+    def _ccp_parse_ippool(self, obj) -> None:
+        for child in obj.children:
+            txt = child.text.strip()
+            if not txt.startswith('edit '):
+                continue
+            name = txt.split('edit', 1)[1].strip().strip('"')
+            cur_data = {}
+            for gc in child.children:
+                tokens = self._tokenize(gc.text.strip())
+                if not tokens or tokens[0].lower() != 'set' or len(tokens) < 3:
+                    continue
+                key = tokens[1].lower()
+                values = [self._strip_quotes(t) for t in tokens[2:]]
+                if key in {'startip', 'endip', 'type'}:
+                    cur_data[key] = values[0]
+                else:
+                    cur_data[key] = values if len(values) > 1 else values[0]
+            self.ippools[name] = cur_data
+
+    def _ccp_parse_central_snat(self, obj) -> None:
+        for child in obj.children:
+            txt = child.text.strip()
+            if not txt.startswith('edit '):
+                continue
+            tokens_head = self._tokenize(txt)
+            seq = self._strip_quotes(tokens_head[1]) if len(tokens_head) >= 2 else None
+            cur_data = {'seq': seq} if seq else {}
+            for gc in child.children:
+                tokens = self._tokenize(gc.text.strip())
+                if not tokens or tokens[0].lower() != 'set' or len(tokens) < 3:
+                    continue
+                key = tokens[1].lower()
+                values = [self._strip_quotes(t) for t in tokens[2:]]
+                cur_data[key] = values if len(values) > 1 else values[0]
+            if cur_data:
+                self.central_snat_map.append(cur_data)
+
+    def _ccp_parse_static_routes(self, obj) -> None:
+        for child in obj.children:
+            txt = child.text.strip()
+            if not txt.startswith('edit '):
+                continue
+            seq = txt.split('edit', 1)[1].strip().strip('"')
+            cur_data = {'seq': seq, 'destination': None, 'gateway': None, 'device': None, 'distance': None}
+            for gc in child.children:
+                tokens = self._tokenize(gc.text.strip())
+                if not tokens or tokens[0].lower() != 'set' or len(tokens) < 3:
+                    continue
+                key = tokens[1].lower()
+                values = [self._strip_quotes(t) for t in tokens[2:]]
+                if key == 'dst':
+                    cur_data['destination'] = ' '.join(values)
+                elif key == 'gateway':
+                    cur_data['gateway'] = ' '.join(values)
+                elif key == 'device':
+                    cur_data['device'] = values[0]
+                elif key == 'distance':
+                    try:
+                        cur_data['distance'] = int(values[0])
+                    except (ValueError, IndexError):
+                        pass
+            if cur_data.get('destination'):
+                self.static_routes.append(cur_data)
 
 
 def nets_overlap(set_a: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network, str]], set_b: Set[Union[ipaddress.IPv4Address, ipaddress.IPv4Network, str]]) -> bool:

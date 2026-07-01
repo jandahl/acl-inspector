@@ -117,8 +117,8 @@ flat_rules = config.flatten_policies()
 
 If you are extending the framework to support a new firewall platform (e.g., Palo Alto, CheckPoint):
 
-1. **Implement IR Export (Primary)**: The core integration point for ACL Inspector is the Intermediate Representation. Provide a `to_ir(cfg, ...)` function in an `ir_export.py` module that maps your parsed configuration class down to the dataclasses in `parsers/model.py`.
-2. **Implement Flat Rules (Optional)**: If you wish to support the legacy inspection views, implement a flattening method. For new parsers inheriting from `FirewallParser`, implement `flatten() -> List[FlatRule]`. For legacy-style parsers, implement `flatten_acl()` or `flatten_policies()` returning a `List[dict]`.
+1. **Implement IR Export (Primary)**: The core integration point for ACL Inspector is the Intermediate Representation. Provide a `to_ir(cfg, ...)` function in an `ir_export.py` module that maps your parsed configuration class down to the dataclasses in `parsers/model.py`. Reuse `parsers/ir_normalize.py` for address/port normalization.
+2. **Read via the IR spine**: Downstream analysis (inspect/compare) reads the IR through `parsers/query.py` (`DeviceQuery`), so once `to_ir` is in place a new vendor gets resolution and rule-matching for free. Vendors may still expose `flatten_acl()`/`flatten_policies()` returning `List[dict]` for vendor-specific rendering.
 3. **Register the Detection**: Add detection heuristics to `detect_vendor` in `parsers/detector.py`. You must also update `vendor_to_os` and `DEFAULT_SUPPORTED_VENDORS` in the same file to fully integrate the new vendor. Finally, add dispatch branches to `load_config()` and `load_config_to_ir()` inside `parsers/loader.py` to support the new vendor string.
 
-> **Note on Architecture**: While existing production parsers (`ASAConfig`, `FTGConfig`) currently use custom methods for historical reasons, new modular components are encouraged to inherit from `FirewallParser` (defined in `parsers/base.py`) to move towards a more consistent interface.
+> **Note on Architecture**: The IR (`parsers/model.py`) is the single normalized model; the old `parsers/base.py` `FirewallParser`/`FlatRule` interface has been retired in favour of IR export + `DeviceQuery`.

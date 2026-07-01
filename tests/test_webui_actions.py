@@ -71,6 +71,33 @@ class ActionHandlersTest(unittest.TestCase):
         self.assertTrue(history)
         self.assertEqual(history[0]["query"], "OBJ_WEB")
 
+    def test_inspect_parses_config_once(self):
+        # Regression: process_run used to build ASAConfig(cfg_text) AND call
+        # inspect_host(cfg_text) which parsed a second engine internally. The
+        # request must now parse exactly once, via the shared parsed cache.
+        from unittest import mock
+
+        cls = type(self.state.parsed_cache)
+        orig = cls.__dict__["_parse"].__func__  # underlying function of the staticmethod
+        calls = {"n": 0}
+
+        def counting(vendor, text, vdom, use_external_engines):
+            calls["n"] += 1
+            return orig(vendor, text, vdom, use_external_engines)
+
+        with mock.patch.object(cls, "_parse", staticmethod(counting)):
+            status, _ = action_handlers.process_run(
+                self.state,
+                {
+                    "vendor": ["asa"],
+                    "mode": ["inspect"],
+                    "config": ["sample.cfg"],
+                    "inspect": ["OBJ_WEB"],
+                },
+            )
+        self.assertEqual(status, 200)
+        self.assertEqual(calls["n"], 1, "inspect request should parse the config exactly once")
+
     def test_missing_config(self):
         status, payload = action_handlers.process_run(
             self.state,

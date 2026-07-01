@@ -27,7 +27,7 @@ Firewall changes often involve swapping an object or moving workloads. This tool
 Requirements
 ------------
 - Python 3.9+
-- No external packages are required for CLI and web UI use
+- `ciscoconfparse2` is the parsing engine and a core dependency (installed automatically by `pip install .`)
 - TUI requires `textual` and `rich` (install with `pip install -e '.[tui]'` or `pip install 'textual>=0.60' rich`)
 
 Setup
@@ -351,9 +351,9 @@ Architecture (Pluggable Parsers)
 --------------------------------
 - Goal: support multiple firewall vendors by parsing into a shared, normalized model.
 - Approach:
-  - Each vendor implements a parser class that outputs flattened rules (src/dst/service).
-  - Normalized dataclasses defined under `parsers/base.py` (`FlatRule`, `Endpoint`, `ServiceSpec`).
-  - CLI selects the parser (auto-detect or `--vendor asa|fortigate`), then all downstream logic (inspect/compare/evaluate) runs on the normalized model.
+  - Each vendor implements a parser class, then exports to the versioned IR (`parsers/model.py`).
+  - The IR is the single normalized model; consumers read it through `parsers/query.py` (`DeviceQuery`).
+  - CLI selects the parser (auto-detect or `--vendor asa|fortigate`), then all downstream logic (inspect/compare/evaluate) runs on the IR.
   - This enables cross-vendor comparisons (e.g., ASA vs FortiGate) and a web UI that doesn’t care about source syntax.
 
 Future goals
