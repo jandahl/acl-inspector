@@ -87,8 +87,9 @@ Raw Config → Vendor Parser → Intermediate Representation (IR) → CLI/Web UI
 ```
 
 **Key modules:**
-- **`parsers/base.py`**: Defines normalized dataclasses (`FlatRule`, `Endpoint`, `ServiceSpec`) that all vendor parsers target
-- **`parsers/model.py`**: Versioned IR module with `Device`, `Interface`, `Object`, `ACL`, `NAT` dataclasses for JSON-friendly representation
+- **`parsers/model.py`**: Versioned IR (the single internal model) with `Device`, `Interface`, `Object`, `ACL`, `ACLEntry`, `NAT` dataclasses for JSON-friendly representation
+- **`parsers/query.py`**: `DeviceQuery` — resolution + rule matching over the IR `Device`; the spine that inspect/compare read from (`resolve`, `flat_rules`, `rules_affecting`, `group_membership`, `alias_objects`)
+- **`parsers/ir_normalize.py`**: shared IR boundary normalization used by both vendors' `ir_export`
 - **`parsers/cisco/asa/`**: ASA-specific implementation
   - `parser.py`: Main config parsing (objects, groups, ACLs)
   - `services.py`: Service object-group handling

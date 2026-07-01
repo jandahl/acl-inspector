@@ -19,9 +19,9 @@ Design choices
   future enhancement: we record references and exclude them from numeric-port
   filtering for now.
 
-The normalized entries produced here are intentionally compatible with the
-shared modeling approach described in parsers.base. This module predates a full
-refactor into those dataclasses but can be adapted with minimal changes.
+The normalized flat entries produced here are the parser-internal working shape;
+the vendor-agnostic view is the IR (:mod:`parsers.model`), which consumers read
+through :class:`parsers.query.DeviceQuery`.
 """
 
 
