@@ -7,7 +7,7 @@ from __future__ import annotations
 import ipaddress
 from typing import Dict, List, Optional, Set, Union
 
-from .config import FTGConfig, nets_overlap, _service_matches
+from .config import nets_overlap, _service_matches
 
 __all__ = ["evaluate", "compare_old_new", "inspect_host"]
 

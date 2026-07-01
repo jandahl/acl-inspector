@@ -7,7 +7,6 @@ rely on, so consumers can read from the IR via DeviceQuery instead of parser
 internals.
 """
 
-import ipaddress
 import unittest
 
 from parsers.cisco.asa.parser import ASAConfig
