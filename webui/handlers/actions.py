@@ -93,9 +93,10 @@ def process_run(state: AppState, fields: Mapping[str, List[str]]) -> Tuple[int, 
             target = get("inspect")
             if vendor == "asa":
                 cfg = state.parsed_cache.get("asa", path)
+                device = state.parsed_cache.get_device("asa", path)
                 report = asa_parser.inspect_host(
                     cfg_text, target, service_filter=svc_filter,
-                    include_any=include_any, cfg=cfg,
+                    include_any=include_any, device=device,
                 )
                 try:
                     nets = cfg.resolve_network(target)
@@ -127,9 +128,10 @@ def process_run(state: AppState, fields: Mapping[str, List[str]]) -> Tuple[int, 
             new = get("new")
             if vendor == "asa":
                 cfg = state.parsed_cache.get("asa", path)
+                device = state.parsed_cache.get_device("asa", path)
                 diff = asa_parser.compare_old_new(
                     cfg_text, old, new, service_filter=svc_filter,
-                    include_any=include_any, cfg=cfg,
+                    include_any=include_any, device=device,
                 )
 
                 def _incl(name: str) -> Dict[ipaddress._BaseAddress, Set[str]]:
