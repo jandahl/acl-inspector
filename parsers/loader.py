@@ -96,7 +96,7 @@ def get_engine_from_text(
         filename: Optional filename hint used only to aid auto-detection.
         min_confidence: Minimum confidence score for auto-detection (0-100).
         strict: If True, raise on low confidence. If False, warn and best-guess.
-        use_external_engines: If True, use the AST-based engine.
+        use_external_engines: Deprecated no-op (ciscoconfparse2 is the single engine).
 
     Returns:
         Tuple of (config_object, resolved_vendor, confidence_score).
@@ -153,7 +153,7 @@ def load_config(
         vdom: FortiGate VDOM name (only used if vendor is fortigate)
         min_confidence: Minimum confidence score for auto-detection (0-100)
         strict: If True, raise error on low confidence. If False, use best guess.
-        use_external_engines: If True, use parallel advanced parsing engines.
+        use_external_engines: Deprecated no-op (ciscoconfparse2 is the single engine).
 
     Returns:
         Tuple of (config_object, detected_vendor, confidence_score)
@@ -211,7 +211,7 @@ def load_config_to_ir(
         vendor: Optional vendor override
         device_name: Device name for IR (defaults to filename)
         vdom: FortiGate VDOM
-        use_external_engines: If True, use parallel advanced parsing engines.
+        use_external_engines: Deprecated no-op (ciscoconfparse2 is the single engine).
         **kwargs: Additional args passed to load_config()
 
     Returns:

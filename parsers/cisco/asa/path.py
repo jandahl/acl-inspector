@@ -92,7 +92,7 @@ def path_check(
         dports: Optional set of destination port integers.
         include_any: Whether to include ``any`` endpoints when walking ACLs.
         guess_interface_pairs: Whether to infer counterpart ACL matches.
-        use_external_engines: If True, use parallel advanced parsing engines.
+        use_external_engines: Deprecated no-op (ciscoconfparse2 is the single engine).
 
     Returns:
         dict containing:

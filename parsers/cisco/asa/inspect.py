@@ -71,7 +71,7 @@ def compare_old_new(
         service_filter: Optional dict with keys ``proto`` and ``dports`` (set[int])
             to constrain matches to a protocol/port set.
         include_any: When True, do not drop rules with ``any`` in src/dst.
-        use_external_engines: If True, use parallel advanced parsing engines.
+        use_external_engines: Deprecated no-op (ciscoconfparse2 is the single engine).
 
     Returns:
         dict with keys:
@@ -126,7 +126,7 @@ def inspect_host(
         target: Network object or IP address to inspect.
         service_filter: Optional dict to constrain matches.
         include_any: When True, do not drop rules with ``any`` in src/dst.
-        use_external_engines: If True, use parallel advanced parsing engines.
+        use_external_engines: Deprecated no-op (ciscoconfparse2 is the single engine).
 
     Returns:
         dict containing ``hits`` (list of flattened rules), ``target_nets``, ``aliases``,
